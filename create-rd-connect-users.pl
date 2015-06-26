@@ -67,7 +67,7 @@ if(scalar(@ARGV)>=2) {
 	}
 	my $transport = Email::Sender::Transport::SMTPS->new(@mailParams);
 	
-	my $from = Email::Address->parse($cfg->val(MAILSECTION,'from'));
+	my($from) = Email::Address->parse($cfg->val(MAILSECTION,'from'));
 	
 	Carp::croak("subject field must be defined in order to send e-mails")  unless($cfg->exists(MAILSECTION,'subject'));
 	my $subject = $cfg->val(MAILSECTION,'subject');
@@ -84,17 +84,17 @@ if(scalar(@ARGV)>=2) {
 			} else {
 				# The destination user
 				my $to = $addresses[0];
-				$to->phrase($fullname)  unless(defined($fullname) && length($fullname)>0 && !defined($to->phrase));
+				# Re-defining the e-mail
+				$email = $to->address();
+				
+				$fullname = $to->phrase  unless(defined($fullname) && length($fullname)>0);
 				
 				# Re-defining the values based on the parse step
 				# Defining an username
 				$username = $to->address()  unless(defined($username) && length($username)>0);
 				
-				# Re-defining the fullname
-				$fullname = $to->phrase();
-				
-				# Re-defining the e-mail
-				$email = $to->address();
+				# Re-defining the object
+				$to = Email::Address->new($fullname => $email);
 				
 				# Now, let's read the generated password
 				if(open(my $APG,'-|',@apgParams)) {
@@ -132,7 +132,7 @@ Dear $fullname,
 EOF
 							);
 							eval {
-								sendmail($message, { transport => $transport });
+								sendmail($message, { from => $from->address(), transport => $transport });
 							};
 							
 							if($@) {
