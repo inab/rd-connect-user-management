@@ -153,9 +153,15 @@ if(scalar(@ARGV)>=3) {
 				$fullname =~ s/ +$//;
 				
 				unless(defined($username) && length($username) > 0) {
-					$username = Text::Unidecode::unidecode($fullname);
+					my $uniname = lc(Text::Unidecode::unidecode($fullname));
+					my @tokens = split(/ +/,$uniname);
+					$username = '';
+					foreach my $pos (0..($#tokens-1)) {
+						$username .= substr($tokens[$pos],0,1) . '.';
+					}
+					$username .= $tokens[$#tokens];
 					
-					# Replacing apostrophes and commas by points
+					# Replacing what it is not ASCII 7 alphanumeric characters by dots
 					$username =~ tr/a-zA-Z0-9._-/./c;
 					
 					# Re-defining the values based on the parse step
