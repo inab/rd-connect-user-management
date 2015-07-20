@@ -65,7 +65,7 @@ if(scalar(@ARGV)>=3) {
 	my $apgMin = $cfg->val(APGSECTION,'min-length',12);
 	my $apgMax = $cfg->val(APGSECTION,'max-length',16);
 	
-	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-k','-q');
+	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
 	
 	# Mail configuration parameters
 	my @mailParams = ();
