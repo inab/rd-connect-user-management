@@ -233,7 +233,7 @@ if(scalar(@ARGV)>=3) {
 										charset  => 'ISO-8859-1',
 									},
 									body_str => <<EOF
-The automatically generated password is $pass.
+The automatically generated password is  $pass  (including any punctuation mark it could contain).
 
 You should change this password by a different one as soon as possible.
 
