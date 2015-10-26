@@ -8,15 +8,14 @@ use Config::IniFiles;
 use DBI;
 use Digest;
 use Email::Address;
-use Email::MIME;
-use Email::Sender::Simple qw(sendmail);
-use Email::Sender::Transport::SMTPS qw();
-use File::Basename qw();
-use File::MimeInfo::Magic qw();
 use Text::Unidecode qw();
 
+use FindBin;
+use lib $FindBin::Bin . '/libs';
+use RDConnect::UserManagement;
+use RDConnect::MailManagement;
+
 use constant SECTION	=>	'main';
-use constant MAILSECTION	=>	'mail';
 use constant APGSECTION	=>	'apg';
 
 my $doReplace;
@@ -67,70 +66,24 @@ if(scalar(@ARGV)>=3) {
 	
 	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
 	
-	# Mail configuration parameters
-	my @mailParams = ();
-	foreach my $mailParam ('host','ssl','port','sasl_username','sasl_password') {
-		push(@mailParams,$mailParam,$cfg->val(MAILSECTION,$mailParam))  if($cfg->exists(MAILSECTION,$mailParam));
-	}
-	my $transport = Email::Sender::Transport::SMTPS->new(@mailParams);
-	
-	my($from) = Email::Address->parse($cfg->val(MAILSECTION,'from'));
-	
-	Carp::croak("subject field must be defined in order to send e-mails")  unless($cfg->exists(MAILSECTION,'subject'));
-	my $subject = $cfg->val(MAILSECTION,'subject');
-	
-	# Read the mail body
-	my $templateMailBodyMime;
-	eval {
-		$templateMailBodyMime = File::MimeInfo::Magic::mimetype($mailTemplate);
-	};
-	Carp::croak("ERROR: Unable to pre-process mail template $mailTemplate")  if($@ || !defined($templateMailBodyMime));
-	
-	my $templateMailBody;
-	if(open(my $TT,'<:utf8',$mailTemplate)) {
-		local $/;
-		$templateMailBody = <$TT>;
-		
-		close($TT);
-	} else {
-		Carp::croak("Unable to read template body");
-	}
-	
 	# These are the recognized replacements
-	my %keyval = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
-	my %replacements = map { $_ => undef } $templateMailBody =~ /\[% ([a-zA-Z0-9._-]+) %\]/g;
-	foreach my $var (keys(%replacements)) {
-		Carp::carp("WARNING: annotation $var in template does not exist")  unless(exists($keyval{$var}));
-	}
+	my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
+	my %keyval2 = ( 'password' => '(undefined)' );
 	
-	# Identify the attachments
-	my @attachments = ();
-	foreach my $attachmentFile (@attachmentFiles) {
-		my $mime;
-		eval {
-			$mime = File::MimeInfo::Magic::mimetype($attachmentFile);
-		};
-		
-		Carp::croak("ERROR: Unable to pre-process attachment $attachmentFile")  if($@ || !defined($mime));
-		
-		if(open(my $AT,'<:raw',$attachmentFile)) {
-			local $/;
-			push(@attachments,Email::MIME->create(
-				attributes => {
-					filename => File::Basename::basename($attachmentFile),
-					content_type => $mime,
-					disposition => "attachment",
-					encoding => "base64",
-					# name => ,
-				},
-				body => <$AT>
-			));
-			
-			close($AT);
-		} else {
-			Carp::croak("ERROR: Unable to read attachment $attachmentFile");
-		}
-	}
+	# Mail configuration parameters
+	my $mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
+	$mail1->setSubject($mail1->getSubject().' (I)');
+	
+	my $passMailTemplate = <<'EOF' ;
+The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
+
+You should change this password by a different one as soon as possible.
+
+Kind Regards,
+	RD-Connect team
+EOF
+	my $mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
+	$mail2->setSubject($mail2->getSubject().' (II)');
 	
 	# Read the users
 	if(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
@@ -186,65 +139,18 @@ if(scalar(@ARGV)>=3) {
 					my $digestedPass = $digest->hexdigest;
 					if($insSth->execute($username,$fullname,$email) || $doReplace) {
 						if($updSth->execute($digestedPass,$username)) {
-							# Now, committing changes
-							$conn->commit()  unless(defined($doReplace));
 							
-							# Preparing and sending the e-mails
-							my $mailBody = $templateMailBody;
-							
-							# Substitute
-							$keyval{'username'} = $username;
-							$keyval{'fullname'} = $fullname;
-							foreach my $var (keys(%replacements)) {
-								my $val = exists($keyval{$var}) ? $keyval{$var} : '(FIXME!)';
-								$mailBody =~ s/\Q[% $var %]\E/$val/g;
-							}
-							
-							my $mailPart = Email::MIME->create(
-								attributes => {
-									encoding => 'quoted-printable',
-									content_type => $templateMailBodyMime,
-									charset  => 'UTF-8',
-								},
-								body_str => $mailBody
-							);
-							
-							my $message = Email::MIME->create(
-								header_str => [
-									From	=>	$from,
-									To	=>	$to,
-									Subject	=>	$subject.' (I)'
-								],
-								attributes => {
-									content_type => 'multipart/mixed'
-								},
-								parts => [ $mailPart, @attachments ]
-							);
+							$keyval1{'username'} = $username;
+							$keyval1{'fullname'} = $fullname;
 							eval {
-								sendmail($message, { from => $from->address(), transport => $transport });
-								my $passmessage = Email::MIME->create(
-									header_str => [
-										From	=>	$from,
-										To	=>	$to,
-										Subject	=>	$subject.' (II)'
-									],
-									attributes => {
-										encoding => 'quoted-printable',
-										charset  => 'ISO-8859-1',
-									},
-									body_str => <<EOF
-The automatically generated password is  $pass  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-								);
-								eval {
-									sendmail($passmessage, { from => $from->address(), transport => $transport });
-								};
+								$mail1->sendMessage($to,\%keyval1);
 								
+								$keyval2{'password'} = $pass;
+								eval {
+									$mail2->sendMessage($to,\%keyval2);
+									# Now, committing changes
+									$conn->commit()  unless(defined($doReplace));
+								};
 								if($@) {
 									Carp::croak("Error while sending password e-mail: ",$@);
 								}
