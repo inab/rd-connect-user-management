@@ -5,12 +5,14 @@ This program uses next Perl modules:
 
 * Config::IniFiles
 * DBI and the database modules needed (DBD::SQLite)
+* Net::LDAP , also known as perl-ldap
 * Digest::SHA1 (or the corresponding module to encode passwords)
 * Email::Address
 * Email::MIME
 * Email::Sender::Transport::SMTPS
 * File::Basename
 * File::MimeInfo
+* MIME::Base64
 * MooX::Types::MooseLike (Email::Sender::Transport::SMTPS depends on it but it does not declare this dependency).
 * Text::Unidecode
 
