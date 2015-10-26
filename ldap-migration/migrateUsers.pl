@@ -83,7 +83,13 @@ if(scalar(@ARGV)==1) {
 	my $ldap = Net::LDAP->new($ldap_host,@ldap_conn_params) || Carp::croak("Unable to connect LDAP host $ldap_host");
 	
 	$ldap->start_tls(cafile => $ldap_cafile)  if($start_tls && defined($ldap_cafile));
-	my $mesg = $ldap->bind($ldap_user,$ldap_pass);
+	my $mesg = $ldap->bind($ldap_user,'password' => $ldap_pass);
+	
+	if($mesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		use Data::Dumper;
+		Carp::carp("Unable bind LDAP host $ldap_host (check credentials?)\n".Dumper($mesg));
+		exit(1);
+	}
 	
 	if($selSth->execute()) {
 		my $username;
@@ -118,9 +124,12 @@ if(scalar(@ARGV)==1) {
 			$entry->update($ldap);
 		}
 		$selSth->finish();
+		$conn->rollback();
 	} else {
+		$conn->rollback();
 		Carp::croak("Unable to execute fetching query");
 	}
+	$conn->disconnect();
 } else {
 	print "Usage: $0 {ini file}\n";
 }
