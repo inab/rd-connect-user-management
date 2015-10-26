@@ -5,7 +5,6 @@ use strict;
 
 use Carp;
 use Config::IniFiles;
-use DBI;
 use Digest;
 use Email::Address;
 use Text::Unidecode qw();
@@ -33,27 +32,6 @@ if(scalar(@ARGV)>=3) {
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
 	# Now, let's read all the parameters
-	
-	# The database connection parameters
-	my $dbistr = $cfg->val(SECTION,'dbistr');
-	Carp::croak("dbistr parameter was not defined in $configFile")  unless(defined($dbistr));
-	
-	my $dbuser = $cfg->val(SECTION,'dbuser','');
-	my $dbpass = $cfg->val(SECTION,'dbpass','');
-	
-	# Database connection
-	my $conn = DBI->connect($dbistr,$dbuser,$dbpass,{ RaiseError => 0, AutoCommit => ($doReplace?1:0)});
-	
-	# Preparing the sentences
-	my $insertStr = 'INSERT';
-	if($doReplace) {
-		print "NOTICE: Replace mode enabled\n";
-		$insertStr .= ' OR REPLACE';
-	}
-	$insertStr .= ' INTO USERS VALUES (?,\'\',?,?,0)';
-	my $insSth = $conn->prepare($insertStr);
-	
-	my $updSth = $conn->prepare('UPDATE USERS SET password=? , active=1 WHERE username=?');
 	
 	# The digest algorithm
 	my $digestAlg = $cfg->val(SECTION,'digest','SHA-1');
@@ -85,12 +63,17 @@ EOF
 	my $mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
 	$mail2->setSubject($mail2->getSubject().' (II)');
 	
+	# LDAP configuration
+	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	
 	# Read the users
 	if(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
 		while(my $line=<$U>) {
 			chomp($line);
 			my($email,$fullname,$username,$junk) = split(/\t/,$line,4);
 			my @addresses = Email::Address->parse($email);
+			my $givenName;
+			my $sn;
 			
 			if(scalar(@addresses)==0) {
 				Carp::carp("Unable to parse e-mail $email from user $fullname. Skipping");
@@ -125,6 +108,12 @@ EOF
 					}
 				}
 				
+				unless((defined($givenName) && length($givenName)>0) || (defined($sn) && length($sn)>0)) {
+					my $snPoint = rindex($fullname,' ');
+					$givenName = substr($fullname,0,$snPoint);
+					$sn = substr($fullname,$snPoint+1);
+				}
+				
 				# Re-defining the object
 				$to = Email::Address->new($fullname => $email);
 				
@@ -136,34 +125,28 @@ EOF
 					# Setting the digester to a known state
 					$digest->reset();
 					$digest->add($pass);
-					my $digestedPass = $digest->hexdigest;
-					if($insSth->execute($username,$fullname,$email) || $doReplace) {
-						if($updSth->execute($digestedPass,$username)) {
+					my $digestedPass = '{SHA}'.$digest->b64digest;
+					if($uMgmt->createUser($username,$digestedPass,undef,$fullname,$givenName,$sn,$email,1,$doReplace)) {
+						$keyval1{'username'} = $username;
+						$keyval1{'fullname'} = $fullname;
+						eval {
+							$mail1->sendMessage($to,\%keyval1);
 							
-							$keyval1{'username'} = $username;
-							$keyval1{'fullname'} = $fullname;
+							$keyval2{'password'} = $pass;
 							eval {
-								$mail1->sendMessage($to,\%keyval1);
-								
-								$keyval2{'password'} = $pass;
-								eval {
-									$mail2->sendMessage($to,\%keyval2);
-									# Now, committing changes
-									$conn->commit()  unless(defined($doReplace));
-								};
-								if($@) {
-									Carp::croak("Error while sending password e-mail: ",$@);
-								}
+								$mail2->sendMessage($to,\%keyval2);
 							};
-							
 							if($@) {
-								Carp::croak("Error while sending e-mail: ",$@);
+								Carp::croak("Error while sending password e-mail: ",$@);
 							}
+						};
+						
+						if($@) {
+							Carp::croak("Error while sending e-mail: ",$@);
 						}
 					} else {
 						# Reverting state
 						Carp::carp("Unable to add user $username (fullname $fullname, e-mail $email). Does it already exist, maybe?");
-						$conn->rollback();
 					}
 				} else {
 					Carp::croak("Unable to generate a password using apg\n");

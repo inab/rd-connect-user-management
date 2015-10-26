@@ -4,7 +4,6 @@ RD-Connect Perl scripts to batch create users from a tabular file with e-mail, n
 This program uses next Perl modules:
 
 * Config::IniFiles
-* DBI and the database modules needed (DBD::SQLite)
 * Net::LDAP , also known as perl-ldap
 * Digest::SHA1 (or the corresponding module to encode passwords)
 * Email::Address
@@ -13,11 +12,16 @@ This program uses next Perl modules:
 * File::Basename
 * File::MimeInfo
 * MIME::Base64
-* MooX::Types::MooseLike (Email::Sender::Transport::SMTPS depends on it but it does not declare this dependency).
 * Text::Unidecode
 
 and [APG](http://www.adel.nursat.kz/apg/ "Another Password Generator") program (which must be either declared
 in the configuration profile or it must be found in the `PATH`).
+
+For the migration program it also needs:
+
+* DBI and the database modules needed (DBD::SQLite)
+
+which expects next table in the database to be migrated to LDAP:
 
 ```sql
 CREATE TABLE users (
@@ -47,7 +51,3 @@ public keys published in standard servers.
 
 2. In the second phase, all the e-mails the platform sends are going to be encrypted and signed using
 OpenPGP standard
-
-The tool is also going to migrate the user creation style, from a SQLite database to LDAP.
-Module [Net::LDAP](http://search.cpan.org/~gbarr/perl-ldap/lib/Net/LDAP/Examples.pod) will be used,
-in order to emulate command line managemement seen [in this link](http://www.thegeekstuff.com/2015/02/openldap-add-users-groups/).
