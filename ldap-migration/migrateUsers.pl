@@ -91,7 +91,7 @@ if(scalar(@ARGV)==1) {
 		my $fullname;
 		my $email;
 		my $active;
-		$selSth->bindColumns(\($username,$password,$fullname,$email,$active));
+		$selSth->bind_columns(\($username,$password,$fullname,$email,$active));
 		
 		while($selSth->fetch()) {
 			my $snPoint = rindex($fullname,' ');
