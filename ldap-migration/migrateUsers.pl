@@ -119,9 +119,14 @@ if(scalar(@ARGV)==1) {
 				'cn'	=>	$fullname
 			);
 
-			print $entry->ldif();
-			
-			$entry->update($ldap);
+			my $updMesg = $entry->update($ldap);
+			if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+				print $entry->ldif();
+				
+				use Data::Dumper;
+				Carp::carp("Unable to migrate user $username (does the user already exist?)\n".Dumper($updMesg));
+				exit(1);
+			}
 		}
 		$selSth->finish();
 		$conn->rollback();
