@@ -20,8 +20,24 @@ if(scalar(@ARGV)>0 && $ARGV[0] eq '-r') {
 	$doReplace = 1;
 }
 
-if(scalar(@ARGV)==1) {
+if(scalar(@ARGV)==2) {
 	my $configFile = shift(@ARGV);
+	my $userPeopleOUFile = shift(@ARGV);
+	
+	my %userPeople = ();
+	if(open(my $UP,'<:encoding(UTF-8)',$userPeopleOUFile)) {
+		while(my $line=<$UP>) {
+			chomp($line);
+			
+			my($userUID,$peopleOU,$junk) = split(/\t/,$line,3);
+			
+			$userPeople{$userUID} = $peopleOU;
+		}
+		
+		close($UP);
+	} else {
+		Carp::croak("Unable to open user to organizational units correspondence file $userPeopleOUFile");
+	}
 	
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
@@ -36,6 +52,8 @@ if(scalar(@ARGV)==1) {
 	
 	# Database connection
 	my $conn = DBI->connect($dbistr,$dbuser,$dbpass,{ RaiseError => 0, AutoCommit => 0});
+	# This is only for SQLite
+	$conn->{'sqlite_unicode'} = 1;
 	
 	my $selSth = $conn->prepare("SELECT username, password, fullname, email, active FROM USERS");
 	
@@ -60,7 +78,9 @@ if(scalar(@ARGV)==1) {
 			
 			my $bindigest = pack "H*", $password;
 			my $hashedPasswd64 = '{SHA}'.encode_base64($bindigest);
-			unless($uMgmt->createUser($username,$hashedPasswd64,undef,$fullname,$givenName,$sn,$email,$active,$doReplace)) {
+			my $groupOU = exists($userPeople{$username})? $userPeople{$username}: undef;
+			unless($uMgmt->createUser($username,$hashedPasswd64,$groupOU,$fullname,$givenName,$sn,$email,$active==1,$doReplace)) {
+				$conn->rollback();
 				Carp::carp("Unable to migrate user $username (does the user already exist?)");
 				exit(1);
 			}
@@ -73,5 +93,5 @@ if(scalar(@ARGV)==1) {
 	}
 	$conn->disconnect();
 } else {
-	print "Usage: $0 {ini file} {groups}\n";
+	print "Usage: $0 {ini file} {user to peopleOUs correspondence}\n";
 }
