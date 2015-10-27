@@ -70,10 +70,8 @@ EOF
 	if(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
 		while(my $line=<$U>) {
 			chomp($line);
-			my($email,$fullname,$username,$junk) = split(/\t/,$line,4);
+			my($email,$fullname,$username,$ou,$givenName,$sn,$junk) = split(/\t/,$line,7);
 			my @addresses = Email::Address->parse($email);
-			my $givenName;
-			my $sn;
 			
 			if(scalar(@addresses)==0) {
 				Carp::carp("Unable to parse e-mail $email from user $fullname. Skipping");
@@ -108,10 +106,10 @@ EOF
 					}
 				}
 				
-				unless((defined($givenName) && length($givenName)>0) || (defined($sn) && length($sn)>0)) {
+				unless(defined($givenName) && length($givenName)>0 && defined($sn) && length($sn)>0) {
 					my $snPoint = rindex($fullname,' ');
-					$givenName = substr($fullname,0,$snPoint);
-					$sn = substr($fullname,$snPoint+1);
+					$givenName = substr($fullname,0,$snPoint)  unless(defined($givenName) && length($givenName)>0);
+					$sn = substr($fullname,$snPoint+1)  unless(defined($sn) && length($sn)>0);
 				}
 				
 				# Re-defining the object
@@ -126,7 +124,7 @@ EOF
 					$digest->reset();
 					$digest->add($pass);
 					my $digestedPass = '{SHA}'.$digest->b64digest;
-					if($uMgmt->createUser($username,$digestedPass,undef,$fullname,$givenName,$sn,$email,1,$doReplace)) {
+					if($uMgmt->createUser($username,$digestedPass,$ou,$fullname,$givenName,$sn,$email,1,$doReplace)) {
 						$keyval1{'username'} = $username;
 						$keyval1{'fullname'} = $fullname;
 						eval {
