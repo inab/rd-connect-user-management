@@ -91,10 +91,15 @@ sub new($) {
 #	email: The e-mail
 #	active: is the user account active
 #	doReplace: if true, the entry is an update
-sub createUser($$$$$$$$) {
+sub createUser($$$$$$$;$) {
 	my $self = shift;
 	
 	my($username,$hashedPasswd64,$groupOU,$cn,$givenName,$sn,$email,$active,$doReplace) = @_;
+	
+	if(defined($groupOU) && length($groupOU) > 0) {
+		$groupOU =~ s/^\s+//;
+		$groupOU =~ s/\s+$//;
+	}
 	
 	$groupOU = $self->{'defaultGroupOU'}  unless(defined($groupOU) && length($groupOU) > 0);
 
@@ -109,15 +114,328 @@ sub createUser($$$$$$$$) {
 		'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
 		'uid'	=>	$username,
 		'disabledAccount'	=>	($active ? 'FALSE':'TRUE'),
-		'mail'	=>	$email,
-		'cn'	=>	$cn
+		'cn'	=>	$cn,
+		'mail'	=>	$email
 	);
 
 	my $updMesg = $entry->update($self->{'ldap'});
 	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 		print STDERR $entry->ldif();
 		
-		Carp::carp("Unable to create user $username (does the user already exist?)\n".Dumper($updMesg));
+		Carp::carp("Unable to create user $dn (does the user already exist?)\n".Dumper($updMesg));
+	}
+	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+# Parameters:
+#	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
+#		it uses the one read from the configuration file.
+sub listUsers(;$) {
+	my $self = shift;
+	
+	my($userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	# First, the ou must be found
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $userDN,
+		'filter' => '(objectClass=inetOrgPerson)',
+		'scope' => 'children'
+	);
+	
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding users\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+	
+	return $searchMesg->entries;
+}
+
+# Parameters:
+#	ou: The short, organizational unit name, which will hang on userDN
+#	description: The description of the new organizational unit
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+#	doReplace: (OPTIONAL) If true, the entry is an update
+sub createPeopleOU($$;$$) {
+	my $self = shift;
+	
+	my($ou,$description,$userDN,$doReplace) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	my $entry = Net::LDAP::Entry->new();
+	$entry->changetype('modify')  if($doReplace);
+	my $dn = join(',','ou='.$ou,$userDN);
+	$entry->dn($dn);
+	$entry->add(
+		'ou'	=>	$ou,
+		'description'	=>	$description,
+		'objectClass'	=>	[ 'organizationalUnit' ]
+	);
+	
+	my $updMesg = $entry->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $entry->ldif();
+		
+		Carp::carp("Unable to create organizational unit $dn (does the organizational unit already exist?)\n".Dumper($updMesg));
+	}
+	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+# Parameters:
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+sub listPeopleOU(;$) {
+	my $self = shift;
+	
+	my($userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	# First, the ou must be found
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $userDN,
+		'filter' => '(objectClass=organizationalUnit)',
+		'scope' => 'children'
+	);
+	
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding people OUs\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+	
+	return $searchMesg->entries;
+}
+
+# Parameters:
+#	cn: The short, common name, which will hang on groupDN
+#	description: The description of the new groupOfNames
+#	ownerUID: The uid of the owner and first member of this groupOfNames.
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+#	doReplace: (OPTIONAL) If true, the entry is an update
+sub createGroup($$$;$$) {
+	my $self = shift;
+	
+	my($cn,$description,$ownerUID,$userDN,$groupDN,$doReplace)=@_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	# First, the owner must be found
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $userDN,
+		'filter' => "(&(objectClass=basicRDproperties)(uid=$ownerUID)(disabledAccount=FALSE))",
+		'sizelimit' => 1,
+		'scope' => 'sub'
+	);
+	
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding user\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+	
+	if($searchMesg->count<=0) {
+		Carp::carp("No matching user found");
+		
+		return undef;
+	}
+	
+	# The owner entry
+	my $owner = $searchMesg->entry(0);
+	
+	# Now, the group of names new entry
+	my $entry = Net::LDAP::Entry->new();
+	$entry->changetype('modify')  if($doReplace);
+	my $dn = join(',','cn='.$cn,$groupDN);
+	$entry->dn($dn);
+	$entry->add(
+		'cn'	=>	$cn,
+		'description'	=>	$description,
+		'objectClass'	=>	[ 'groupOfNames' ],
+		'owner'	=>	$owner->dn(),
+		'member'	=>	[ $owner->dn() ]
+	);
+	
+	my $updMesg = $entry->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $entry->ldif();
+		
+		Carp::carp("Unable to create group of names $dn (does the group of names already exist?)\n".Dumper($updMesg));
+		
+		return undef;
+	}
+	
+	# And, at last, add the dn to the memberOf list
+	$owner->changetype('modify');
+	$owner->add('memberOf' => $dn);
+	
+	$updMesg = $owner->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $owner->ldif();
+		
+		Carp::carp("Unable to add memberOf $dn to ".$owner->dn()."\n".Dumper($updMesg));
+		
+		return undef;
+	}
+	
+	return 1;
+}
+
+# Parameters:
+#	groupDN: (OPTIONAL) The DN used as parent of all the groups. If not set,
+#		it uses the one read from the configuration file.
+sub listGroups(;$) {
+	my $self = shift;
+	
+	my($groupDN) = @_;
+	
+	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	# First, the ou must be found
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $groupDN,
+		'filter' => '(objectClass=groupOfNames)',
+		'scope' => 'children'
+	);
+	
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding groups\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+	
+	return $searchMesg->entries;
+}
+
+# Parameters:
+#	userUID: The uid of the owner and first member of this groupOfNames.
+#	groupCN: The cn of the groupOfNames
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+sub addUserToGroup($$;$$) {
+	my $self = shift;
+	
+	my($userUID,$groupCN,$userDN,$groupDN)=@_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	# First, the user must be found
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $userDN,
+		'filter' => "(&(objectClass=basicRDproperties)(uid=$userUID)(disabledAccount=FALSE))",
+		'sizelimit' => 1,
+		'scope' => 'sub'
+	);
+	
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding user $userUID\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+	
+	if($searchMesg->count<=0) {
+		Carp::carp("No matching user found");
+		
+		return undef;
+	}
+	
+	# The user entry
+	my $user = $searchMesg->entry(0);
+	
+	# Second, the group of names must be found
+	$searchMesg = $self->{'ldap'}->search(
+		'base' => $groupDN,
+		'filter' => "(&(objectClass=groupOfNames)(cn=$groupCN))",
+		'sizelimit' => 1,
+		'scope' => 'sub'
+	);
+	
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding group $groupCN\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+	
+	if($searchMesg->count<=0) {
+		Carp::carp("No matching group found");
+		
+		return undef;
+	}
+
+	# The group entry
+	my $group = $searchMesg->entry(0);
+
+	# Now, add the user dn to the group's member list
+	$group->changetype('modify');
+	$group->add('member' => $user->dn());
+	
+	my $updMesg = $group->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $group->ldif();
+		
+		Carp::carp("Unable to add member ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
+		
+		return undef;
+	}
+	
+	# And, at last, add the group dn to the user's memberOf list
+	$user->changetype('modify');
+	$user->add('memberOf' => $group->dn());
+	
+	$updMesg = $user->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $user->ldif();
+		
+		Carp::carp("Unable to add memberOf ".$group->dn()." to ".$user->dn()."\n".Dumper($updMesg));
+		
+		return undef;
+	}
+	
+	return 1;
+}
+
+# Parameters:
+#	keyName: the key name of the alias
+#	keyValue: they key value of the alias
+#	parentDN: the parent DN where the alias is going to live
+#	aliasedObjectName: the DN of the aliased object
+sub createAlias($$$$;$) {
+	my $self = shift;
+	
+	my($keyName,$keyValue,$parentDN,$aliasedObjectName,$doReplace)=@_;
+	
+	my $entry = Net::LDAP::Entry->new();
+	$entry->changetype('modify')  if($doReplace);
+	my $dn = join(',',$keyName.'='.$keyValue,$parentDN);
+	$entry->dn($dn);
+	$entry->add(
+		'objectClass'	=>	[ 'alias', 'extensibleObject' ],
+		$keyName	=>	$keyValue,
+		'aliasedObjectName'	=>	$aliasedObjectName
+	);
+	
+	my $updMesg = $entry->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $entry->ldif();
+		
+		Carp::carp("Unable to create alias $dn pointing to $aliasedObjectName (does it exist?)\n".Dumper($updMesg));
 	}
 	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
 }
