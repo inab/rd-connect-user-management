@@ -12,7 +12,7 @@ This document explains the LDAP layout used by RD-Connect.
 
 2. *people* organizational unit contains the user entries as descendants. The children of *people* are organization units, so users are better classified. The user creation program puts the user entry on one of the organizational units hanging from *people*.
 
-  ![ldap_user_attributes](LDAP_user_attributes.png "LDAP user attributes")
+  ![ldap_user_attributes](LDAP_user_layout.png "LDAP user attributes")
   
   Each user entry at least belongs to `inetOrgPerson` and `basicRDproperties` object classes. Currently, the attributes in use are:
   
@@ -29,7 +29,7 @@ This document explains the LDAP layout used by RD-Connect.
   
 3. *groups* organizational unit contains the different group definitions as children. These group entries at least belong to `groupOfNames` object class, and they have at least next attributes:
 
-  ![ldap_group_attributes](LDAP_group_attributes.png "LDAP group attributes")
+  ![ldap_group_attributes](LDAP_group_layout.png "LDAP group attributes")
   
   * **cn**: A short name of the group.
   * **description**: A description of the group.
