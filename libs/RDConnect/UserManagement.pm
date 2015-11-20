@@ -414,7 +414,7 @@ sub addUserToGroup($$;$$) {
 	$user->changetype('modify');
 	$user->add('memberOf' => \@newGroupDNs);
 	
-	$updMesg = $user->update($self->{'ldap'});
+	my $updMesg = $user->update($self->{'ldap'});
 	
 	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 		print STDERR $user->ldif();
