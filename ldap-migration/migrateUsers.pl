@@ -27,9 +27,14 @@ if(scalar(@ARGV)==2) {
 	my %userPeople = ();
 	if(open(my $UP,'<:encoding(UTF-8)',$userPeopleOUFile)) {
 		while(my $line=<$UP>) {
+			next  if(substr($line,0,1) eq '#');
+			
 			chomp($line);
 			
-			my($userUID,$peopleOU,$junk) = split(/\t/,$line,3);
+			my($userUID,$listOU,$junk) = split(/\t/,$line,3);
+			
+			# Only using the OU
+			my($peopleOU,$groups) = split(/,/,$listOU);
 			
 			$userPeople{$userUID} = $peopleOU;
 		}
