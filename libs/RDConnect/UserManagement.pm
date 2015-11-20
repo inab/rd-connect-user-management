@@ -215,7 +215,7 @@ sub listPeopleOU(;$) {
 # Parameters:
 #	cn: The short, common name, which will hang on groupDN
 #	description: The description of the new groupOfNames
-#	ownerUID: The uid of the owner and first member of this groupOfNames.
+#	p_ownerUIDs: The uid(s) of the owner and first member of this groupOfNames.
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
 #		it uses the one read from the configuration file.
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
@@ -224,33 +224,42 @@ sub listPeopleOU(;$) {
 sub createGroup($$$;$$) {
 	my $self = shift;
 	
-	my($cn,$description,$ownerUID,$userDN,$groupDN,$doReplace)=@_;
+	my($cn,$description,$p_ownerUIDs,$userDN,$groupDN,$doReplace)=@_;
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
 	
-	# First, the owner must be found
-	my $searchMesg = $self->{'ldap'}->search(
-		'base' => $userDN,
-		'filter' => "(&(objectClass=basicRDproperties)(uid=$ownerUID)(disabledAccount=FALSE))",
-		'sizelimit' => 1,
-		'scope' => 'sub'
-	);
+	$p_ownerUIDs = [ $p_ownerUIDs ]  unless(ref($p_ownerUIDs) eq 'ARRAY');
 	
-	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-		Carp::carp("Error while finding user\n".Dumper($searchMesg));
+	my @owners = ();
+	my @ownersDN = ();
+	
+	foreach my $ownerUID (@{$p_ownerUIDs}) {
+		# First, each owner must be found
+		my $searchMesg = $self->{'ldap'}->search(
+			'base' => $userDN,
+			'filter' => "(&(objectClass=basicRDproperties)(uid=$ownerUID)(disabledAccount=FALSE))",
+			'sizelimit' => 1,
+			'scope' => 'sub'
+		);
 		
-		return undef;
-	}
-	
-	if($searchMesg->count<=0) {
-		Carp::carp("No matching user found");
+		unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+			Carp::carp("Error while finding user\n".Dumper($searchMesg));
+			
+			return undef;
+		}
 		
-		return undef;
+		if($searchMesg->count<=0) {
+			Carp::carp("No matching user found for $ownerUID");
+			
+			return undef;
+		}
+		
+		# The owner entry
+		my $owner = $searchMesg->entry(0);
+		push(@owners,$owner);
+		push(@ownersDN,$owner->dn());
 	}
-	
-	# The owner entry
-	my $owner = $searchMesg->entry(0);
 	
 	# Now, the group of names new entry
 	my $entry = Net::LDAP::Entry->new();
@@ -261,8 +270,8 @@ sub createGroup($$$;$$) {
 		'cn'	=>	$cn,
 		'description'	=>	$description,
 		'objectClass'	=>	[ 'groupOfNames' ],
-		'owner'	=>	$owner->dn(),
-		'member'	=>	[ $owner->dn() ]
+		'owner'	=>	\@ownersDN,
+		'member'	=>	\@ownersDN
 	);
 	
 	my $updMesg = $entry->update($self->{'ldap'});
@@ -275,18 +284,20 @@ sub createGroup($$$;$$) {
 		return undef;
 	}
 	
-	# And, at last, add the dn to the memberOf list
-	$owner->changetype('modify');
-	$owner->add('memberOf' => $dn);
-	
-	$updMesg = $owner->update($self->{'ldap'});
-	
-	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-		print STDERR $owner->ldif();
+	foreach my $owner (@owners) {
+		# And, at last, add the dn to the memberOf list
+		$owner->changetype('modify');
+		$owner->add('memberOf' => $dn);
 		
-		Carp::carp("Unable to add memberOf $dn to ".$owner->dn()."\n".Dumper($updMesg));
+		$updMesg = $owner->update($self->{'ldap'});
 		
-		return undef;
+		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			print STDERR $owner->ldif();
+			
+			Carp::carp("Unable to add memberOf $dn to ".$owner->dn()."\n".Dumper($updMesg));
+			
+			return undef;
+		}
 	}
 	
 	return 1;
@@ -319,8 +330,8 @@ sub listGroups(;$) {
 }
 
 # Parameters:
-#	userUID: The uid of the owner and first member of this groupOfNames.
-#	groupCN: The cn of the groupOfNames
+#	userUID: The uid of the user to be added to the groupOfNames.
+#	p_groupCN: The cn(s) of the groupOfNames where the user must be added
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
 #		it uses the one read from the configuration file.
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
@@ -328,10 +339,12 @@ sub listGroups(;$) {
 sub addUserToGroup($$;$$) {
 	my $self = shift;
 	
-	my($userUID,$groupCN,$userDN,$groupDN)=@_;
+	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	$p_groupCN = [ $p_groupCN ]  unless(ref($p_groupCN) eq 'ARRAY');
 	
 	# First, the user must be found
 	my $searchMesg = $self->{'ldap'}->search(
@@ -356,53 +369,57 @@ sub addUserToGroup($$;$$) {
 	# The user entry
 	my $user = $searchMesg->entry(0);
 	
-	# Second, the group of names must be found
-	$searchMesg = $self->{'ldap'}->search(
-		'base' => $groupDN,
-		'filter' => "(&(objectClass=groupOfNames)(cn=$groupCN))",
-		'sizelimit' => 1,
-		'scope' => 'sub'
-	);
-	
-	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-		Carp::carp("Error while finding group $groupCN\n".Dumper($searchMesg));
+	my @newGroupDNs = ();
+	foreach my $groupCN (@{$p_groupCN}) {
+		# Second, each group of names must be found
+		$searchMesg = $self->{'ldap'}->search(
+			'base' => $groupDN,
+			'filter' => "(&(objectClass=groupOfNames)(cn=$groupCN))",
+			'sizelimit' => 1,
+			'scope' => 'sub'
+		);
 		
-		return undef;
-	}
-	
-	if($searchMesg->count<=0) {
-		Carp::carp("No matching group found");
+		unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+			Carp::carp("Error while finding group $groupCN\n".Dumper($searchMesg));
+			
+			return undef;
+		}
 		
-		return undef;
-	}
+		if($searchMesg->count<=0) {
+			Carp::carp("No matching group found");
+			
+			return undef;
+		}
 
-	# The group entry
-	my $group = $searchMesg->entry(0);
+		# The group entry
+		my $group = $searchMesg->entry(0);
 
-	# Now, add the user dn to the group's member list
-	$group->changetype('modify');
-	$group->add('member' => $user->dn());
-	
-	my $updMesg = $group->update($self->{'ldap'});
-	
-	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-		print STDERR $group->ldif();
+		# Now, add the user dn to the group's member list
+		$group->changetype('modify');
+		$group->add('member' => $user->dn());
 		
-		Carp::carp("Unable to add member ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
+		my $updMesg = $group->update($self->{'ldap'});
 		
-		return undef;
+		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			print STDERR $group->ldif();
+			
+			Carp::carp("Unable to add member ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
+			
+			return undef;
+		}
+		push(@newGroupDNs,$group->dn());
 	}
 	
 	# And, at last, add the group dn to the user's memberOf list
 	$user->changetype('modify');
-	$user->add('memberOf' => $group->dn());
+	$user->add('memberOf' => \@newGroupDNs);
 	
 	$updMesg = $user->update($self->{'ldap'});
 	
 	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 		print STDERR $user->ldif();
 		
-		Carp::carp("Unable to add memberOf ".$group->dn()." to ".$user->dn()."\n".Dumper($updMesg));
+		Carp::carp("Unable to add memberOf ".join(',',@newGroupDNs)." to ".$user->dn()."\n".Dumper($updMesg));
 		
 		return undef;
 	}

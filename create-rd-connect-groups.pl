@@ -35,10 +35,11 @@ if(scalar(@ARGV)==2) {
 			next  if(substr($line,0,1) eq '#');
 			
 			chomp($line);
-			my($shortname,$description,$ownerUID,$junk) = split(/\t/,$line,4);
+			my($shortname,$description,$ownerUIDList,$junk) = split(/\t/,$line,4);
 			
-			if(defined($ownerUID) && length($ownerUID) > 0) {
-				Carp::croak("Unable to create group $shortname")  unless($uMgmt->createGroup($shortname,$description,$ownerUID,undef,undef,$doReplace));
+			if(defined($ownerUIDList) && length($ownerUIDList) > 0) {
+				my @ownerUIDs = split(/,/,$ownerUIDList);
+				Carp::croak("Unable to create group $shortname")  unless($uMgmt->createGroup($shortname,$description,\@ownerUIDs,undef,undef,$doReplace));
 			} else {
 				Carp::croak("Unable to create organizational unit $shortname")  unless($uMgmt->createPeopleOU($shortname,$description,undef,$doReplace));
 			}

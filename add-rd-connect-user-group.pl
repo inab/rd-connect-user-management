@@ -29,9 +29,18 @@ if(scalar(@ARGV)==2) {
 			next  if(substr($line,0,1) eq '#');
 			
 			chomp($line);
-			my($userUID,$groupCN,$junk) = split(/\t/,$line,3);
+			my($userUID,$groupCN,$altUserUID,$altGroupCN,$junk) = split(/\t/,$line,3);
 			
-			Carp::croak("Unable to associate user $userUID to group $groupCN")  unless($uMgmt->addUserToGroup($userUID,$groupCN));
+			if(defined($altGroupCN) && length($altGroupCN) > 0) {
+				$userUID = $altUserUID;
+				
+				my $firstComma = index($altGroupCN,',');
+				$groupCN = ($firstComma == -1) ? $altGroupCN : substr($altGroupCN,$firstComma+1);
+			}
+			
+			my @groupCNs = split(/,/,$groupCN);
+			
+			Carp::croak("Unable to associate user $userUID to group(s) $groupCN")  unless($uMgmt->addUserToGroup($userUID,\@groupCNs));
 		}
 		
 		close($UG);
