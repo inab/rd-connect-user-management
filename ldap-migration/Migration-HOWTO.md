@@ -24,7 +24,7 @@ CREATE TABLE users (
 
 * The template and files to be sent to the new users (`EmailforNeuromicsbetatesters.html`).
 
-## Creation of new OUs using [create-rd-connect-groups.pl](create-rd-connect-groups.pl)
+## Creation of new OUs using [create-rd-connect-groups.pl](../create-rd-connect-groups.pl)
 
 ```bash
 perl create-rd-connect-groups.pl -S migration-profile.ini new-OUs-and-groups.txt
@@ -38,22 +38,22 @@ The migration program from SQLite to LDAP depends on DBD::SQLite. It takes as in
 perl ldap-migration/migrateUsers.pl migration-profile.ini existing-users.txt
 ```
 
-## Creation of new users
+## Creation of new users using [create-rd-connect-users.pl](../create-rd-connect-users.pl)
 
 ```bash
 perl create-rd-connect-users.pl migration-profile.ini new-users.txt EmailforNeuromicsbetatesters.html
 ```
 
-## Creation of groups
+## Creation of groups using [create-rd-connect-groups.pl](../create-rd-connect-groups.pl)
 
 ```bash
 perl create-rd-connect-groups.pl -s migration-profile.ini new-OUs-and-groups.txt
 ```
 
-## Association of users to groups
+## Association of users to groups using [add-rd-connect-user-group.pl](../add-rd-connect-user-group.pl)
 
 ```bash
-perl add-rd-connect-user-group.pl -s migration-profile.ini existing-users.txt new-users.txt
+perl add-rd-connect-user-group.pl migration-profile.ini existing-users.txt new-users.txt
 ```
 
 ## Migration has finished at this point!
