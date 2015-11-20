@@ -29,7 +29,7 @@ if(scalar(@ARGV)==2) {
 			next  if(substr($line,0,1) eq '#');
 			
 			chomp($line);
-			my($userUID,$groupCN,$altUserUID,$altGroupCN,$junk) = split(/\t/,$line,3);
+			my($userUID,$groupCN,$altUserUID,$altGroupCN,$junk) = split(/\t/,$line,5);
 			
 			if(defined($altGroupCN) && length($altGroupCN) > 0) {
 				$userUID = $altUserUID;
