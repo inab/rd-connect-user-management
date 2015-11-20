@@ -19,7 +19,7 @@ These programs use a configuration profile, which must be based on the provided 
 
 ## RD-Connect user creation and password emailer [create-rd-connect-users.pl](create-rd-connect-users.pl)
 
-This program takes as input a configuration profile, a UTF-8 encoded tabular file whose columns have the meaning described in [README-user-management.md], the file with the message template (either in HTML or in plain text) to be sent to the users once their accounts are created, and optionally 0 or more attachments.
+This program takes as input a configuration profile, a UTF-8 encoded tabular file whose columns have the meaning described in [README-user-management.md](README-user-management.md), the file with the message template (either in HTML or in plain text) to be sent to the users once their accounts are created, and optionally 0 or more attachments.
 
 This program also depends on:
 
@@ -31,7 +31,7 @@ The program takes as input a configuration profile and a UTF-8 encoded tabular f
 
 This program has two roles:
 
-1. **Organizational unit creation.** Users are searched under `ou=people,dc=rd-connect,dc=eu`, and in order to ease their organization in the LDAP directory, the previous script puts each user under the organizational unit defined in its input tabular file. This script allows creating such organizational units.
+1. **Organizational unit creation.** Users are searched under `ou=people,dc=rd-connect,dc=eu`(or what was setup in the configuration profile), and in order to ease their organization in the LDAP directory, the previous script puts each user under the organizational unit defined in its input tabular file. This script allows creating such organizational units.
 
 2. **Groups with an owner.** Each user can belong to one or more groups, and each group has an owner. This script allows creating such groups, which can have additional meanings.
 
@@ -55,7 +55,8 @@ The migration program from SQLite to LDAP takes as input a configuration profile
 
 The migration program also depends on:
 
-* DBI and the database modules needed (DBD::SQLite)
+* Having declared the full path to the SQLite database with the users in the configuration file (configuration parameter `dbistr` under `main` section).
+* DBI and the database modules needed (DBD::SQLite).
 * It also expects next table in the database to be migrated to LDAP:
 
 ```sql
