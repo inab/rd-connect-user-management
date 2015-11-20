@@ -14,7 +14,7 @@ create-rd-connect-users.pl accepts as input a tabular file whose columns have ne
 
 3. Suggested username (OPTIONAL). If this field is empty, a username based on full name will be derived.
 
-4. Organizational unit short name (OPTIONAL), where the LDAP entry is going to hang. If it does not exist, the organizational unit will be created. If this field is empty, the default organizational unit will be used.
+4. Organizational unit short name (OPTIONAL), where the LDAP entry is going to hang. If it does not exist, the organizational unit will be created. If this field is empty, the default organizational unit will be used. The contents of this field are split by comma, using only the first element
 
 5. Given name (OPTIONAL). If this field is empty, it will be derived from the full name
 

@@ -73,7 +73,8 @@ EOF
 			next  if(substr($line,0,1) eq '#');
 			
 			chomp($line);
-			my($email,$fullname,$username,$ou,$givenName,$sn,$junk) = split(/\t/,$line,7);
+			my($email,$fullname,$username,$ouGroups,$givenName,$sn,$junk) = split(/\t/,$line,7);
+			my($ou,$groups) = split(/,/,$ouGroups,2);
 			my @addresses = Email::Address->parse($email);
 			
 			if(scalar(@addresses)==0) {
