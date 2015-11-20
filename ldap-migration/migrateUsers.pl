@@ -31,7 +31,12 @@ if(scalar(@ARGV)==2) {
 			
 			chomp($line);
 			
-			my($userUID,$listOU,$junk) = split(/\t/,$line,3);
+			my($userUID,$listOU,$altUserUID,$altListOU,$junk) = split(/\t/,$line,5);
+			
+			if(defined($altListOU) && length($altListOU) > 0) {
+				$userUID = $altUserUID;
+				$listOU = $altListOU;
+			}
 			
 			# Only using the OU
 			my($peopleOU,$groups) = split(/,/,$listOU);

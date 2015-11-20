@@ -45,13 +45,13 @@ This program allows assigning each user to one or more groups. Both the users an
 
 There are several scripts which takes as its single parameter a configuration profile, and list contents of RD-Connect LDAP directory:
 
-* [list-rd-connect-users.pl]: It lists the users of the platform.
-* [list-people-organizationUnits.pl]: It lists the organizational units of the platform.
-* [list-rd-connect-groups.pl]: It lists the groups declared on the platform.
+* [list-rd-connect-users.pl](list-rd-connect-users.pl): It lists the users of the platform.
+* [list-people-organizationUnits.pl](list-people-organizationUnits.pl): It lists the organizational units of the platform.
+* [list-rd-connect-groups.pl](list-rd-connect-groups.pl): It lists the groups declared on the platform.
 
 ## LDAP migration script [migrateUsers.pl](ldap-migration/migrateUsers.pl)
 
-The migration program from SQLite to LDAP takes as input a configuration profile, and a UTF-8 encoded tabular file with the correspondence between the usernames and the organizational units where each user is going to be migrated.
+The migration program from SQLite to LDAP takes as input a configuration profile, and a UTF-8 encoded tabular file following the formats understood by [create-rd-connect-users.pl](create-rd-connect-users.pl) or [add-rd-connect-user-group.pl](add-rd-connect-user-group.pl), with the correspondence between the usernames and the organizational units where each user is going to be migrated.
 
 The migration program also depends on:
 
