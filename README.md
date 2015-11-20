@@ -5,7 +5,7 @@ RD-Connect Perl scripts to batch create users, groups and their associations.
 These programs use next Perl modules:
 
 * Config::IniFiles
-* Net::LDAP , also known as perl-ldap
+* Net::LDAP , also known as [perl-ldap](http://ldap.perl.org/)
 * Digest::SHA1 (or the corresponding module to encode passwords)
 * Email::Address
 * Email::MIME
@@ -27,7 +27,7 @@ This program also depends on:
 
 ## RD-Connect group and organizational units creation [create-rd-connect-groups.pl](create-rd-connect-groups.pl)
 
-The program takes as input a configuration profile and a UTF-8 encoded tabular file whose columns have the meaning described in [README-user-management.md].
+The program takes as input a configuration profile and a UTF-8 encoded tabular file whose columns have the meaning described in [README-user-management.md](README-user-management.md).
 
 This program has two roles:
 
@@ -37,7 +37,7 @@ This program has two roles:
 
 ## Script to associate users to groups [add-rd-connect-user-group.pl](add-rd-connect-user-group.pl)
 
-The program takes as input a configuration profile and a UTF-8 encoded tabular file whose columns have the meaning described in [README-user-management.md].
+The program takes as input a configuration profile and a UTF-8 encoded tabular file whose columns have the meaning described in [README-user-management.md](README-user-management.md).
 
 This program allows assigning each user to one or more groups. Both the users and the groups must exist.
 
