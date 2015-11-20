@@ -31,6 +31,9 @@ if(scalar(@ARGV)==2) {
 	# Read the groups
 	if(open(my $G,'<:encoding(UTF-8)',$groupsFile)) {
 		while(my $line=<$G>) {
+			# Skipping comments
+			next  if(substr($line,0,1) eq '#');
+			
 			chomp($line);
 			my($shortname,$description,$ownerUID,$junk) = split(/\t/,$line,4);
 			

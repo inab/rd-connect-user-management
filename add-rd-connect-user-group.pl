@@ -25,6 +25,9 @@ if(scalar(@ARGV)==2) {
 	# Read the user <-> groups
 	if(open(my $UG,'<:encoding(UTF-8)',$userGroupsFile)) {
 		while(my $line=<$UG>) {
+			# Skipping comments
+			next  if(substr($line,0,1) eq '#');
+			
 			chomp($line);
 			my($userUID,$groupCN,$junk) = split(/\t/,$line,3);
 			

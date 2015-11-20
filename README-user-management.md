@@ -1,5 +1,10 @@
-User creation file format
+User management file formats
 ========
+All the tools which take as input a tabular file skip those lines which start with are comments, i.e. those starting with `#`.
+
+
+User creation file format
+--------
 
 create-rd-connect-users.pl accepts as input a tabular file whose columns have next meaning:
 
@@ -16,7 +21,7 @@ create-rd-connect-users.pl accepts as input a tabular file whose columns have ne
 6. Surname (OPTIONAL). If this field is empty, it will be derived from the full name
 
 Group and organizational unit creation file format
-========
+--------
 
 create-rd-connect-groups.pl accepts as input a tabular file whose columns have next meaning:
 
@@ -25,7 +30,7 @@ create-rd-connect-groups.pl accepts as input a tabular file whose columns have n
 3. Owner (OPTIONAL). If this field is set, the username / uid of the owner of the group. If it is unset, a organizational unit is created instead of a group.
 
 User to group association
-========
+--------
 
 add-rd-connect-user-groups.pl
 

@@ -69,6 +69,9 @@ EOF
 	# Read the users
 	if(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
 		while(my $line=<$U>) {
+			# Skipping comments
+			next  if(substr($line,0,1) eq '#');
+			
 			chomp($line);
 			my($email,$fullname,$username,$ou,$givenName,$sn,$junk) = split(/\t/,$line,7);
 			my @addresses = Email::Address->parse($email);
