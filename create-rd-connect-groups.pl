@@ -18,6 +18,18 @@ if(scalar(@ARGV)>0 && $ARGV[0] eq '-r') {
 	$doReplace = 1;
 }
 
+my $skipOU;
+if(scalar(@ARGV)>0 && $ARGV[0] eq '-s') {
+	shift(@ARGV);
+	$skipOU = 1;
+}
+
+my $skipGroupOfNames;
+if(scalar(@ARGV)>0 && $ARGV[0] eq '-S') {
+	shift(@ARGV);
+	$skipGroupOfNames = 1;
+}
+
 if(scalar(@ARGV)==2) {
 	my $configFile = shift(@ARGV);
 	my $groupsFile = shift(@ARGV);
@@ -35,13 +47,19 @@ if(scalar(@ARGV)==2) {
 			next  if(substr($line,0,1) eq '#');
 			
 			chomp($line);
-			my($shortname,$description,$ownerUIDList,$junk) = split(/\t/,$line,4);
+			my($shortname,$description,$ownerUIDList,$alsoOU,$junk) = split(/\t/,$line,5);
 			
-			if(defined($ownerUIDList) && length($ownerUIDList) > 0) {
-				my @ownerUIDs = split(/,/,$ownerUIDList);
-				Carp::croak("Unable to create group $shortname")  unless($uMgmt->createGroup($shortname,$description,\@ownerUIDs,undef,undef,$doReplace));
-			} else {
-				Carp::croak("Unable to create organizational unit $shortname")  unless($uMgmt->createPeopleOU($shortname,$description,undef,$doReplace));
+			unless($skipOU) {
+				if(!defined($ownerUIDList) || length($ownerUIDList) == 0 || (defined($alsoOU) && length($alsoOU) > 0 && $alsoOU)) {
+					Carp::croak("Unable to create organizational unit $shortname")  unless($uMgmt->createPeopleOU($shortname,$description,undef,$doReplace));
+				}
+			}
+			
+			unless($skipGroupOfNames) {
+				if(defined($ownerUIDList) && length($ownerUIDList) > 0) {
+					my @ownerUIDs = split(/,/,$ownerUIDList);
+					Carp::croak("Unable to create group $shortname")  unless($uMgmt->createGroup($shortname,$description,\@ownerUIDs,undef,undef,$doReplace));
+				}
 			}
 		}
 		
@@ -50,5 +68,5 @@ if(scalar(@ARGV)==2) {
 		Carp::croak("Unable to read file $groupsFile");
 	}
 } else {
-	die "Usage: $0 [-r] {IniFile} {Tabular file with new groups or organizational units (in UTF-8)}";
+	die "Usage: $0 [-r] [-s] [-S] {IniFile} {Tabular file with new groups or organizational units (in UTF-8)}";
 }

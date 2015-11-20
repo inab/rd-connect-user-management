@@ -35,6 +35,8 @@ This program has two roles:
 
 2. **Groups with an owner.** Each user can belong to one or more groups, and each group has an owner. This script allows creating such groups, which can have additional meanings.
 
+The program is able to do both roles at once. Flag `-s` tells the program to skip organizational unit creation, meanwhile flag `-S` tells the program to skip groups creation.
+
 ## Script to associate users to groups [add-rd-connect-user-group.pl](add-rd-connect-user-group.pl)
 
 The program takes as input a configuration profile and a UTF-8 encoded tabular file whose columns have the meaning described in [README-user-management.md](README-user-management.md).
@@ -48,27 +50,6 @@ There are several scripts which takes as its single parameter a configuration pr
 * [list-rd-connect-users.pl](list-rd-connect-users.pl): It lists the users of the platform.
 * [list-people-organizationUnits.pl](list-people-organizationUnits.pl): It lists the organizational units of the platform.
 * [list-rd-connect-groups.pl](list-rd-connect-groups.pl): It lists the groups declared on the platform.
-
-## LDAP migration script [migrateUsers.pl](ldap-migration/migrateUsers.pl)
-
-The migration program from SQLite to LDAP takes as input a configuration profile, and a UTF-8 encoded tabular file following the formats understood by [create-rd-connect-users.pl](create-rd-connect-users.pl) or [add-rd-connect-user-group.pl](add-rd-connect-user-group.pl), with the correspondence between the usernames and the organizational units where each user is going to be migrated.
-
-The migration program also depends on:
-
-* Having declared the full path to the SQLite database with the users in the configuration file (configuration parameter `dbistr` under `main` section).
-* DBI and the database modules needed (DBD::SQLite).
-* It also expects next table in the database to be migrated to LDAP:
-
-```sql
-CREATE TABLE users (
-    username varchar(50) not null,
-    password varchar(50) not null,
-    fullname varchar(4096) not null,
-    email varchar(64) not null,
-    active boolean not null,
-    primary key(username)
-);
-```
 
 # Future developments
 Currently, the e-mails being sent are not neither signed nor encrypted, which is not satisfactory.

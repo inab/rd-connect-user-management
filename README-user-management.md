@@ -28,6 +28,7 @@ Group and organizational unit creation file format (for [create-rd-connect-group
 1. Short group name (REQUIRED). If it is a group, the cn (common name) of the group. If it is an organizational unit, the ou
 2. Description (REQUIRED). The description of the group or the organizational unit.
 3. Owner(s) (OPTIONAL). If this field is set, the username(s) / uid(s) of the owner(s) of the group (separated by commas). If it is unset, a organizational unit is created instead of a group.
+4. Create also OU? (OPTIONAL). If this field is set, and previous field was also set, the script first creates both a groupOfNames and a OU.
 
 User to group association (for [add-rd-connect-user-group.pl](add-rd-connect-user-group.pl))
 --------
