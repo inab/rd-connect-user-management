@@ -23,6 +23,12 @@ if(scalar(@ARGV)>0 && $ARGV[0] eq '-r') {
 	$doReplace = 1;
 }
 
+my $noEmail;
+if(scalar(@ARGV)>0 && $ARGV[0] eq '-n') {
+	shift(@ARGV);
+	$noEmail = 1;
+}
+
 if(scalar(@ARGV)>=3) {
 	my $configFile = shift(@ARGV);
 	my $usersFile = shift(@ARGV);
@@ -48,11 +54,18 @@ if(scalar(@ARGV)>=3) {
 	my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
 	my %keyval2 = ( 'password' => '(undefined)' );
 	
-	# Mail configuration parameters
-	my $mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
-	$mail1->setSubject($mail1->getSubject().' (I)');
+	my $mail1;
+	my $mail2;
+	my $NOEMAIL;
 	
-	my $passMailTemplate = <<'EOF' ;
+	if($noEmail) {
+		open($NOEMAIL,'>:encoding(UTF-8)',$mailTemplate) || Carp::croak("Unable to create file $mailTemplate");;
+	} else {
+		# Mail configuration parameters
+		$mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
+		$mail1->setSubject($mail1->getSubject().' (I)');
+		
+		my $passMailTemplate = <<'EOF' ;
 The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
 
 You should change this password by a different one as soon as possible.
@@ -60,8 +73,9 @@ You should change this password by a different one as soon as possible.
 Kind Regards,
 	RD-Connect team
 EOF
-	my $mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
-	$mail2->setSubject($mail2->getSubject().' (II)');
+		$mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
+		$mail2->setSubject($mail2->getSubject().' (II)');
+	}
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
@@ -129,22 +143,26 @@ EOF
 					$digest->add($pass);
 					my $digestedPass = '{SHA}'.$digest->b64digest;
 					if($uMgmt->createUser($username,$digestedPass,$ou,$fullname,$givenName,$sn,$email,1,$doReplace)) {
-						$keyval1{'username'} = $username;
-						$keyval1{'fullname'} = $fullname;
-						eval {
-							$mail1->sendMessage($to,\%keyval1);
-							
-							$keyval2{'password'} = $pass;
+						if($NOEMAIL) {
+							print $NOEMAIL "$username\t$pass\n";
+						} else {
+							$keyval1{'username'} = $username;
+							$keyval1{'fullname'} = $fullname;
 							eval {
-								$mail2->sendMessage($to,\%keyval2);
+								$mail1->sendMessage($to,\%keyval1);
+								
+								$keyval2{'password'} = $pass;
+								eval {
+									$mail2->sendMessage($to,\%keyval2);
+								};
+								if($@) {
+									Carp::croak("Error while sending password e-mail: ",$@);
+								}
 							};
+							
 							if($@) {
-								Carp::croak("Error while sending password e-mail: ",$@);
+								Carp::croak("Error while sending e-mail: ",$@);
 							}
-						};
-						
-						if($@) {
-							Carp::croak("Error while sending e-mail: ",$@);
 						}
 					} else {
 						# Reverting state
@@ -159,7 +177,11 @@ EOF
 	} else {
 		Carp::croak("Unable to read file $usersFile");
 	}
+	close($NOEMAIL)  if($NOEMAIL);
 	
 } else {
-	die "Usage: $0 [-r] {IniFile} {Tabular file with new users (in UTF-8)} {Message Template} {Attachments}*"
+	die <<EOF ;
+Usage:	$0 [-r] {IniFile} {Tabular file with new users (in UTF-8)} {Message Template} {Attachments}*
+	$0 [-r] -n {IniFile} {Tabular file with new users (in UTF-8)} {New users output file}
+EOF
 }
