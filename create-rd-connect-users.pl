@@ -6,6 +6,7 @@ use strict;
 use Carp;
 use Config::IniFiles;
 use Digest;
+use MIME::Base64;
 use Email::Address;
 use Text::Unidecode qw();
 
@@ -141,7 +142,7 @@ EOF
 					# Setting the digester to a known state
 					$digest->reset();
 					$digest->add($pass);
-					my $digestedPass = '{SHA}'.$digest->b64digest;
+					my $digestedPass = '{SHA}'.encode_base64($digest->digest);
 					if($uMgmt->createUser($username,$digestedPass,$ou,$fullname,$givenName,$sn,$email,1,$doReplace)) {
 						if($NOEMAIL) {
 							print $NOEMAIL "$username\t$pass\n";
