@@ -30,12 +30,18 @@ CREATE TABLE users (
 perl create-rd-connect-groups.pl -S migration-profile.ini new-OUs-and-groups.txt
 ```
 
-## User migration using [migrateUsers.pl](migrateUsers.pl)
+## User migration using [migrateUsers.pl](migrateUsers.pl) or [migrateSomeUsers.pl](migrateSomeUsers.pl)
 
 The migration program from SQLite to LDAP depends on DBD::SQLite. It takes as input the configuration profile (to be used along the full procedure), and a UTF-8 encoded tabular file following the formats understood by [create-rd-connect-users.pl](create-rd-connect-users.pl) or [add-rd-connect-user-group.pl](add-rd-connect-user-group.pl), with the correspondence between the usernames and the organizational units where each user is going to be migrated.
 
 ```bash
 perl ldap-migration/migrateUsers.pl migration-profile.ini existing-users.txt
+```
+
+If you want to migrate only the users listed in `existing-users.txt`, then use the alternate script:
+
+```bash
+perl ldap-migration/migrateSomeUsers.pl migration-profile.ini existing-users.txt
 ```
 
 ## Creation of new users using [create-rd-connect-users.pl](../create-rd-connect-users.pl)
