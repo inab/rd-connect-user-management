@@ -128,6 +128,70 @@ sub createUser($$$$$$$;$) {
 }
 
 # Parameters:
+#	username: the RD-Connect username or user e-mail
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+sub getUser($;$) {
+	my $self = shift;
+	
+	my($username,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	# First, each owner must be found
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $userDN,
+		'filter' => "(&(objectClass=basicRDproperties)(|(uid=$username)(mail=$username)))",
+		'sizelimit' => 1,
+		'scope' => 'sub'
+	);
+
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding user $username\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+
+	if($searchMesg->count<=0) {
+		Carp::carp("No matching user found for $username");
+		
+		return undef;
+	}
+	
+	return $searchMesg->entry(0);
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	hashedPasswd64: the password, already hashed and represented in the right way
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+sub resetUserPassword($$;$) {
+	my $self = shift;
+	
+	my($username,$hashedPasswd64,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my $user = $self->getUser($username,$userDN);
+	my $dn = $user->dn();
+	$user->changetype('modify');
+	$user->replace(
+		'userPassword'	=>	$hashedPasswd64,
+		'disabledAccount'	=>	'FALSE',
+	);
+
+	my $updMesg = $user->update($self->{'ldap'});
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $user->ldif();
+		
+		Carp::carp("Unable to reset user password for $dn\n".Dumper($updMesg));
+	}
+	return ($updMesg->code() == Net::LDAP::LDAP_SUCCESS) ? $user : undef;
+}
+
+# Parameters:
 #	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
 #		it uses the one read from the configuration file.
 sub listUsers(;$) {
@@ -234,29 +298,10 @@ sub createGroup($$$;$$) {
 	my @owners = ();
 	my @ownersDN = ();
 	
+	# First, each owner must be found
 	foreach my $ownerUID (@{$p_ownerUIDs}) {
-		# First, each owner must be found
-		my $searchMesg = $self->{'ldap'}->search(
-			'base' => $userDN,
-			'filter' => "(&(objectClass=basicRDproperties)(uid=$ownerUID)(disabledAccount=FALSE))",
-			'sizelimit' => 1,
-			'scope' => 'sub'
-		);
-		
-		unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-			Carp::carp("Error while finding user\n".Dumper($searchMesg));
-			
-			return undef;
-		}
-		
-		if($searchMesg->count<=0) {
-			Carp::carp("No matching user found for $ownerUID");
-			
-			return undef;
-		}
-		
 		# The owner entry
-		my $owner = $searchMesg->entry(0);
+		my $owner = $self->getUser($ownerUID,$userDN);
 		push(@owners,$owner);
 		push(@ownersDN,$owner->dn());
 	}
