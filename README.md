@@ -43,6 +43,20 @@ The program takes as input a configuration profile and a UTF-8 encoded tabular f
 
 This program allows assigning each user to one or more groups. Both the users and the groups must exist.
 
+## Script to reset passwords [reset-rd-connect-user-password.pl](reset-rd-connect-user-password.pl)
+
+The program takes as input a configuration profile and one or more usernames. Those usernames are matched against `uid` and `mail` attributes in order to find the right user. Then a new password is generated for each user, the user is re-enabled, and an e-mail is sent to the registered e-mail address of the user. The program stops on the first wrong username or when it finishes.
+
+## Script to send an e-mail to one, many or all the enabled RD-Connect users [send-email-rd-connect-users.pl](send-email-rd-connect-users.pl)
+
+This program takes as input a configuration profile, an optional UTF-8 file, the file with the message template (either in HTML or in plain text) to be sent to the users, and optionally 0 or more attachments.
+
+The input file must contain on each line the `uid` or the `mail` of existing users (disabled ones are skipped). When any of the usernames starts with `@` that username is treated as the `cn` of a group, and all its members are included.
+
+If `-` is used as input file, then all the enabled RD-Connect platform users are considered.
+
+A e-mail based on the template and attachments is sent to each one of the users defined by the input file.
+
 ## Listing scripts
 
 There are several scripts which takes as its single parameter a configuration profile, and list contents of RD-Connect LDAP directory:

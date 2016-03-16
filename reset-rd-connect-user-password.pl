@@ -78,7 +78,7 @@ EOF
 					$mail2->sendMessage($to,\%keyval2);
 				};
 				if($@) {
-					Carp::croak("Error while sending password e-mail: ",$@);
+					Carp::carp("Error while sending password e-mail: ",$@);
 				}
 			} else {
 				# Reverting state

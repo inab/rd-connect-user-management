@@ -37,3 +37,8 @@ User to group association (for [add-rd-connect-user-group.pl](add-rd-connect-use
 
 1. username / uid of the user (REQUIRED)
 2. Common name / cn of the group (REQUIRED)
+
+User mailing (for [send-email-rd-connect-users.pl](send-email-rd-connect-users.pl))
+--------
+
+The input file must contain on each line the `uid` or the `mail` of existing users (disabled ones are skipped). When any of the usernames starts with `@` that username is treated as the `cn` of a group, and all its members are included.

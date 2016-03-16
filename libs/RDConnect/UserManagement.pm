@@ -131,6 +131,7 @@ sub createUser($$$$$$$;$) {
 #	username: the RD-Connect username or user e-mail
 #	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
 #		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success
 sub getUser($;$) {
 	my $self = shift;
 	
@@ -166,6 +167,7 @@ sub getUser($;$) {
 #	hashedPasswd64: the password, already hashed and represented in the right way
 #	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
 #		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success (password set and re-enabled)
 sub resetUserPassword($$;$) {
 	my $self = shift;
 	
@@ -349,6 +351,76 @@ sub createGroup($$$;$$) {
 }
 
 # Parameters:
+#	groupCN: The cn of the groupOfNames to find
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+# It returns the LDAP entry of the group on success
+sub getGroup($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN)=@_;
+	
+	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $groupDN,
+		'filter' => "(&(objectClass=groupOfNames)(cn=$groupCN))",
+		'sizelimit' => 1,
+		'scope' => 'sub'
+	);
+	
+	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		Carp::carp("Error while finding group $groupCN\n".Dumper($searchMesg));
+		
+		return undef;
+	}
+	
+	if($searchMesg->count<=0) {
+		Carp::carp("No matching group found");
+		
+		return undef;
+	}
+
+	# The group entry
+	return $searchMesg->entry(0);
+}
+
+# Parameters:
+#	groupCN: The cn of the groupOfNames to find
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+# It returns a reference to the array of LDAP entries corresponding to the group members on success
+sub getGroupMembers($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN)=@_;
+	
+	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	my $group = $self->getGroup($groupCN,$groupDN);
+	return undef  unless(defined($group));
+	
+	my @users = ();
+	my $p_userDNs = $group->get_value('member',asref => 1);
+	foreach my $userDN (@{$p_userDNs}) {
+		my $searchMesg = $self->{'ldap'}->search(
+			'base' => $userDN,
+			'scope' => 'base'
+		);
+		
+		unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+			Carp::carp("Error while finding user $userDN\n".Dumper($searchMesg));
+			
+			return undef;
+		}
+		
+		push(@users,$searchMesg->entry(0));
+	}
+	
+	return \@users;
+}
+
+# Parameters:
 #	groupDN: (OPTIONAL) The DN used as parent of all the groups. If not set,
 #		it uses the one read from the configuration file.
 sub listGroups(;$) {
@@ -392,54 +464,16 @@ sub addUserToGroup($$;$$) {
 	$p_groupCN = [ $p_groupCN ]  unless(ref($p_groupCN) eq 'ARRAY');
 	
 	# First, the user must be found
-	my $searchMesg = $self->{'ldap'}->search(
-		'base' => $userDN,
-		'filter' => "(&(objectClass=basicRDproperties)(uid=$userUID)(disabledAccount=FALSE))",
-		'sizelimit' => 1,
-		'scope' => 'sub'
-	);
-	
-	unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-		Carp::carp("Error while finding user $userUID\n".Dumper($searchMesg));
-		
-		return undef;
-	}
-	
-	if($searchMesg->count<=0) {
-		Carp::carp("No matching user found");
-		
-		return undef;
-	}
-	
-	# The user entry
-	my $user = $searchMesg->entry(0);
+	my $user = $self->getUser($userUID,$userDN);
+	return undef  if(!defined($user) || $user->get_value('disabledAccount') eq 'TRUE');
 	
 	my @newGroupDNs = ();
 	
 	ADD_USER_GROUPCN:
 	foreach my $groupCN (@{$p_groupCN}) {
 		# Second, each group of names must be found
-		$searchMesg = $self->{'ldap'}->search(
-			'base' => $groupDN,
-			'filter' => "(&(objectClass=groupOfNames)(cn=$groupCN))",
-			'sizelimit' => 1,
-			'scope' => 'sub'
-		);
-		
-		unless($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-			Carp::carp("Error while finding group $groupCN\n".Dumper($searchMesg));
-			
-			return undef;
-		}
-		
-		if($searchMesg->count<=0) {
-			Carp::carp("No matching group found");
-			
-			return undef;
-		}
-
-		# The group entry
-		my $group = $searchMesg->entry(0);
+		my $group = $self->getGroup($groupCN,$groupDN);
+		return undef  unless(defined($group));
 		
 		# Is the user already in the group?
 		my $p_members = $group->get_value('member', 'asref' => 1);
