@@ -194,6 +194,36 @@ sub resetUserPassword($$;$) {
 }
 
 # Parameters:
+#	username: the RD-Connect username or user e-mail
+#	doEnable: if true, the user is enabled; if false, the user is disabled
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success (user enabled or disabled)
+sub enableUser($$;$) {
+	my $self = shift;
+	
+	my($username,$doEnable,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my $user = $self->getUser($username,$userDN);
+	my $dn = $user->dn();
+	$user->changetype('modify');
+	$user->replace(
+		'disabledAccount'	=>	($doEnable ? 'FALSE' : 'TRUE'),
+	);
+
+	my $updMesg = $user->update($self->{'ldap'});
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $user->ldif();
+		
+		Carp::carp("Unable to ".($doEnable ? 'enable' : 'disable')." user $dn\n".Dumper($updMesg));
+	}
+	return ($updMesg->code() == Net::LDAP::LDAP_SUCCESS) ? $user : undef;
+}
+
+# Parameters:
 #	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
 #		it uses the one read from the configuration file.
 sub listUsers(;$) {

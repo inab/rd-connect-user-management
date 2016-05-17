@@ -47,6 +47,10 @@ This program allows assigning each user to one or more groups. Both the users an
 
 The program takes as input a configuration profile and one or more usernames. Those usernames are matched against `uid` and `mail` attributes in order to find the right user. Then a new password is generated for each user, the user is re-enabled, and an e-mail is sent to the registered e-mail address of the user. The program stops on the first wrong username or when it finishes.
 
+## Script to enable / disable a user [enable-rd-connect-user.pl](enable-rd-connect-user.pl)
+
+The program takes as input a configuration profile, a username and a boolean value enabling or disabling the user. The username is matched against `uid` and `mail` attributes in order to find the right user. If the user is found, it is enabled or disabled accordingly to the command line. The program stops on error or when it finishes.
+
 ## Script to send an e-mail to one, many or all the enabled RD-Connect users [send-email-rd-connect-users.pl](send-email-rd-connect-users.pl)
 
 This program takes as input a configuration profile, an optional UTF-8 file, the file with the message template (either in HTML or in plain text) to be sent to the users, and optionally 0 or more attachments.
