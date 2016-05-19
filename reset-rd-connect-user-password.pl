@@ -18,10 +18,25 @@ use RDConnect::MailManagement;
 use constant SECTION	=>	'main';
 use constant APGSECTION	=>	'apg';
 
-if(scalar(@ARGV)>=2) {
+my $paramPassword;
+if(scalar(@ARGV)>0 && $ARGV[0] eq '-p') {
+	shift(@ARGV);
+	$paramPassword = 1;
+}
+
+if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) && scalar(@ARGV) == 3)) {
 	my $configFile = shift(@ARGV);
 	
 	my $cfg = Config::IniFiles->new( -file => $configFile);
+	
+	my $password;
+	my @usernames = ();
+	if(defined($paramPassword)) {
+		push(@usernames,$ARGV[0]);
+		$password = $ARGV[1];
+	} else {
+		@usernames = @ARGV;
+	}
 	
 	# Now, let's read all the parameters
 	
@@ -56,18 +71,26 @@ EOF
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
 	# Read the users
-	foreach my $username (@ARGV) {
-		# Now, let's read the generated password
-		if(open(my $APG,'-|',@apgParams)) {
+	foreach my $username (@usernames) {
+		my $pass;
+		if(defined($password)) {
+			$pass = $password;
+		} elsif(open(my $APG,'-|',@apgParams)) {
+			# Now, let's read the generated password
 			my $pass = <$APG>;
 			chomp($pass);
-			
-			# Setting the digester to a known state
-			$digest->reset();
-			$digest->add($pass);
-			my $digestedPass = '{SHA}'.encode_base64($digest->digest);
-			my $user = $uMgmt->resetUserPassword($username,$digestedPass);
-			if(defined($user)) {
+			close($APG);
+		} else {
+			Carp::croak("Unable to generate a password using apg\n");
+		}
+		
+		# Setting the digester to a known state
+		$digest->reset();
+		$digest->add($pass);
+		my $digestedPass = '{SHA}'.encode_base64($digest->digest);
+		my $user = $uMgmt->resetUserPassword($username,$digestedPass);
+		if(defined($user)) {
+			unless(defined($password)) {
 				my $fullname = $user->get_value('cn');
 				my $email = $user->get_value('mail');
 				# Re-defining the object
@@ -80,16 +103,16 @@ EOF
 				if($@) {
 					Carp::carp("Error while sending password e-mail: ",$@);
 				}
-			} else {
-				# Reverting state
-				Carp::carp("Unable to reset password for user $username. Does it exist?");
 			}
+			print "User $username password was reset\n";
 		} else {
-			Carp::croak("Unable to generate a password using apg\n");
+			# Reverting state
+			Carp::carp("Unable to reset password for user $username. Does it exist?");
 		}
 	}
 } else {
 	die <<EOF ;
 Usage:	$0 {IniFile} {username or user e-mail}+
+	$0 {IniFile} -p {username or user e-mail} {new password}
 EOF
 }

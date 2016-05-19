@@ -47,6 +47,8 @@ This program allows assigning each user to one or more groups. Both the users an
 
 The program takes as input a configuration profile and one or more usernames. Those usernames are matched against `uid` and `mail` attributes in order to find the right user. Then a new password is generated for each user, the user is re-enabled, and an e-mail is sent to the registered e-mail address of the user. The program stops on the first wrong username or when it finishes.
 
+This program has an optional `-p` parameter, though to give the new password from the command line, instead of generating it with `apg`. With it, the program takes as input a configuration profile, the username  and the new password.
+
 ## Script to enable / disable a user [enable-rd-connect-user.pl](enable-rd-connect-user.pl)
 
 The program takes as input a configuration profile, a username and a boolean value enabling or disabling the user. The username is matched against `uid` and `mail` attributes in order to find the right user. If the user is found, it is enabled or disabled accordingly to the command line. The program stops on error or when it finishes.
