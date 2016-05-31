@@ -24,6 +24,7 @@ if(scalar(@ARGV)==1) {
 	
 	if(scalar(@peopleOUs)>0) {
 		print "# Available people OUs\n";
+		print "# ",join("\t",'Organizational Unit','dn','description'),"\n";
 		foreach my $entry (@peopleOUs) {
 			print join("\t",$entry->get_value('ou'),$entry->dn(),$entry->get_value('description')),"\n";
 		}

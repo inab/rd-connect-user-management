@@ -23,9 +23,10 @@ if(scalar(@ARGV)==1) {
 	my @groups = $uMgmt->listGroups();
 	
 	if(scalar(@groups)>0) {
-		print "# Available groups (and the owner and members)\n";
+		print "# Available roles / groups (and the owner and members)\n";
+		print "# ",join("\t",'role / group CN','role / group DN','description','owner(s)','members'),"\n";
 		foreach my $entry (@groups) {
-			print join("\t",$entry->get_value('cn'),$entry->dn(),$entry->get_value('description'),$entry->get_value('owner'),$entry->get_value('member')),"\n";
+			print join("\t",$entry->get_value('cn'),$entry->dn(),$entry->get_value('description'),join(';',$entry->get_value('owner')),join(';',$entry->get_value('member'))),"\n";
 		}
 	}
 } else {
