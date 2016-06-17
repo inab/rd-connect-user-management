@@ -1,0 +1,85 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect CAS LDAP schema",
+	"type": "object",
+	"properties": {
+		"givenName": {
+			"title": "The first / given name",
+			"type": "string"
+		},
+		"surname": {
+			"title": "The surname(s)",
+			"type": "string"
+		},
+		"hashedPasswd64": {
+			"title": "The hashed password, encoded in base64",
+			"type": ["string","null"]
+		},
+		"username": {
+			"title": "The username",
+			"type": "string"
+		},
+		"organizationalUnit": {
+			"title": "The organizational unit where this user entry is living",
+			"type": "string"
+		},
+		"enabled": {
+			"title": "Is this user enabled?",
+			"type": ["boolean","null"]
+		},
+		"cn": {
+			"title": "The common name of the user (usually givenName + surname)",
+			"type": ["string","null"]
+		},
+		"email": {
+			"title": "The e-mail address of the user",
+			"type": "string",
+			"format": "email"
+		},
+		"employeeType": {
+			"title": "Employee type (principal investigator, researcher, etc...)",
+			"type": ["string","null"],
+			"enum": [ "PI", "Researcher", "PhD", "Student", "Technician", "Collaborator", "External" , null ]
+		},
+		"title": {
+			"title": "Preferred way to address the user: Mr., Ms., Miss, Dr., MD., Dame, Lord, etc...",
+			"type": ["string","null"]
+		},
+		"jpegPhoto": {
+			"title": "A JPEG picture of the user",
+			"type": ["string"],
+			"media": {
+				"type": "image/jpeg",
+				"binaryEncoding": "base64"
+			}
+		},
+		"telephoneNumber": {
+			"title": "A contact phone number, including the international prefix",
+			"type": ["string","null"]
+		},
+		"facsimileTelephoneNumber": {
+			"title": "A fax number, including the international prefix",
+			"type": ["string","null"]
+		},
+		"registeredAddress": {
+			"title": "The address to physically reach the user",
+			"type": ["string"]
+		},
+		"postalAddress": {
+			"title": "The address to send traditional mail to the user, when it is different from the physical address of the user",
+			"type": ["string"]
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"givenName",
+		"surname",
+		"hashedPasswd64",
+		"username",
+		"email"
+	],
+	"dependencies": {
+		"postalAddress": ["registeredAddress"]
+	}
+}

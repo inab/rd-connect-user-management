@@ -113,6 +113,6 @@ EOF
 } else {
 	die <<EOF ;
 Usage:	$0 {IniFile} {username or user e-mail}+
-	$0 {IniFile} -p {username or user e-mail} {new password}
+	$0 -p {IniFile} {username or user e-mail} {new password}
 EOF
 }

@@ -9,6 +9,7 @@ use Digest;
 use MIME::Base64;
 use Net::LDAP;
 use Net::LDAP::Entry;
+use boolean qw();
 
 use constant LDAP_SECTION	=>	'ldap';
 
@@ -125,6 +126,218 @@ sub createUser($$$$$$$;$) {
 		Carp::carp("Unable to create user $dn (does the user already exist?)\n".Dumper($updMesg));
 	}
 	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+# These are done so, in order to create a singleton for the JSON::Validator
+
+{
+
+	use JSON ();
+	my $json = undef;
+	
+	sub getJSONHandler() {
+		unless(defined($json)) {
+			$json = JSON->new->convert_blessed;
+		}
+		
+		return $json;
+	}
+
+}
+
+# http://jsonschemalint.com/draft4/
+# http://www.jsonschemavalidator.net/
+
+{
+
+	use JSON::Validator;
+	use File::Basename ();
+	use File::Spec;
+
+	use constant USER_VALIDATION_SCHEMA_FILE	=>	'userValidation.json';
+	my $userValidator = undef;
+
+	sub getCASUserValidator() {
+		unless(defined($userValidator)) {
+			my $userSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),USER_VALIDATION_SCHEMA_FILE);
+			if(-r $userSchemaPath) {
+				$userValidator = JSON::Validator->new();
+				$userValidator->schema($userSchemaPath);
+			}
+		}
+		
+		return $userValidator;
+	}
+
+}
+
+# Correspondence between JSON attribute names and LDAP attribute names
+# and whether these attributes should be masked on return
+my %JSON_LDAP_USER_ATTRIBUTES = (
+	'givenName'	=>	['givenName',boolean::true, undef, undef],
+	'surname'	=>	['sn',boolean::true, undef, undef],
+	'hashedPasswd64'	=>	['userPassword',boolean::false, undef, undef],
+	'username'	=>	['uid',boolean::true, undef, undef],
+	'enabled'	=>	['disabledAccount',boolean::true, sub { return ($_[0] ? 'FALSE':'TRUE'); }, sub { return (defined($_[0]) && $_[0] eq 'TRUE'); }],
+	'cn'	=>	['cn',boolean::true, undef, undef],
+	'email'	=>	['mail',boolean::true, undef, undef],
+	
+	'employeeType'	=>	['employeeType',boolean::true, undef, undef],
+	'title'	=>	['title',boolean::true, undef, undef],
+	'jpegPhoto'	=>	['jpegPhoto',boolean::true, undef, undef],
+	'telephoneNumber'	=>	['telephoneNumber',boolean::true, undef, undef],
+	'facsimileTelephoneNumber'	=>	['facsimileTelephoneNumber',boolean::false, undef, undef],
+	'registeredAddress'	=>	['registeredAddress',boolean::false, undef, undef],
+	'postalAddress'	=>	['postalAddress',boolean::false, undef, undef],
+);
+
+# Inverse correspondence: LDAP attributes to JSON ones
+my %LDAP_JSON_USER_ATTRIBUTES = ();
+@LDAP_JSON_USER_ATTRIBUTES{map { return $JSON_LDAP_USER_ATTRIBUTES{$_}[0]; } keys(%JSON_LDAP_USER_ATTRIBUTES)} = map { return [ $_,$JSON_LDAP_USER_ATTRIBUTES{$_}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]; } keys(%JSON_LDAP_USER_ATTRIBUTES);
+
+# Which attributes do we have to mask?
+my @JSON_MASK_USER_ATTRIBUTES = ();
+foreach my $p_jsonDesc (values(%LDAP_JSON_USER_ATTRIBUTES)) {
+	unless($p_jsonDesc->[1]) {
+		push(@JSON_MASK_USER_ATTRIBUTES, $p_jsonDesc->[0]);
+	}
+}
+
+use constant USER_HOTCHPOTCH_ATTRIBUTE	=> 	'description';
+
+my @LDAP_USER_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
+);
+
+use constant LDAP_USER_HOTCHPOTCH	=>	'description';
+
+
+# Parameters:
+#	p_userArray: a reference to a hash or an array of hashes with the required keys needed to create new users
+#	doReplace: if true, the entry is an update
+sub createExtUser(\[%@];$) {
+	my $self = shift;
+	
+	my($p_userArray,$groupOU,$doReplace) = @_;
+	#my($username,$hashedPasswd64,$groupOU,$cn,$givenName,$sn,$email,$active,$doReplace) = @_;
+	
+	if(ref($p_userArray) ne 'ARRAY') {
+		if(ref($p_userArray) eq 'HASH') {
+			$p_userArray = [ $p_userArray ];
+		} else {
+			my $p_err = ['Input user must be either an array or a hash ref!'];
+			if(wantarray) {
+				return (undef,$p_err);
+			} else {
+				foreach my $err (@{$p_err}) {
+					Carp::carp($err);
+				}
+				return undef;
+			}
+		}
+	}
+	
+	# First pass, validation
+	my $userVal = getCASUserValidator();
+	
+	my $failed = undef;
+	my $p_err = [];
+	foreach my $p_userHash (@{$p_userArray}) {
+		# Breaking when something cannot be validated
+		unless(ref($p_userHash) eq 'HASH') {
+			$failed = 1;
+			push(@{$p_err},'All the input users in an array must be hash refs!');
+			next;
+		}
+		
+		# GroupOU normalization
+		my $groupOU = exists($p_userHash->{'organizationalUnit'}) ? $p_userHash->{'organizationalUnit'} : undef;
+		if(defined($groupOU) && length($groupOU) > 0) {
+			$groupOU =~ s/^\s+//;
+			$groupOU =~ s/\s+$//;
+		}
+		
+		$groupOU = $self->{'defaultGroupOU'}  unless(defined($groupOU) && length($groupOU) > 0);
+		$p_userHash->{'organizationalUnit'} = $groupOU;
+		
+		# Now, the validation of each input
+		my @valErrors = $userVal->validate($p_userHash);
+		if(scalar(@valErrors) > 0) {
+			$failed = 1;
+			
+			my $cn = exists($p_userHash->{'cn'}) ? $p_userHash->{'cn'} : '';
+			
+			my $dn = join(',','cn='.$cn,'ou='.$p_userHash->{'organizationalUnit'},$self->{'userDN'});
+			
+			push(@{$p_err},"Validation errors for user $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
+		} else {
+			# cn normalization
+			unless(exists($p_userHash->{'cn'})) {
+				$p_userHash->{'cn'} = $p_userHash->{'givenName'} .' '.$p_userHash->{'surname'};
+			}
+			
+			push(@{$p_err},'');
+		}
+	}
+	if($failed) {
+		if(wantarray) {
+			return (undef,$p_err);
+		} else {
+			foreach my $err (@{$p_err}) {
+				Carp::carp($err);
+			}
+			return undef;
+		}
+	}
+	
+	# Second pass, user creation
+	my $j = getJSONHandler();
+	foreach my $p_userHash (@{$p_userArray}) {
+		# Let's work!
+		my $entry = Net::LDAP::Entry->new();
+		$entry->changetype('modify')  if($doReplace);
+		
+		my $dn = join(',','cn='.$p_userHash->{'cn'},'ou='.$p_userHash->{'organizationalUnit'},$self->{'userDN'});
+		$entry->dn($dn);
+		
+		my @userAttributes = ();
+		
+		# First, the common LDAP attributes
+		push(@userAttributes,@LDAP_USER_DEFAULT_ATTRIBUTES);
+		
+		# Next, the attributes which go straight to LDAP
+		foreach my $jsonKey (keys(%{$p_userHash})) {
+			if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
+				my $ldapVal = defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[2]) ? $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[2]->($p_userHash->{$jsonKey}) : $p_userHash->{$jsonKey};
+				push(@userAttributes,$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $ldapVal);
+			}
+		}
+		
+		# Last, mask attributes and store the whole JSON in the hotchpotch
+		foreach my $jsonKey (@JSON_MASK_USER_ATTRIBUTES) {
+			delete($p_userHash->{$jsonKey})  if(exists($p_userHash->{$jsonKey}));
+		}
+		push(@userAttributes, USER_HOTCHPOTCH_ATTRIBUTE() => $j->encode($p_userHash));
+		
+		$entry->add(@userAttributes);
+		
+		my $updMesg = $entry->update($self->{'ldap'});
+		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			$p_err = [ "Unable to create user $dn (does the user already exist?)\n".Dumper($updMesg) ];
+			if(wantarray) {
+				return (undef,$p_err);
+			} else {
+				print STDERR $entry->ldif();
+				
+				foreach my $err (@{$p_err}) {
+					Carp::carp($err);
+				}
+				return undef;
+			}
+		}
+	}
+	
+	return wantarray ? (1,$p_userArray) : 1;
 }
 
 # Parameters:
