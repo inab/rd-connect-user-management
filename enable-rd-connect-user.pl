@@ -44,12 +44,15 @@ if(scalar(@ARGV)==3) {
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
-	my $user = $uMgmt->enableUser($username,$validEnableValues{$doEnableState});
+	my($success,$payload) = $uMgmt->enableUser($username,$validEnableValues{$doEnableState});
 	
-	if(defined($user)) {
+	if($success) {
 		print "User $username was ".($validEnableValues{$doEnableState} ? 'enabled' : 'disabled')."\n";
 		exit 0;
 	} else {
+		foreach my $err (@{$payload}) {
+			Carp::carp($err);
+		}
 		exit 1;
 	}
 } else {

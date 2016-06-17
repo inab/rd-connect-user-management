@@ -88,8 +88,8 @@ EOF
 		$digest->reset();
 		$digest->add($pass);
 		my $digestedPass = '{SHA}'.encode_base64($digest->digest);
-		my $user = $uMgmt->resetUserPassword($username,$digestedPass);
-		if(defined($user)) {
+		my($success,$user) = $uMgmt->resetUserPassword($username,$digestedPass);
+		if($success) {
 			unless(defined($password)) {
 				my $fullname = $user->get_value('cn');
 				my $email = $user->get_value('mail');
@@ -106,6 +106,10 @@ EOF
 			}
 			print "User $username password was reset\n";
 		} else {
+			my $payload = $user;
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
 			# Reverting state
 			Carp::carp("Unable to reset password for user $username. Does it exist?");
 		}

@@ -20,14 +20,19 @@ if(scalar(@ARGV)==1) {
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
-	my @peopleOUs = $uMgmt->listPeopleOU();
+	my($success,$payload) = $uMgmt->listPeopleOU();
 	
-	if(scalar(@peopleOUs)>0) {
+	if($success) {
 		print "# Available people OUs\n";
 		print "# ",join("\t",'Organizational Unit','dn','description'),"\n";
-		foreach my $entry (@peopleOUs) {
+		foreach my $entry (@{$payload}) {
 			print join("\t",$entry->get_value('ou'),$entry->dn(),$entry->get_value('description')),"\n";
 		}
+	} else {
+		foreach my $err (@{$payload}) {
+			Carp::carp($err);
+		}
+		exit 1;
 	}
 } else {
 	die "Usage: $0 {IniFile}";

@@ -41,7 +41,16 @@ if(scalar(@ARGV)>=3) {
 	# Read the users
 	my @users = ();
 	if($usersFile eq '-') {
-		@users = $uMgmt->listUsers();
+		my($success,$payload) = $uMgmt->listUsers();
+		if($success) {
+			@users = @{$payload};
+		} else {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+			
+			exit 1;
+		}
 	} elsif(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
 		while(my $username=<$U>) {
 			# Skipping comments
@@ -50,19 +59,25 @@ if(scalar(@ARGV)>=3) {
 			chomp($username);
 			
 			if(substr($username,0,1) eq '@') {
-				my $p_members = $uMgmt->getGroupMembers(substr($username,1));
-				if(defined($p_members)) {
-					push(@users,@{$p_members});
+				my($success,$payload) = $uMgmt->getGroupMembers(substr($username,1));
+				if($success) {
+					push(@users,@{$payload});
 				} else {
 					# Reverting state
+					foreach my $err (@{$payload}) {
+						Carp::carp($err);
+					}
 					Carp::carp("Unable to find group / role $username. Does it exist?");
 				}
 			} else {
-				my $user = $uMgmt->getUser($username);
-				if(defined($user)) {
-					push(@users,$user);
+				my($success,$payload) = $uMgmt->getUser($username);
+				if($success) {
+					push(@users,$payload);
 				} else {
 					# Reverting state
+					foreach my $err (@{$payload}) {
+						Carp::carp($err);
+					}
 					Carp::carp("Unable to find user $username. Does it exist?");
 				}
 			}
