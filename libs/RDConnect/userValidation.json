@@ -6,11 +6,17 @@
 	"properties": {
 		"givenName": {
 			"title": "The first / given name",
-			"type": "string"
+			"type": ["array","string"],
+			"items": {
+				"type": "string"
+			}
 		},
 		"surname": {
 			"title": "The surname(s)",
-			"type": "string"
+			"type": ["array","string"],
+			"items": {
+				"type": "string"
+			}
 		},
 		"hashedPasswd64": {
 			"title": "The hashed password, encoded in base64",
@@ -33,9 +39,13 @@
 			"type": ["string","null"]
 		},
 		"email": {
-			"title": "The e-mail address of the user",
-			"type": "string",
-			"format": "email"
+			"title": "The e-mail address(es) of the user",
+			"type": ["array","string"],
+			"format": "email",
+			"items": {
+				"type": "string",
+				"format": "email"
+			}
 		},
 		"employeeType": {
 			"title": "Employee type (principal investigator, researcher, etc...)",
@@ -56,11 +66,17 @@
 		},
 		"telephoneNumber": {
 			"title": "A contact phone number, including the international prefix",
-			"type": ["string","null"]
+			"type": ["array","string","null"],
+			"items": {
+				"type": "string"
+			}
 		},
 		"facsimileTelephoneNumber": {
 			"title": "A fax number, including the international prefix",
-			"type": ["string","null"]
+			"type": ["array","string","null"],
+			"items": {
+				"type": "string"
+			}
 		},
 		"registeredAddress": {
 			"title": "The address to physically reach the user",
