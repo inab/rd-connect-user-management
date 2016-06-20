@@ -4,6 +4,8 @@ RD-Connect Perl scripts to batch create users, groups and their associations.
 
 These programs use next Perl modules:
 
+* boolean
+* experimental
 * Config::IniFiles
 * Net::LDAP , also known as [perl-ldap](http://ldap.perl.org/)
 * Digest::SHA1 (or the corresponding module to encode passwords)
@@ -12,6 +14,7 @@ These programs use next Perl modules:
 * Email::Sender::Transport::SMTPS
 * File::Basename
 * File::MimeInfo
+* JSON::Validator
 * MIME::Base64
 * Text::Unidecode
 
