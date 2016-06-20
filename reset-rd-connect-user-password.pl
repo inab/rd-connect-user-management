@@ -5,8 +5,6 @@ use strict;
 
 use Carp;
 use Config::IniFiles;
-use Digest;
-use MIME::Base64;
 use Email::Address;
 use Text::Unidecode qw();
 
@@ -39,10 +37,6 @@ if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) &&
 	}
 	
 	# Now, let's read all the parameters
-	
-	# The digest algorithm
-	my $digestAlg = $cfg->val(SECTION,'digest','SHA-1');
-	my $digest = Digest->new($digestAlg);
 	
 	# apg path
 	my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
@@ -84,11 +78,7 @@ EOF
 			Carp::croak("Unable to generate a password using apg\n");
 		}
 		
-		# Setting the digester to a known state
-		$digest->reset();
-		$digest->add($pass);
-		my $digestedPass = '{SHA}'.encode_base64($digest->digest);
-		my($success,$user) = $uMgmt->resetUserPassword($username,$digestedPass);
+		my($success,$user) = $uMgmt->resetUserPassword($username,$pass);
 		if($success) {
 			unless(defined($password)) {
 				my $fullname = $user->get_value('cn');

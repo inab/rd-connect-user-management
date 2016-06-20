@@ -5,8 +5,6 @@ use strict;
 
 use Carp;
 use Config::IniFiles;
-use Digest;
-use MIME::Base64;
 use Email::Address;
 use Text::Unidecode qw();
 
@@ -39,10 +37,6 @@ if(scalar(@ARGV)>=3) {
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
 	# Now, let's read all the parameters
-	
-	# The digest algorithm
-	my $digestAlg = $cfg->val(SECTION,'digest','SHA-1');
-	my $digest = Digest->new($digestAlg);
 	
 	# apg path
 	my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
@@ -139,11 +133,7 @@ EOF
 					my $pass = <$APG>;
 					chomp($pass);
 					
-					# Setting the digester to a known state
-					$digest->reset();
-					$digest->add($pass);
-					my $digestedPass = '{SHA}'.encode_base64($digest->digest);
-					if($uMgmt->createUser($username,$digestedPass,$ou,$fullname,$givenName,$sn,$email,1,$doReplace)) {
+					if($uMgmt->createUser($username,$pass,$ou,$fullname,$givenName,$sn,$email,1,$doReplace)) {
 						if($NOEMAIL) {
 							print $NOEMAIL "$username\t$pass\n";
 						} else {

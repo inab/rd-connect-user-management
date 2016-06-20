@@ -14,6 +14,7 @@ use Net::LDAP;
 use Net::LDAP::Entry;
 use boolean qw();
 
+use constant SECTION	=>	'main';
 use constant LDAP_SECTION	=>	'ldap';
 
 my %AcceptedLDAPSchemes = (
@@ -82,7 +83,60 @@ sub new($) {
 	$self->{'groupDN'} = $groupDN;
 	$self->{'defaultGroupOU'} = $defaultGroupOU;
 	
+	# This one is used to encode passwords in the correct way
+	$self->{'digestAlg'} = $cfg->val(SECTION,'digest','SHA-1');
+
+	
 	return bless($self,$class);
+}
+
+my %HASH_MAPPING = (
+	'MD5'	=>	'MD5',
+	'SHA-1'	=>	'SHA',
+	'SSHA'	=>	'SSHA'
+);
+
+
+# This method returns true when password is already properly encoded
+sub IsEncodedPassword($) {
+	return $_[0] =~ /^\{(?:MD5|S?SHA)\}/;
+}
+
+# Generates random password salt - taken from smbldap-passwd.pl
+sub __make_salt($) {
+	my $length=32;
+	$length = $_[0] if exists($_[0]);
+	my @tab = ('.', '/', 0..9, 'A'..'Z', 'a'..'z');
+	return join "",@tab[map {rand 64} (1..$length)];
+}
+
+# Parameters:
+#	passwd: The clear password, to be encoded and hashed
+sub encodePassword($) {
+	my $self = shift;
+	
+	# The password to encode
+	my $passwd = shift;
+	
+	# The digest algorithm
+	unless(exists($self->{_digest})) {
+		$self->{_digest} = Digest->new($self->{'digestAlg'} eq 'SSHA' ? 'SHA-1' : $self->{'digestAlg'});
+	}
+	
+	# Generate a different salt on each invocation
+	my $salt = undef;
+	$salt = __make_salt(4)  if($self->{'digestAlg'} eq 'SSHA');
+	
+	# Now, let's encode!
+	$self->{_digest}->reset();
+	$self->{_digest}->add($passwd);
+	$self->{_digest}->add($salt)  if(defined($salt));
+	
+	my $hashedContent = $self->{_digest}->digest;
+	$hashedContent .= $salt  if(defined($salt));
+	my $digestedPass = '{'.$HASH_MAPPING{$self->{'digestAlg'}}.'}'.encode_base64($hashedContent,'');
+	
+	return $digestedPass;
 }
 
 # Parameters:
@@ -107,6 +161,8 @@ sub createUser($$$$$$$;$) {
 	
 	$groupOU = $self->{'defaultGroupOU'}  unless(defined($groupOU) && length($groupOU) > 0);
 
+	$hashedPasswd64 = $self->encodePassword($hashedPasswd64)  unless(IsEncodedPassword($hashedPasswd64));
+	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
 	my $dn = join(',','cn='.$cn,'ou='.$groupOU,$self->{'userDN'});
@@ -180,9 +236,9 @@ sub createUser($$$$$$$;$) {
 my %JSON_LDAP_USER_ATTRIBUTES = (
 	'givenName'	=>	['givenName', boolean::true, boolean::true, undef, undef],
 	'surname'	=>	['sn', boolean::true, boolean::true, undef, undef],
-	'hashedPasswd64'	=>	['userPassword', boolean::false, boolean::false, undef, undef],
+	'hashedPasswd64'	=>	['userPassword', boolean::false, boolean::false, sub { return (!defined($_[1]) || IsEncodedPassword($_[1])) ? $_[1] : $_[0]->encodePassword($_[1]);}, undef],
 	'username'	=>	['uid',boolean::true, boolean::false, undef, undef],
-	'enabled'	=>	['disabledAccount',boolean::true, boolean::false, sub { return ($_[0] ? 'FALSE':'TRUE'); }, sub { return (defined($_[0]) && $_[0] eq 'TRUE'); }],
+	'enabled'	=>	['disabledAccount',boolean::true, boolean::false, sub { return ($_[1] ? 'FALSE':'TRUE'); }, sub { return (defined($_[1]) && $_[1] eq 'TRUE'); }],
 	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef],
 	'email'	=>	['mail',boolean::true, boolean::true, undef, undef],
 	
@@ -314,14 +370,14 @@ sub createExtUser(\[%@];$) {
 		# Next, the attributes which go straight to LDAP
 		foreach my $jsonKey (keys(%{$p_userHash})) {
 			if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
-				my $ldapVal = defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]) ? $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($p_userHash->{$jsonKey}) : $p_userHash->{$jsonKey};
+				my $ldapVal = defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]) ? $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($self,$p_userHash->{$jsonKey}) : $p_userHash->{$jsonKey};
 				push(@userAttributes,$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $ldapVal);
 			}
 		}
 		
 		# Last, mask attributes and store the whole JSON in the hotchpotch
 		foreach my $jsonKey (@JSON_MASK_USER_ATTRIBUTES) {
-			delete($p_userHash->{$jsonKey})  if(exists($p_userHash->{$jsonKey}));
+			$p_userHash->{$jsonKey} = undef  if(exists($p_userHash->{$jsonKey}));
 		}
 		push(@userAttributes, USER_HOTCHPOTCH_ATTRIBUTE() => $j->encode($p_userHash));
 		
@@ -368,7 +424,7 @@ sub genJSONUsersFromLDAPUsers(\@) {
 				if($ldapDesc->[1]) {
 					# LDAP attribute values always take precedence over JSON ones
 					my @values = $user->get_value($ldapKey);
-					@values = $ldapDesc->[4]->(@values)  if(defined($ldapDesc->[4]));
+					@values = $ldapDesc->[4]->($self,@values)  if(defined($ldapDesc->[4]));
 					
 					$jsonUser->{$ldapDesc->[0]} = $ldapDesc->[2] ? \@values : $values[0];
 				} else {
@@ -429,7 +485,7 @@ sub modifyJSONUser($\%\@;$) {
 					# This is also an LDAP attribute modification
 					if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
 						my $value = $p_userHash->{$jsonKey};
-						$value = $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($value)  if(defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]));
+						$value = $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($self,$value)  if(defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]));
 						
 						if(exists($jsonUser->{$jsonKey})) {
 							push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $value);
@@ -478,7 +534,7 @@ sub modifyJSONUser($\%\@;$) {
 					
 					# Mask attributes and store the whole JSON in the hotchpotch
 					foreach my $jsonKey (@JSON_MASK_USER_ATTRIBUTES) {
-						delete($p_userHash->{$jsonKey})  if(exists($p_userHash->{$jsonKey}));
+						$p_userHash->{$jsonKey} = undef  if(exists($p_userHash->{$jsonKey}));
 					}
 					
 					my $j = getJSONHandler();
@@ -610,6 +666,8 @@ sub resetUserPassword($$;$) {
 	my($username,$hashedPasswd64,$userDN) = @_;
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	$hashedPasswd64 = $self->encodePassword($hashedPasswd64)  unless(IsEncodedPassword($hashedPasswd64));
 
 	# First, get the entry
 	my($success,$payload) = $self->getUser($username,$userDN);
