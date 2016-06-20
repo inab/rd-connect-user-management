@@ -1,7 +1,7 @@
 {
-	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#",
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#CASUser",
 	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
-	"title": "RD-Connect CAS LDAP schema",
+	"title": "RD-Connect CAS user",
 	"type": "object",
 	"properties": {
 		"givenName": {

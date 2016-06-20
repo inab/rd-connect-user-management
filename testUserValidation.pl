@@ -3,38 +3,69 @@
 use warnings "all";
 use strict;
 
+use File::Path;
 use FindBin;
 use lib $FindBin::Bin . '/libs';
 use RDConnect::UserManagement;
 
 my $userVal = RDConnect::UserManagement::getCASUserValidator();
 
-my @errors = $userVal->validate({
-	"givenName" => "José María",
-      "surname" => "Fernández González",
-      "username" => "j.m.fernandez",
-        "hashedPasswd64" => undef,
-          "email" =>  'perico+gmail@nobody.org'
-});
-
-if(scalar(@errors) > 0) {
-	print STDERR "Errors: \n";
-	foreach my $error (@errors) {
-		print STDERR "\tPath: ".$error->{'path'}.' . Message: '.$error->{'message'},"\n";
+if(scalar(@ARGV)>0) {
+	my $j = RDConnect::UserManagement::getJSONHandler();
+	foreach my $file (@ARGV) {
+		print STDERR "Validating $file\n";
+		
+		if(open(my $JH,'<:encoding(utf-8)',$file)) {
+			my $data;
+			{
+				local $/;
+				my $lines=<$JH>;
+				$data = $j->decode($lines);
+			}
+			close($JH);
+			
+			my @errors = $userVal->validate($data);
+			
+			if(scalar(@errors) > 0) {
+				print STDERR "\* Errors on $file: \n";
+				foreach my $error (@errors) {
+					print STDERR "\t  Path: ".$error->{'path'}.' . Message: '.$error->{'message'},"\n";
+				}
+			} else {
+				print STDERR "\t* No errors on $file\n";
+			}
+		} else {
+			print STDERR "ERROR: Unable to open file $file. Reason: $!\n";
+		}
 	}
-}
+} else {
+	my @errors = $userVal->validate({
+		"givenName" => "José María",
+	      "surname" => "Fernández González",
+	      "username" => "j.m.fernandez",
+		"hashedPasswd64" => undef,
+		  "email" =>  'perico+gmail@nobody.org'
+	});
 
-@errors = $userVal->validate({
-	"givenName" => "José María",
-#      "surname" => "Fernández González",
-#      "username" => "j.m.fernandez",
-#        "hashedPasswd64" => undef,
-          "email" =>  'perico+gmail@nobody.org'
-});
+	if(scalar(@errors) > 0) {
+		print STDERR "Errors: \n";
+		foreach my $error (@errors) {
+			print STDERR "\tPath: ".$error->{'path'}.' . Message: '.$error->{'message'},"\n";
+		}
+	}
 
-if(scalar(@errors) > 0) {
-	print STDERR "Errors: \n";
-	foreach my $error (@errors) {
-		print STDERR "\tPath: ".$error->{'path'}.' . Message: '.$error->{'message'},"\n";
+	@errors = $userVal->validate({
+		"givenName" => "José María",
+	#      "surname" => "Fernández González",
+	#      "username" => "j.m.fernandez",
+	#        "hashedPasswd64" => undef,
+		  "email" =>  'perico+gmail@nobody.org'
+	});
+
+	if(scalar(@errors) > 0) {
+		print STDERR "Errors: \n";
+		foreach my $error (@errors) {
+			print STDERR "\tPath: ".$error->{'path'}.' . Message: '.$error->{'message'},"\n";
+		}
 	}
 }
