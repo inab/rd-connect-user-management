@@ -19,6 +19,7 @@ For the user-management REST API these additional dependencies are required:
 
 * Dancer2
 * Plack::Middleware::Deflater
+* FCGI	(needed by Plack::Handler::FCGI)
 
 These programs use a configuration profile, which must be based on the provided [template file](template-config.ini).
 
