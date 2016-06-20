@@ -71,7 +71,13 @@ use Dancer2::Session::YAML;
 set engines => {
 	'serializer' => {
 		'JSON' => {
-			'convert_blessed' => 1
+			'convert_blessed' => 1,
+			'utf8'	=>	0
+		}
+	},
+	'deserializer' => {
+		'JSON' => {
+			'utf8'	=>	0
 		}
 	},
 	'session' => {
@@ -81,6 +87,7 @@ set engines => {
 	}
 };
 
+set charset => 'UTF-8';
 set serializer => 'JSON';
 set session => 'YAML';
 
@@ -104,6 +111,7 @@ package main;
 
 use Plack::Builder;
 builder {
-	enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
+# Enabling this we get some issues, so disabled for now
+#	enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
 	mount '/'    => RDConnect::UserManagement::API->to_app;
 };

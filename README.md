@@ -18,13 +18,9 @@ These programs use next Perl modules:
 * MIME::Base64
 * Text::Unidecode
 
-For the user-management REST API these additional dependencies are required:
-
-* Dancer2
-* Plack::Middleware::Deflater
-* FCGI	(needed by Plack::Handler::FCGI)
-
 These programs use a configuration profile, which must be based on the provided [template file](template-config.ini).
+
+For the user-management REST API see [README-API.md](README-API.md).
 
 ## RD-Connect user creation and password emailer [create-rd-connect-users.pl](create-rd-connect-users.pl)
 

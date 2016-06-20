@@ -238,7 +238,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 	'surname'	=>	['sn', boolean::true, boolean::true, undef, undef],
 	'hashedPasswd64'	=>	['userPassword', boolean::false, boolean::false, sub { return (!defined($_[1]) || IsEncodedPassword($_[1])) ? $_[1] : $_[0]->encodePassword($_[1]);}, undef],
 	'username'	=>	['uid',boolean::true, boolean::false, undef, undef],
-	'enabled'	=>	['disabledAccount',boolean::true, boolean::false, sub { return ($_[1] ? 'FALSE':'TRUE'); }, sub { return (defined($_[1]) && $_[1] eq 'TRUE'); }],
+	'enabled'	=>	['disabledAccount',boolean::true, boolean::false, sub { return ($_[1] ? 'FALSE':'TRUE'); }, sub { return (defined($_[1]) && $_[1] eq 'TRUE') ? boolean::false : boolean::true; }],
 	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef],
 	'email'	=>	['mail',boolean::true, boolean::true, undef, undef],
 	
@@ -252,7 +252,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 );
 
 # Inverse correspondence: LDAP attributes to JSON ones
-my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_,$JSON_LDAP_USER_ATTRIBUTES{$_}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ] } keys(%JSON_LDAP_USER_ATTRIBUTES);
+my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_USER_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]} keys(%JSON_LDAP_USER_ATTRIBUTES);
 
 # Which attributes do we have to mask?
 my @JSON_MASK_USER_ATTRIBUTES = ();
