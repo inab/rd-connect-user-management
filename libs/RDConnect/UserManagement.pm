@@ -252,8 +252,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 );
 
 # Inverse correspondence: LDAP attributes to JSON ones
-my %LDAP_JSON_USER_ATTRIBUTES = ();
-@LDAP_JSON_USER_ATTRIBUTES{map { return $JSON_LDAP_USER_ATTRIBUTES{$_}[0]; } keys(%JSON_LDAP_USER_ATTRIBUTES)} = map { return [ $_,$JSON_LDAP_USER_ATTRIBUTES{$_}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]; } keys(%JSON_LDAP_USER_ATTRIBUTES);
+my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_,$JSON_LDAP_USER_ATTRIBUTES{$_}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ] } keys(%JSON_LDAP_USER_ATTRIBUTES);
 
 # Which attributes do we have to mask?
 my @JSON_MASK_USER_ATTRIBUTES = ();
@@ -263,13 +262,11 @@ foreach my $p_jsonDesc (values(%LDAP_JSON_USER_ATTRIBUTES)) {
 	}
 }
 
-use constant USER_HOTCHPOTCH_ATTRIBUTE	=> 	'description';
+use constant USER_HOTCHPOTCH_ATTRIBUTE	=> 	'jsonData';
 
 my @LDAP_USER_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
 );
-
-use constant LDAP_USER_HOTCHPOTCH	=>	'description';
 
 
 # Parameters:
@@ -414,7 +411,13 @@ sub genJSONUsersFromLDAPUsers(\@) {
 	
 	my $j = getJSONHandler();
 	foreach my $user (@{$p_users}) {
-		my $jsonUser = $user->exists(USER_HOTCHPOTCH_ATTRIBUTE) ? $j->decode($user->get_value(USER_HOTCHPOTCH_ATTRIBUTE)) : {};
+		my $jsonUser = {};
+		if($user->exists(USER_HOTCHPOTCH_ATTRIBUTE)) {
+			# This could fail, after all
+			eval {
+				$jsonUser = $j->decode($user->get_value(USER_HOTCHPOTCH_ATTRIBUTE)); 
+			};
+		}
 		
 		foreach my $ldapKey (keys(%LDAP_JSON_USER_ATTRIBUTES)) {
 			my $ldapDesc = $LDAP_JSON_USER_ATTRIBUTES{$ldapKey};
