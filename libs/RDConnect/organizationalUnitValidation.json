@@ -1,0 +1,22 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#CASOrganizationalUnit",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect CAS organizational unit",
+	"type": "object",
+	"properties": {
+		"organizationalUnit": {
+			"title": "One organizational from RD-Connect, where user entries are living",
+			"type": "string"
+		},
+		"description": {
+			"title": "The long name of the organizational unit",
+			"type": "string"
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"organizationalUnit"
+	],
+	"dependencies": {
+	}
+}

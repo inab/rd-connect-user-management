@@ -12,6 +12,7 @@ use Digest;
 use MIME::Base64;
 use Net::LDAP;
 use Net::LDAP::Entry;
+use Net::LDAP::Util;
 use boolean qw();
 
 use constant SECTION	=>	'main';
@@ -21,6 +22,10 @@ my %AcceptedLDAPSchemes = (
 	'ldap'	=>	undef,
 	'ldaps'	=>	undef,
 	'ldapi'	=>	undef,
+);
+
+my @LDAP_UTIL_SERIALIZATION_PARAMS = (
+	'casefold' => 'lower'
 );
 
 # Parameters:
@@ -81,6 +86,8 @@ sub new($) {
 	$self->{'ldap'} = $ldap;
 	$self->{'userDN'} = $userDN;
 	$self->{'groupDN'} = $groupDN;
+	$self->{'e_userDN'} = Net::LDAP::Util::ldap_explode_dn($userDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
+	$self->{'e_groupDN'} = Net::LDAP::Util::ldap_explode_dn($groupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
 	$self->{'defaultGroupOU'} = $defaultGroupOU;
 	
 	# This one is used to encode passwords in the correct way
@@ -165,7 +172,7 @@ sub createUser($$$$$$$;$) {
 	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
-	my $dn = join(',','cn='.$cn,'ou='.$groupOU,$self->{'userDN'});
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),'ou='.Net::LDAP::Util::escape_dn_value($groupOU),$self->{'userDN'});
 	$entry->dn($dn);
 	$entry->add(
 		'givenName'	=>	$givenName,
@@ -228,31 +235,55 @@ sub createUser($$$$$$$;$) {
 		return $userValidator;
 	}
 
+	use constant OU_VALIDATION_SCHEMA_FILE	=>	'organizationalUnitValidation.json';
+	my $ouValidator = undef;
+	
+	sub getCASouValidator() {
+		unless(defined($ouValidator)) {
+			my $ouSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),OU_VALIDATION_SCHEMA_FILE);
+			if(-r $ouSchemaPath) {
+				$ouValidator = JSON::Validator->new();
+				$ouValidator->schema($ouSchemaPath);
+			}
+		}
+		
+		return $ouValidator;
+	}
+	
 }
 
 # Correspondence between JSON attribute names and LDAP attribute names
 # and whether these attributes should be masked on return
-# Array element meaning:	LDAP attribute name, visible attribute on JSON, array attribute on LDAP, method to translate from JSON to LDAP, method to translate from LDAP to JSON
+# Array element meaning:	LDAP attribute name, visible attribute on JSON, array attribute on LDAP, method to translate from JSON to LDAP, method to translate from LDAP to JSON, is read-only
 my %JSON_LDAP_USER_ATTRIBUTES = (
-	'givenName'	=>	['givenName', boolean::true, boolean::true, undef, undef],
-	'surname'	=>	['sn', boolean::true, boolean::true, undef, undef],
-	'hashedPasswd64'	=>	['userPassword', boolean::false, boolean::false, sub { return (!defined($_[1]) || IsEncodedPassword($_[1])) ? $_[1] : $_[0]->encodePassword($_[1]);}, undef],
-	'username'	=>	['uid',boolean::true, boolean::false, undef, undef],
-	'enabled'	=>	['disabledAccount',boolean::true, boolean::false, sub { return ($_[1] ? 'FALSE':'TRUE'); }, sub { return (defined($_[1]) && $_[1] eq 'TRUE') ? boolean::false : boolean::true; }],
-	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef],
-	'email'	=>	['mail',boolean::true, boolean::true, undef, undef],
+	'givenName'	=>	['givenName', boolean::true, boolean::true, undef, undef, boolean::false],
+	'surname'	=>	['sn', boolean::true, boolean::true, undef, undef, boolean::false],
+	'userPassword'	=>	['userPassword', boolean::false, boolean::false, sub { return (!defined($_[1]) || IsEncodedPassword($_[1])) ? $_[1] : $_[0]->encodePassword($_[1]);}, undef, boolean::false],
+	'username'	=>	['uid',boolean::true, boolean::false, undef, undef, boolean::false],
+	'enabled'	=>	['disabledAccount',boolean::true, boolean::false, sub { return ($_[1] ? 'FALSE':'TRUE'); }, sub { return (defined($_[1]) && $_[1] eq 'TRUE') ? boolean::false : boolean::true; }, boolean::false],
+	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+	'email'	=>	['mail',boolean::true, boolean::true, undef, undef, boolean::false],
 	
-	'employeeType'	=>	['employeeType', boolean::true, boolean::false, undef, undef],
-	'title'	=>	['title', boolean::true, boolean::false, undef, undef],
-	'jpegPhoto'	=>	['jpegPhoto', boolean::true, boolean::false, undef, undef],
-	'telephoneNumber'	=>	['telephoneNumber', boolean::true, boolean::true, undef, undef],
-	'facsimileTelephoneNumber'	=>	['facsimileTelephoneNumber', boolean::true, boolean::true, undef, undef],
-	'registeredAddress'	=>	['registeredAddress', boolean::true, boolean::false, undef, undef],
-	'postalAddress'	=>	['postalAddress', boolean::true, boolean::false, undef, undef],
+	'employeeType'	=>	['employeeType', boolean::true, boolean::false, undef, undef, boolean::false],
+	'title'	=>	['title', boolean::true, boolean::false, undef, undef, boolean::false],
+	'jpegPhoto'	=>	['jpegPhoto', boolean::true, boolean::false, sub { return decode_base64($_[1]);}, sub { return encode_base64($_[1]); }, boolean::false],
+	'telephoneNumber'	=>	['telephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
+	'facsimileTelephoneNumber'	=>	['facsimileTelephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
+	'registeredAddress'	=>	['registeredAddress', boolean::true, boolean::false, undef, undef, boolean::false],
+	'postalAddress'	=>	['postalAddress', boolean::true, boolean::false, undef, undef, boolean::false],
+	
+	'organizationalUnit'	=>	[undef, boolean::true, boolean::false, undef, undef, boolean::true]
 );
 
 # Inverse correspondence: LDAP attributes to JSON ones
-my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_USER_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]} keys(%JSON_LDAP_USER_ATTRIBUTES);
+my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_USER_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_USER_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_USER_ATTRIBUTES);
+
+my %JSON_LDAP_OU_ATTRIBUTES = (
+	'organizationalUnit'	=>	['ou', boolean::true, boolean::false, undef, undef, boolean::true],
+	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false]
+);
+
+my %LDAP_JSON_OU_ATTRIBUTES = map { $JSON_LDAP_OU_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_OU_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_OU_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_OU_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_OU_ATTRIBUTES);
 
 # Which attributes do we have to mask?
 my @JSON_MASK_USER_ATTRIBUTES = ();
@@ -268,6 +299,23 @@ my @LDAP_USER_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
 );
 
+sub _getParentDNFromDN($) {
+	my($dn) = @_;
+	
+	my $p_components = Net::LDAP::Util::ldap_explode_dn($dn,@LDAP_UTIL_SERIALIZATION_PARAMS);
+	shift(@{$p_components});
+	
+	return Net::LDAP::Util::canonical_dn($p_components,@LDAP_UTIL_SERIALIZATION_PARAMS);
+}
+
+sub _getParentOUFromDN($) {
+	my($dn) = @_;
+	
+	my $p_components = Net::LDAP::Util::ldap_explode_dn($dn,@LDAP_UTIL_SERIALIZATION_PARAMS);
+	shift(@{$p_components});
+	
+	return exists($p_components->[0]{'ou'}) ? $p_components->[0]{'ou'} : undef;
+}
 
 # Parameters:
 #	p_userArray: a reference to a hash or an array of hashes with the required keys needed to create new users
@@ -324,7 +372,7 @@ sub createExtUser(\[%@];$) {
 			
 			my $cn = exists($p_userHash->{'cn'}) ? $p_userHash->{'cn'} : '';
 			
-			my $dn = join(',','cn='.$cn,'ou='.$p_userHash->{'organizationalUnit'},$self->{'userDN'});
+			my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),'ou='.Net::LDAP::Util::escape_dn_value($p_userHash->{'organizationalUnit'}),$self->{'userDN'});
 			
 			push(@{$p_err},"Validation errors for not created user $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
 		} else {
@@ -356,7 +404,7 @@ sub createExtUser(\[%@];$) {
 		my $entry = Net::LDAP::Entry->new();
 		$entry->changetype('modify')  if($doReplace);
 		
-		my $dn = join(',','cn='.$p_userHash->{'cn'},'ou='.$p_userHash->{'organizationalUnit'},$self->{'userDN'});
+		my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($p_userHash->{'cn'}),'ou='.Net::LDAP::Util::escape_dn_value($p_userHash->{'organizationalUnit'}),$self->{'userDN'});
 		$entry->dn($dn);
 		
 		my @userAttributes = ();
@@ -400,49 +448,73 @@ sub createExtUser(\[%@];$) {
 }
 
 # Parameters:
-#	p_users: a list of LDAP user objects
+#	p_entries: a list of LDAP objects
+#	p_ldap2json: a hash describing the translation from LDAP to JSON
+#	m_postfixup: a post fixup method, which takes the whole LDAP entry
+#	hotchpotchAttribute: The name of the hotchpotch attribute, if any
 # It returns an array of JSON user entries
-sub genJSONUsersFromLDAPUsers(\@) {
+sub genJSONFromLDAP(\@\%;$) {
 	my $self = shift;
 	
-	my($p_users) = @_;
+	my($p_entries,$p_ldap2json,$m_postFixup,$hotchpotchAttribute) = @_;
 	
 	my @retval = ();
 	
 	my $j = getJSONHandler();
-	foreach my $user (@{$p_users}) {
-		my $jsonUser = {};
-		if($user->exists(USER_HOTCHPOTCH_ATTRIBUTE)) {
+	my $doPostFixup = ref($m_postFixup) eq 'CODE';
+	foreach my $entry (@{$p_entries}) {
+		my $jsonEntry = {};
+		if(defined($hotchpotchAttribute) && $entry->exists($hotchpotchAttribute)) {
 			# This could fail, after all
 			eval {
-				$jsonUser = $j->decode($user->get_value(USER_HOTCHPOTCH_ATTRIBUTE)); 
+				$jsonEntry = $j->decode($entry->get_value($hotchpotchAttribute)); 
 			};
 		}
 		
-		foreach my $ldapKey (keys(%LDAP_JSON_USER_ATTRIBUTES)) {
-			my $ldapDesc = $LDAP_JSON_USER_ATTRIBUTES{$ldapKey};
+		foreach my $ldapKey (keys(%{$p_ldap2json})) {
+			my $ldapDesc = $p_ldap2json->{$ldapKey};
 			
-			if($user->exists($ldapKey)) {
+			if($entry->exists($ldapKey)) {
 				# Only processing those LDAP attributes which are exportable
 				if($ldapDesc->[1]) {
 					# LDAP attribute values always take precedence over JSON ones
-					my @values = $user->get_value($ldapKey);
+					my @values = $entry->get_value($ldapKey);
 					@values = $ldapDesc->[4]->($self,@values)  if(defined($ldapDesc->[4]));
 					
-					$jsonUser->{$ldapDesc->[0]} = $ldapDesc->[2] ? \@values : $values[0];
+					$jsonEntry->{$ldapDesc->[0]} = $ldapDesc->[2] ? \@values : $values[0];
 				} else {
-					$jsonUser->{$ldapDesc->[0]} = undef;
+					$jsonEntry->{$ldapDesc->[0]} = undef;
 				}
-			} elsif(exists($jsonUser->{$ldapDesc->[0]})) {
+			} elsif(exists($jsonEntry->{$ldapDesc->[0]})) {
 				# Removing spureous key not any valid
-				delete($jsonUser->{$ldapDesc->[0]});
+				delete($jsonEntry->{$ldapDesc->[0]});
 			}
 		}
 		
-		push(@retval,$jsonUser);
+		# Last, but not the least important, the organizationalUnit
+		$m_postFixup->($entry,$jsonEntry)  if($doPostFixup);
+		
+		push(@retval,$jsonEntry);
 	}
 	
 	return \@retval;
+}
+
+sub postFixupUser($$) {
+	my($entry,$jsonEntry) = @_;
+	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn());
+}
+
+sub genJSONUsersFromLDAPUsers(\@) {
+	my $self = shift;
+	
+	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_USER_ATTRIBUTES, \&postFixupUser, USER_HOTCHPOTCH_ATTRIBUTE);
+}
+
+sub genJSONouFromLDAPou(\@) {
+	my $self = shift;
+	
+	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_OU_ATTRIBUTES);
 }
 
 # Parameters:
@@ -452,7 +524,7 @@ sub genJSONUsersFromLDAPUsers(\@) {
 #	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
 #		it uses the one read from the configuration file.
 # It returns the LDAP entry of the user on success
-sub modifyJSONUser($\%\@;$) {
+sub modifyJSONUser($\%;\@$) {
 	my $self = shift;
 	
 	my($username,$p_userHash,$p_removedKeys,$userDN) = @_;
@@ -476,40 +548,45 @@ sub modifyJSONUser($\%\@;$) {
 			my @modifiedLDAPAttributes = ();
 			my @removedLDAPAttributes = ();
 			
-			# Detect modified attributes
-			foreach my $jsonKey (%{$p_userHash}) {
-				# Skipping modifications on banned keys
-				next  if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && !$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[1]);
-				
-				unless(exists($jsonUser->{$jsonKey}) && $p_userHash->{$jsonKey} ~~ $jsonUser->{$jsonKey}) {
-					$modifications = 1;
-					$jsonUser->{$jsonKey} = $p_userHash->{$jsonKey};
+			# Labelling keys to be removed
+			if(ref($p_removedKeys) eq 'ARRAY') {
+				foreach my $jsonKey (@{$p_removedKeys}) {
+					# Skipping modifications on banned keys or read-only ones
+					next  if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && (!$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[1] || $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[5]));
 					
-					# This is also an LDAP attribute modification
-					if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
-						my $value = $p_userHash->{$jsonKey};
-						$value = $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($self,$value)  if(defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]));
-						
-						if(exists($jsonUser->{$jsonKey})) {
-							push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $value);
-						} else {
-							push(@addedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $value);
-						}
-					}
+					$p_userHash->{$jsonKey} = undef;
 				}
 			}
 			
-			foreach my $jsonKey (@{$p_removedKeys}) {
-				# Skipping modifications on banned keys
-				next  if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && !$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[1]);
+			# Detect modified attributes
+			foreach my $jsonKey (%{$p_userHash}) {
+				# Skipping modifications on banned keys or read-only ones
+				next  if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && (!$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[1] || $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[5]));
 				
-				if(exists($jsonUser->{$jsonKey})) {
+				unless(exists($jsonUser->{$jsonKey}) && defined($p_userHash->{$jsonKey}) && $p_userHash->{$jsonKey} ~~ $jsonUser->{$jsonKey}) {
 					$modifications = 1;
-					delete($jsonUser->{$jsonKey});
 					
-					# This is also an LDAP attribute modification
-					if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
-						push(@removedLDAPAttributes,$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0]);
+					if(defined($p_userHash->{$jsonKey})) {
+						$jsonUser->{$jsonKey} = $p_userHash->{$jsonKey};
+						
+						# This is also an LDAP attribute modification
+						if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
+							my $value = $p_userHash->{$jsonKey};
+							$value = $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($self,$value)  if(defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]));
+							
+							if(exists($jsonUser->{$jsonKey})) {
+								push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $value);
+							} else {
+								push(@addedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $value);
+							}
+						}
+					} else {
+						delete($jsonUser->{$jsonKey});
+						
+						# This is an attribute removal
+						if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
+							push(@removedLDAPAttributes,$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0]);
+						}
 					}
 				}
 			}
@@ -599,9 +676,10 @@ sub getUser($;$) {
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
 	
 	# First, each owner must be found
+	my $escaped_username = Net::LDAP::Util::escape_filter_value($username);
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $userDN,
-		'filter' => "(&(objectClass=basicRDproperties)(|(uid=$username)(mail=$username)))",
+		'filter' => "(&(objectClass=basicRDproperties)(|(uid=$escaped_username)(mail=$escaped_username)))",
 		'sizelimit' => 1,
 		'scope' => 'sub'
 	);
@@ -751,6 +829,51 @@ sub enableUser($$;$) {
 }
 
 # Parameters:
+#	username: the RD-Connect username or user e-mail
+#	jpegPhoto: The raw, new photo to be set
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success (user enabled or disabled)
+sub setUserPhoto($$;$) {
+	my $self = shift;
+	
+	my($username,$jpegPhoto,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my($success,$payload) = $self->getUser($username,$userDN);
+	if($success) {
+		my $user = $payload;
+		my $dn = $user->dn();
+		$user->changetype('modify');
+		$user->replace(
+			'jpegPhoto'	=>	$jpegPhoto,
+		);
+
+		my $updMesg = $user->update($self->{'ldap'});
+		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			$success = undef;
+			print STDERR $user->ldif()  unless(wantarray);
+			
+			$payload = [ "Unable to set photo for user $dn\n".Dumper($updMesg) ];
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
 #	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
 #		it uses the one read from the configuration file.
 sub listUsers(;$) {
@@ -810,7 +933,7 @@ sub createPeopleOU($$;$$) {
 	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
-	my $dn = join(',','ou='.$ou,$userDN);
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$userDN);
 	$entry->dn($dn);
 	$entry->add(
 		'ou'	=>	$ou,
@@ -826,6 +949,78 @@ sub createPeopleOU($$;$$) {
 		Carp::carp("Unable to create organizational unit $dn (does the organizational unit already exist?)\n".Dumper($updMesg));
 	}
 	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+# Parameters:
+#	ou: the RD-Connect organizational unit
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success
+sub getPeopleOU($;$) {
+	my $self = shift;
+	
+	my($ou,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	# First, each owner must be found
+	my $escaped_ou = Net::LDAP::Util::escape_filter_value($ou);
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $userDN,
+		'filter' => "(&(objectClass=organizationalUnit)(ou=$escaped_ou))",
+		'sizelimit' => 1,
+		'scope' => 'sub'
+	);
+	
+	my $success = undef;
+	my $payload = [];
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		if($searchMesg->count>0) {
+			$success = 1;
+			# The ou entry
+			$payload = $searchMesg->entry(0);
+		} else {
+			push(@{$payload},"No matching organizational unit found for $ou");
+		}
+	} else {
+		push(@{$payload},"Error while finding organizational unit $ou\n".Dumper($searchMesg));
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	ou: the RD-Connect organizational unit
+#	userDN: (OPTIONAL) The DN used as ancestor of this organizational
+#		 unit. If not set, it uses the one read from the configuration file.
+# It returns the JSON entry of the organizational unit on success in array context
+sub getJSONPeopleOU($;$) {
+	my $self = shift;
+	
+	my($ou,$userDN) = @_;
+	
+	my($success,$payload) = $self->getPeopleOU($ou,$userDN);
+	
+	my $payload2 = undef;
+	
+	if($success) {
+		$payload2 = $payload;
+		# The original payload is an LDAP organizational unit entry
+		$payload = $self->genJSONouFromLDAPou([$payload2])->[0];
+	}
+	
+	return wantarray ? ($success,$payload,$payload2) : $success;
 }
 
 # Parameters:
@@ -858,6 +1053,23 @@ sub listPeopleOU(;$) {
 }
 
 # Parameters:
+#	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
+#		it uses the one read from the configuration file.
+sub listJSONPeopleOU(;$) {
+	my $self = shift;
+	
+	my($userDN) = @_;
+	
+	my($success,$payload) = $self->listPeopleOU($userDN);
+	
+	if($success) {
+		$payload = $self->genJSONouFromLDAPou($payload);
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
 #	ou: The short, organizational unit name, which hangs on userDN
 #	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
 #		it uses the one read from the configuration file.
@@ -867,7 +1079,7 @@ sub listPeopleOUUsers($;$) {
 	my($ou,$userDN) = @_;
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
-	my $dn = join(',','ou='.$ou,$userDN);
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$userDN);
 	
 	# First, the ou must be found
 	my $searchMesg = $self->{'ldap'}->search(
@@ -948,7 +1160,7 @@ sub createGroup($$$;$$) {
 		# Now, the group of names new entry
 		my $entry = Net::LDAP::Entry->new();
 		$entry->changetype('modify')  if($doReplace);
-		my $dn = join(',','cn='.$cn,$groupDN);
+		my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$groupDN);
 		$entry->dn($dn);
 		$entry->add(
 			'cn'	=>	$cn,
@@ -1011,9 +1223,10 @@ sub getGroup($;$) {
 	
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
 	
+	my $escaped_groupCN = Net::LDAP::Util::escape_filter_value($groupCN);
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $groupDN,
-		'filter' => "(&(objectClass=groupOfNames)(cn=$groupCN))",
+		'filter' => "(&(objectClass=groupOfNames)(cn=$escaped_groupCN))",
 		'sizelimit' => 1,
 		'scope' => 'sub'
 	);
@@ -1246,7 +1459,7 @@ sub createAlias($$$$;$) {
 	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
-	my $dn = join(',',$keyName.'='.$keyValue,$parentDN);
+	my $dn = join(',',Net::LDAP::Util::escape_dn_value($keyName).'='.Net::LDAP::Util::escape_dn_value($keyValue),$parentDN);
 	$entry->dn($dn);
 	$entry->add(
 		'objectClass'	=>	[ 'alias', 'extensibleObject' ],

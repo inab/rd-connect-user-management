@@ -91,6 +91,9 @@ set charset => 'UTF-8';
 set serializer => 'JSON';
 set session => 'YAML';
 
+#########
+# Users #
+#########
 
 sub get_users {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
@@ -105,7 +108,135 @@ sub get_users {
 	return $payload;
 }
 
-get '/users' => \&get_users;
+sub get_user {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONUser(params->{user_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload is the user
+	return $payload;
+}
+
+sub get_user_photo {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	# We are getting the raw entry, as we don't want to encode / decode the entry, only the photo
+	my($success,$payload) = $uMgmt->getUser(params->{user_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	} elsif(! $payload->exists('jpegPhoto')) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' has not photo'}),404);
+	}
+	
+	# Here the payload is the user
+	my $data = $payload->get_value('jpegPhoto');
+	send_file(\$data, content_type => 'image/jpeg');
+}
+
+
+# next operations should be allowed only to privileged users
+
+sub put_user_photo {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	# We are getting the raw entry, as we want just the photo
+	my $data = request->body;
+	
+	my($success,$payload) = $uMgmt->setUserPhoto(params->{user_id},$data);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub set_user_enabled_state {
+	my $newState = shift;
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->enableUser(params->{user_id},$newState);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	return [];
+}
+
+sub disable_user {
+	return set_user_enabled_state(boolean::false);
+}
+
+sub enable_user {
+	return set_user_enabled_state(boolean::true);
+}
+
+# Routing for /users prefix
+prefix '/users' => sub {
+	get '' => \&get_users;
+	get '/:user_id' => \&get_user;
+	get '/:user_id/jpegPhoto' => \&get_user_photo;
+	# next operations should be allowed only to privileged users
+	put '/:user_id/jpegPhoto' => \&put_user_photo;
+	post '/:user_id/disable' => \&disable_user;
+	post '/:user_id/enable' => \&enable_user;
+};
+
+########################
+# Organizational units #
+########################
+
+sub get_OUs {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONPeopleOU();
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Could not fulfill internal queries','trace' => $payload}),500);
+	}
+	
+	# Here the payload is the list of organizational units
+	return $payload;
+}
+
+sub get_OU {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONPeopleOU(params->{ou_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload is the organizational unit
+	return $payload;
+}
+
+sub get_OU_users {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONPeopleOUUsers(params->{ou_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload are the users
+	return $payload;
+}
+
+prefix '/organizationalUnits' => sub {
+	get '' => \&get_OUs;
+	get '/:ou_id' => \&get_OU;
+	get '/:ou_id/users' => \&get_OU_users;
+};
 
 package main;
 

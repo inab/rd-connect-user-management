@@ -18,8 +18,8 @@
 				"type": "string"
 			}
 		},
-		"hashedPasswd64": {
-			"title": "The hashed password, encoded in base64",
+		"userPassword": {
+			"title": "The password, when the user is being created",
 			"type": ["string","null"]
 		},
 		"username": {
