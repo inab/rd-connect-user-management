@@ -4,6 +4,8 @@ use strict;
 use v5.10.1;
 use experimental 'smartmatch';
 
+use boolean qw();
+
 package RDConnect::UserManagement;
 
 use Carp;
@@ -13,7 +15,7 @@ use MIME::Base64;
 use Net::LDAP;
 use Net::LDAP::Entry;
 use Net::LDAP::Util;
-use boolean qw();
+use Scalar::Util qw();
 
 use constant SECTION	=>	'main';
 use constant LDAP_SECTION	=>	'ldap';
@@ -293,13 +295,7 @@ my %JSON_LDAP_OU_ATTRIBUTES = (
 
 my %LDAP_JSON_OU_ATTRIBUTES = map { $JSON_LDAP_OU_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_OU_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_OU_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_OU_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_OU_ATTRIBUTES);
 
-# Which attributes do we have to mask?
-my @JSON_MASK_USER_ATTRIBUTES = ();
-foreach my $p_jsonDesc (values(%LDAP_JSON_USER_ATTRIBUTES)) {
-	unless($p_jsonDesc->[1]) {
-		push(@JSON_MASK_USER_ATTRIBUTES, $p_jsonDesc->[0]);
-	}
-}
+# Hotchpotches
 
 use constant USER_HOTCHPOTCH_ATTRIBUTE	=> 	'jsonData';
 
@@ -321,20 +317,58 @@ sub _getParentOUFromDN($) {
 	return exists($p_components->[0]{'ou'}) ? $p_components->[0]{'ou'} : undef;
 }
 
+sub _getUserDNFromJSON($\%) {
+	my $uMgmt = shift;
+	
+	my($jsonUser) = @_;
+	my $cn = exists($jsonUser->{'cn'}) ? $jsonUser->{'cn'} : '';
+	
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),'ou='.Net::LDAP::Util::escape_dn_value($jsonUser->{'organizationalUnit'}),$uMgmt->{'userDN'});
+	
+	return $dn;
+}
+
+sub _getPeopleOUDNFromJSON($\%) {
+	my $uMgmt = shift;
+	
+	my($jsonPeopleOU) = @_;
+	my $ou = exists($jsonPeopleOU->{'organizationalUnit'}) ? $jsonPeopleOU->{'organizationalUnit'} : '';
+	
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$uMgmt->{'userDN'});
+	
+	return $dn;
+}
+
+sub _normalizeUserCNFromJSON(\%) {
+	my($jsonUser) = @_;
+	
+	unless(exists($jsonUser->{'cn'}) && length($jsonUser->{'cn'}) > 0) {
+		my $givenName = ref($jsonUser->{'givenName'}) eq 'ARRAY' ? join(' ',@{$jsonUser->{'givenName'}}) : $jsonUser->{'givenName'};
+		my $surname = ref($jsonUser->{'surname'}) eq 'ARRAY' ? join(' ',@{$jsonUser->{'surname'}}) : $jsonUser->{'surname'};
+		$jsonUser->{'cn'} = $givenName .' '.$surname;
+	}
+}
+
 # Parameters:
-#	p_userArray: a reference to a hash or an array of hashes with the required keys needed to create new users
+#	p_entryArray: a reference to a hash or an array of hashes with the required keys needed to create new users
+#	m_getDN: a method which computes the DN of the new entries
+#	m_normalizePKJSON: a method which normalizes the primary key, which is part of the DN
+#	validator: an instance of JSON::Validator for this type of entries
+#	p_json2ldap: a reference to the correspondence from JSON to LDAP for this type of entry
+#	hotchpotchAttribute: The name of the hotchpotch attribute (if any)
+#	p_ldap_default_attributes: The default attributes to always set
 #	doReplace: if true, the entry is an update
-sub createExtUser(\[%@];$) {
+sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 	my $self = shift;
 	
-	my($p_userArray,$groupOU,$doReplace) = @_;
+	my($p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace) = @_;
 	#my($username,$hashedPasswd64,$groupOU,$cn,$givenName,$sn,$email,$active,$doReplace) = @_;
 	
-	if(ref($p_userArray) ne 'ARRAY') {
-		if(ref($p_userArray) eq 'HASH') {
-			$p_userArray = [ $p_userArray ];
+	if(ref($p_entryArray) ne 'ARRAY') {
+		if(ref($p_entryArray) eq 'HASH') {
+			$p_entryArray = [ $p_entryArray ];
 		} else {
-			my $p_err = ['Input user must be either an array or a hash ref!'];
+			my $p_err = ['Input JSON entry must be either an array or a hash ref!'];
 			if(wantarray) {
 				return (undef,$p_err);
 			} else {
@@ -347,45 +381,37 @@ sub createExtUser(\[%@];$) {
 	}
 	
 	# First pass, validation
-	my $userVal = getCASUserValidator();
-	
 	my $failed = undef;
 	my $p_err = [];
-	foreach my $p_userHash (@{$p_userArray}) {
+	foreach my $p_entryHash (@{$p_entryArray}) {
 		# Breaking when something cannot be validated
-		unless(ref($p_userHash) eq 'HASH') {
+		unless(ref($p_entryHash) eq 'HASH') {
 			$failed = 1;
-			push(@{$p_err},'All the input users in an array must be hash refs!');
+			push(@{$p_err},'All the input entries in an array must be hash refs!');
 			next;
 		}
 		
 		# GroupOU normalization
-		my $groupOU = exists($p_userHash->{'organizationalUnit'}) ? $p_userHash->{'organizationalUnit'} : undef;
+		my $groupOU = exists($p_entryHash->{'organizationalUnit'}) ? $p_entryHash->{'organizationalUnit'} : undef;
 		if(defined($groupOU) && length($groupOU) > 0) {
 			$groupOU =~ s/^\s+//;
 			$groupOU =~ s/\s+$//;
 		}
 		
 		$groupOU = $self->{'defaultGroupOU'}  unless(defined($groupOU) && length($groupOU) > 0);
-		$p_userHash->{'organizationalUnit'} = $groupOU;
+		$p_entryHash->{'organizationalUnit'} = $groupOU;
 		
 		# Now, the validation of each input
-		my @valErrors = $userVal->validate($p_userHash);
+		my @valErrors = $validator->validate($p_entryHash);
 		if(scalar(@valErrors) > 0) {
 			$failed = 1;
 			
-			my $cn = exists($p_userHash->{'cn'}) ? $p_userHash->{'cn'} : '';
-			
-			my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),'ou='.Net::LDAP::Util::escape_dn_value($p_userHash->{'organizationalUnit'}),$self->{'userDN'});
+			my $dn = $m_getDN->($self,$p_entryHash);
 			
 			push(@{$p_err},"Validation errors for not created user $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
 		} else {
 			# cn normalization
-			unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
-				my $givenName = ref($p_userHash->{'givenName'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'givenName'}}) : $p_userHash->{'givenName'};
-				my $surname = ref($p_userHash->{'surname'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'surname'}}) : $p_userHash->{'surname'};
-				$p_userHash->{'cn'} = $givenName .' '.$surname;
-			}
+			$m_normalizePKJSON->($p_entryHash)  if(ref($m_normalizePKJSON) eq 'CODE');
 			
 			push(@{$p_err},'');
 		}
@@ -403,41 +429,45 @@ sub createExtUser(\[%@];$) {
 	
 	# Second pass, user creation
 	my $j = getJSONHandler();
-	foreach my $p_userHash (@{$p_userArray}) {
+	foreach my $p_entryHash (@{$p_entryArray}) {
 		# Let's work!
 		my $entry = Net::LDAP::Entry->new();
 		$entry->changetype('modify')  if($doReplace);
 		
-		my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($p_userHash->{'cn'}),'ou='.Net::LDAP::Util::escape_dn_value($p_userHash->{'organizationalUnit'}),$self->{'userDN'});
+		my $dn = $m_getDN->($self,$p_entryHash);
 		$entry->dn($dn);
 		
-		my @userAttributes = ();
+		my @ldapAttributes = ();
 		
 		# First, the common LDAP attributes
-		push(@userAttributes,@LDAP_USER_DEFAULT_ATTRIBUTES);
+		push(@ldapAttributes,@{$p_ldap_default_attributes});
 		
 		# Next, the attributes which go straight to LDAP
-		foreach my $jsonKey (keys(%{$p_userHash})) {
-			if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0])) {
-				my $ldapVal = defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]) ? $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($self,$p_userHash->{$jsonKey}) : $p_userHash->{$jsonKey};
-				push(@userAttributes,$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $ldapVal);
+		foreach my $jsonKey (keys(%{$p_entryHash})) {
+			if(exists($p_json2ldap->{$jsonKey}) && defined($p_json2ldap->{$jsonKey}[0])) {
+				my $ldapVal = $p_entryHash->{$jsonKey};
+				$ldapVal = [ $ldapVal ]  if($p_json2ldap->{$jsonKey}[2] && !ref($ldapVal) eq 'ARRAY');
+				$ldapVal = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal)  if(defined($p_json2ldap->{$jsonKey}[3]));
+				push(@ldapAttributes,$p_json2ldap->{$jsonKey}[0] => $ldapVal);
 			}
 		}
 		
 		# Last, mask attributes and store the whole JSON in the hotchpotch
-		foreach my $jsonKey (@JSON_MASK_USER_ATTRIBUTES) {
-			$p_userHash->{$jsonKey} = undef  if(exists($p_userHash->{$jsonKey}));
+		foreach my $jsonKey (keys(%{$p_json2ldap})) {
+			if(exists($p_entryHash->{$jsonKey})) {
+				my $p_jsonDesc = $p_json2ldap->{$jsonKey};
+				unless($p_jsonDesc->[1]) {
+					$p_entryHash->{$jsonKey} = undef;
+				}
+			}
 		}
-		push(@userAttributes, USER_HOTCHPOTCH_ATTRIBUTE() => $j->encode($p_userHash));
+		push(@ldapAttributes, $hotchpotchAttribute => $j->encode($p_entryHash))  if(defined($hotchpotchAttribute));
 		
-		use Data::Dumper;
-		print STDERR Dumper(\@userAttributes),"\n";
-		
-		$entry->add(@userAttributes);
+		$entry->add(@ldapAttributes);
 		
 		my $updMesg = $entry->update($self->{'ldap'});
 		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-			$p_err = [ "Unable to create user $dn (does the user already exist?)\n".Dumper($updMesg) ];
+			$p_err = [ "Unable to create entry $dn (does the entry already exist?)\n".Dumper($updMesg) ];
 			if(wantarray) {
 				return (undef,$p_err);
 			} else {
@@ -451,8 +481,30 @@ sub createExtUser(\[%@];$) {
 		}
 	}
 	
-	return wantarray ? (1,$p_userArray) : 1;
+	return wantarray ? (1,$p_entryArray) : 1;
 }
+
+
+# Parameters:
+#	p_userArray: a reference to a hash or an array of hashes with the required keys needed to create new users
+#	doReplace: if true, the entry is an update
+sub createExtUser(\[%@];$) {
+	my $self = shift;
+	my($p_userArray,$doReplace) = @_;
+	
+	# $p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace
+	return $self->createLDAPFromJSON(
+				$p_userArray,
+				\&_getUserDNFromJSON,
+				\&_normalizeUserCNFromJSON,
+				getCASUserValidator(),
+				\%JSON_LDAP_USER_ATTRIBUTES,
+				USER_HOTCHPOTCH_ATTRIBUTE,
+				\@LDAP_USER_DEFAULT_ATTRIBUTES,
+				$doReplace
+			);
+}
+
 
 # Parameters:
 #	p_entries: a list of LDAP objects
@@ -526,6 +578,169 @@ sub genJSONouFromLDAPou(\@) {
 }
 
 # Parameters:
+#	jsonEntry: the JSON entry
+#	entry: the LDAP entry
+#	p_entryHash: a reference to a hash with the modified entry information
+#	validator: an instance of JSON::Validator for this type of entry
+#	p_json2ldap: a reference to the correspondence from JSON to LDAP for this type of entry
+#	hotchpotchAttribute: The name of the hotchpotch attribute (if any)
+#	p_ldap_default_attributes: The default attributes to always set
+#	p_removedKeys: a reference to an array with the removed keys
+# It returns the LDAP entry of the user on success
+sub modifyJSONEntry(\%$\%$\%$\@;\@) {
+	my $self = shift;
+	
+	my($jsonEntry,$entry,$p_entryHash,$p_json2ldap,$validator,$hotchpotchAttribute,$p_ldap_default_attributes,$p_removedKeys) = @_;
+	
+	my $success = undef;
+	my $payload = [];
+	my $payload2;
+	
+	if(ref($p_entryHash) eq 'HASH' && (!defined($p_removedKeys) || ref($p_removedKeys) eq 'ARRAY')) {
+		$success = 1;
+		$payload = [];
+		
+		# Now, apply the changes
+		my $modifications = undef;
+		my @addedLDAPAttributes = ();
+		my @modifiedLDAPAttributes = ();
+		my @removedLDAPAttributes = ();
+		
+		# Labelling keys to be removed
+		if(ref($p_removedKeys) eq 'ARRAY') {
+			foreach my $jsonKey (@{$p_removedKeys}) {
+				# Skipping modifications on banned keys or read-only ones
+				next  if(exists($p_json2ldap->{$jsonKey}) && (!$p_json2ldap->{$jsonKey}[1] || $p_json2ldap->{$jsonKey}[5]));
+				
+				$p_entryHash->{$jsonKey} = undef;
+			}
+		}
+		
+		# Detect modified attributes
+		foreach my $jsonKey (keys(%{$p_entryHash})) {
+			# Skipping modifications on banned keys or read-only ones
+			next  if(exists($p_json2ldap->{$jsonKey}) && (!$p_json2ldap->{$jsonKey}[1] || $p_json2ldap->{$jsonKey}[5]));
+			
+			my $doModify = undef;
+			if(!exists($jsonEntry->{$jsonKey}) || !defined($p_entryHash->{$jsonKey})) {
+				$doModify = 1;
+			} elsif((Scalar::Util::blessed($jsonEntry->{$jsonKey}) && $jsonEntry->{$jsonKey}->isa('boolean')) || (Scalar::Util::blessed($p_entryHash->{$jsonKey}) && $p_entryHash->{$jsonKey}->isa('JSON::PP::Boolean'))) {
+				$doModify = ($jsonEntry->{$jsonKey} && !$p_entryHash->{$jsonKey}) || (!$jsonEntry->{$jsonKey} && $p_entryHash->{$jsonKey});
+			} else {
+				$doModify = !($jsonEntry->{$jsonKey} ~~ $p_entryHash->{$jsonKey});
+			}
+			
+			if($doModify) {
+				$modifications = 1;
+				
+				if(defined($p_entryHash->{$jsonKey})) {
+					# This is also an LDAP attribute modification
+					if(exists($p_json2ldap->{$jsonKey})) {
+						my $ldapVal = $p_entryHash->{$jsonKey};
+						$ldapVal = [ $ldapVal ]  if($p_json2ldap->{$jsonKey}[2] && !ref($ldapVal) eq 'ARRAY');
+						$ldapVal = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal)  if(defined($p_json2ldap->{$jsonKey}[3]));
+						
+						if(exists($jsonEntry->{$jsonKey})) {
+							push(@modifiedLDAPAttributes, $p_json2ldap->{$jsonKey}[0] => $ldapVal);
+						} else {
+							push(@addedLDAPAttributes, $p_json2ldap->{$jsonKey}[0] => $ldapVal);
+						}
+					}
+					
+					$jsonEntry->{$jsonKey} = $p_entryHash->{$jsonKey};
+				} else {
+					delete($jsonEntry->{$jsonKey});
+					
+					# This is an attribute removal
+					if(exists($p_json2ldap->{$jsonKey})) {
+						push(@removedLDAPAttributes,$p_json2ldap->{$jsonKey}[0]);
+					}
+				}
+			}
+		}
+		
+		if($modifications) {
+			# Before any modification, let's validate
+			my @valErrors = $validator->validate($jsonEntry);
+			
+			if(scalar(@valErrors) > 0) {
+				$success = undef;
+				
+				my $dn = $entry->dn();
+				
+				$payload = [ "Validation errors for modifications on entry $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors) ];
+			} else {
+				# cn normalization (disabled)
+				#unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
+				#	my $givenName = ref($p_userHash->{'givenName'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'givenName'}}) : $p_userHash->{'givenName'};
+				#	my $surname = ref($p_userHash->{'surname'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'surname'}}) : $p_userHash->{'surname'};
+				#	$p_userHash->{'cn'} = $givenName .' '.$surname;
+				#	
+				#	push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{'cn'}[0] => $p_userHash->{'cn'});
+				#}
+				
+				# Mask attributes and store the whole JSON in the hotchpotch
+				foreach my $jsonKey (keys(%{$p_json2ldap})) {
+					if(exists($jsonEntry->{$jsonKey})) {
+						my $p_jsonDesc = $p_json2ldap->{$jsonKey};
+						unless($p_jsonDesc->[1]) {
+							$jsonEntry->{$jsonKey} = undef;
+						}
+					}
+				}
+				
+				if(defined($hotchpotchAttribute)) {
+					my $j = getJSONHandler();
+					push(@modifiedLDAPAttributes, $hotchpotchAttribute => $j->encode($jsonEntry));
+				}
+				
+				# These are needed to upgrade the entry
+				push(@modifiedLDAPAttributes, @{$p_ldap_default_attributes});
+				
+				# Now, let's modify the LDAP entry
+				my $dn = $entry->dn();
+				$entry->changetype('modify');
+				
+				# The batch of modifications
+				$entry->add(@addedLDAPAttributes)  if(scalar(@addedLDAPAttributes) > 0);
+				$entry->replace(@modifiedLDAPAttributes)  if(scalar(@modifiedLDAPAttributes) > 0);
+				$entry->delete(map { $_ => undef; } @removedLDAPAttributes)  if(scalar(@removedLDAPAttributes) > 0);
+
+				my $updMesg = $entry->update($self->{'ldap'});
+				if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+					$payload = $jsonEntry;
+					$payload2 = $entry;
+				} else {
+					$success = undef;
+					print STDERR $entry->ldif()  unless(wantarray);
+					
+					$payload = [ "Could not modify entry $dn\n".Dumper($updMesg) ];
+				}
+			}
+		} else {
+			# No modification, so give as payload the unmodified $jsonUser
+			$payload = $jsonEntry;
+		}
+	} else {
+		push(@{$payload},'The input data to modify must be a hash ref!')  unless(ref($p_entryHash) eq 'HASH');
+		push(@{$payload},'The removed keys parameter must be an array ref!')  unless(!defined($p_removedKeys) || ref($p_removedKeys) eq 'ARRAY');
+	}
+	
+	if(wantarray) {
+		return ($success,$payload,$payload2);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+
+# Parameters:
 #	username: the RD-Connect username or user e-mail
 #	p_userHash: a reference to a hash with the modified user information
 #	p_removedKeys: a reference to an array with the removed keys
@@ -537,132 +752,26 @@ sub modifyJSONUser($\%;\@$) {
 	
 	my($username,$p_userHash,$p_removedKeys,$userDN) = @_;
 	
-	my $success = undef;
-	my $payload;
-	my $payload2;
+	my($success,$payload,$user) = $self->getJSONUser($username,$userDN);
 	
-	if(ref($p_userHash) eq 'HASH' && ref($p_removedKeys) eq 'ARRAY') {
-		# Getting the user entry to be modified
-		my $user;
-		($success, $payload, $user) = $self->getJSONUser($username,$userDN);
-		
-		if($success) {
-			my $jsonUser = $payload;
-			my $payload = [];
-			
-			# Now, apply the changes
-			my $modifications = undef;
-			my @addedLDAPAttributes = ();
-			my @modifiedLDAPAttributes = ();
-			my @removedLDAPAttributes = ();
-			
-			# Labelling keys to be removed
-			if(ref($p_removedKeys) eq 'ARRAY') {
-				foreach my $jsonKey (@{$p_removedKeys}) {
-					# Skipping modifications on banned keys or read-only ones
-					next  if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && (!$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[1] || $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[5]));
-					
-					$p_userHash->{$jsonKey} = undef;
-				}
-			}
-			
-			# Detect modified attributes
-			foreach my $jsonKey (%{$p_userHash}) {
-				# Skipping modifications on banned keys or read-only ones
-				next  if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && (!$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[1] || $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[5]));
-				
-				unless(exists($jsonUser->{$jsonKey}) && defined($p_userHash->{$jsonKey}) && $p_userHash->{$jsonKey} ~~ $jsonUser->{$jsonKey}) {
-					$modifications = 1;
-					
-					if(defined($p_userHash->{$jsonKey})) {
-						$jsonUser->{$jsonKey} = $p_userHash->{$jsonKey};
-						
-						# This is also an LDAP attribute modification
-						if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
-							my $value = $p_userHash->{$jsonKey};
-							$value = $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($self,$value)  if(defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]));
-							
-							if(exists($jsonUser->{$jsonKey})) {
-								push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $value);
-							} else {
-								push(@addedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $value);
-							}
-						}
-					} else {
-						delete($jsonUser->{$jsonKey});
-						
-						# This is an attribute removal
-						if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
-							push(@removedLDAPAttributes,$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0]);
-						}
-					}
-				}
-			}
-			
-			if($modifications) {
-				# Before any modification, let's validate
-				my $userVal = getCASUserValidator();
-				my @valErrors = $userVal->validate($jsonUser);
-				
-				if(scalar(@valErrors) > 0) {
-					$success = undef;
-					
-					my $dn = $user->dn();
-					
-					$payload = [ "Validation errors for modifications on user $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors) ];
-				} else {
-					# cn normalization (disabled)
-					#unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
-					#	my $givenName = ref($p_userHash->{'givenName'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'givenName'}}) : $p_userHash->{'givenName'};
-					#	my $surname = ref($p_userHash->{'surname'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'surname'}}) : $p_userHash->{'surname'};
-					#	$p_userHash->{'cn'} = $givenName .' '.$surname;
-					#	
-					#	push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{'cn'}[0] => $p_userHash->{'cn'});
-					#}
-					
-					# Mask attributes and store the whole JSON in the hotchpotch
-					foreach my $jsonKey (@JSON_MASK_USER_ATTRIBUTES) {
-						$p_userHash->{$jsonKey} = undef  if(exists($p_userHash->{$jsonKey}));
-					}
-					
-					my $j = getJSONHandler();
-					push(@modifiedLDAPAttributes, USER_HOTCHPOTCH_ATTRIBUTE() => $j->encode($jsonUser));
-					
-					# These are needed to upgrade the entry
-					push(@modifiedLDAPAttributes, @LDAP_USER_DEFAULT_ATTRIBUTES);
-					
-					# Now, let's modify the LDAP entry
-					my $dn = $user->dn();
-					$user->changetype('modify');
-					
-					# The batch of modifications
-					$user->add(@addedLDAPAttributes)  if(scalar(@addedLDAPAttributes) > 0);
-					$user->replace(@modifiedLDAPAttributes)  if(scalar(@modifiedLDAPAttributes) > 0);
-					$user->delete(map { $_ => undef; } @removedLDAPAttributes)  if(scalar(@removedLDAPAttributes) > 0);
-
-					my $updMesg = $user->update($self->{'ldap'});
-					if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-						$payload = $jsonUser;
-						$payload2 = $user;
-					} else {
-						$success = undef;
-						print STDERR $user->ldif()  unless(wantarray);
-						
-						$payload = [ "Could not modify user $dn\n".Dumper($updMesg) ];
-					}
-				}
-			} else {
-				# No modification, so give as payload the unmodified $jsonUser
-				$payload = $jsonUser;
-			}
-		}
+	if($success) {
+		# $jsonEntry,$entry,$p_entryHash,$p_json2ldap,$validator,$hotchpotchAttribute,$p_ldap_default_attributes
+		my $jsonUser = $payload;
+		($success,$payload,$user) = $self->modifyJSONEntry(
+						$jsonUser,
+						$user,
+						$p_userHash,
+						\%JSON_LDAP_USER_ATTRIBUTES,
+						getCASUserValidator(),
+						USER_HOTCHPOTCH_ATTRIBUTE,
+						\@LDAP_USER_DEFAULT_ATTRIBUTES
+					);
 	} else {
-		push(@{$payload},'The input user data to modify must be a hash ref!')  unless(ref($p_userHash) eq 'HASH');
-		push(@{$payload},'The removed keys parameter must be an array ref!')  unless(ref($p_removedKeys) eq 'ARRAY');
+		push(@{$payload},'Problems fetching the user before modifying it');
 	}
 	
 	if(wantarray) {
-		return ($success,$payload);
+		return ($success,$payload,$user);
 	} else {
 		unless($success) {
 			foreach my $err (@{$payload}) {
@@ -673,6 +782,7 @@ sub modifyJSONUser($\%;\@$) {
 		return $success;
 	} 
 }
+
 
 # Parameters:
 #	username: the RD-Connect username or user e-mail
@@ -967,6 +1077,26 @@ sub createPeopleOU($$;$$) {
 }
 
 # Parameters:
+#	p_peopleOUArray: a reference to a hash or an array of hashes with the required keys needed to create new organizational units
+#	doReplace: if true, the entry is an update
+sub createExtPeopleOU(\[%@];$) {
+	my $self = shift;
+	my($p_peopleOUArray,$doReplace) = @_;
+	
+	# $p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace
+	return $self->createLDAPFromJSON(
+				$p_peopleOUArray,
+				\&_getPeopleOUDNFromJSON,
+				undef,
+				getCASouValidator(),
+				\%JSON_LDAP_OU_ATTRIBUTES,
+				undef,
+				\@LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES,
+				$doReplace
+			);
+}
+
+# Parameters:
 #	ou: the RD-Connect organizational unit
 #	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
 #		it uses the one read from the configuration file.
@@ -1037,6 +1167,50 @@ sub getJSONPeopleOU($;$) {
 	
 	return wantarray ? ($success,$payload,$payload2) : $success;
 }
+
+# Parameters:
+#	ou: the RD-Connect organizational unit
+#	p_peopleOUHash: a reference to a hash with the modified organizational unit information
+#	p_removedKeys: a reference to an array with the removed keys
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success
+sub modifyJSONPeopleOU($\%;\@$) {
+	my $self = shift;
+	
+	my($ou,$p_peopleOUHash,$p_removedKeys,$userDN) = @_;
+	
+	my($success,$payload,$peopleOU) = $self->getJSONPeopleOU($ou,$userDN);
+	
+	if($success) {
+		# $jsonEntry,$entry,$p_entryHash,$p_json2ldap,$validator,$hotchpotchAttribute,$p_ldap_default_attributes
+		my $jsonPeopleOU = $payload;
+		($success,$payload,$peopleOU) = $self->modifyJSONEntry(
+							$jsonPeopleOU,
+							$peopleOU,
+							$p_peopleOUHash,
+							\%JSON_LDAP_OU_ATTRIBUTES,
+							getCASouValidator(),
+							undef,
+							\@LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES
+						);
+	} else {
+		push(@{$payload},'Problems fetching the organizational unit before modifying it');
+	}
+	
+	if(wantarray) {
+		return ($success,$payload,$peopleOU);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
 
 # Parameters:
 #	ou: the RD-Connect organizational unit

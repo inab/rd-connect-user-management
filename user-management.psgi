@@ -290,6 +290,38 @@ sub get_OU_photo {
 
 # next operations should be allowed only to privileged users
 
+sub create_OU {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %newOU = params;
+	
+	my($success,$payload) = $uMgmt->createExtPeopleOU(\%newOU);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating organizational unit','trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub modify_OU {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %newOU = params;
+	# We remove so we don't disturb with garbage
+	delete $newOU{ou_id};
+	
+	my($success,$payload) = $uMgmt->modifyJSONPeopleOU(params->{ou_id},\%newOU);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying organizational unit '.params->{ou_id},'trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 sub put_OU_photo {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
@@ -310,10 +342,12 @@ prefix '/organizationalUnits' => sub {
 	get '' => \&get_OUs;
 	get '/:ou_id' => \&get_OU;
 	get '/:ou_id/picture' => \&get_OU_photo;
-	# next operations should be allowed only to privileged users
-	put '/:ou_id/picture' => \&put_OU_photo;
 	get '/:ou_id/users' => \&get_OU_users;
 	get '/:ou_id/users/:user_id' => \&get_OU_user;
+	# next operations should be allowed only to privileged users
+	put '' => \&create_OU;
+	post '/:ou_id' => \&modify_OU;
+	put '/:ou_id/picture' => \&put_OU_photo;
 };
 
 package main;
