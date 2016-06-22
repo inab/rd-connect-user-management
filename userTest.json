@@ -1,7 +1,17 @@
 {
-	"givenName": "José María",
-	"surname": "Fernández González",
-	"username": "j.m.fernandez",
-	"hashedPasswd64": null,
-	"email":  "perico+gmail@nobody.org"
+    "organizationalUnit": "default",
+    "cn": "Perico Palotes",
+    "surname": [
+        "Palotes",
+        "Grandes"
+    ],
+    "username": "p.palotes",
+    "email": [
+        "pericopalotes23@nowhere.org"
+    ],
+    "userPassword": "mi.casa",
+    "givenName": [
+        "Perico"
+    ],
+    "enabled": true
 }

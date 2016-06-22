@@ -141,6 +141,38 @@ sub get_user_photo {
 
 # next operations should be allowed only to privileged users
 
+sub create_user {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %newUser = params;
+	
+	my($success,$payload) = $uMgmt->createExtUser(\%newUser);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating user','trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub modify_user {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %newUser = params;
+	# We remove so we don't disturb with garbage
+	delete $newUser{user_id};
+	
+	my($success,$payload) = $uMgmt->modifyJSONUser(params->{user_id},\%newUser);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying user '.params->{user_id},'trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 sub put_user_photo {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
@@ -182,9 +214,11 @@ sub enable_user {
 prefix '/users' => sub {
 	get '' => \&get_users;
 	get '/:user_id' => \&get_user;
-	get '/:user_id/jpegPhoto' => \&get_user_photo;
+	get '/:user_id/picture' => \&get_user_photo;
 	# next operations should be allowed only to privileged users
-	put '/:user_id/jpegPhoto' => \&put_user_photo;
+	put '' => \&create_user;
+	post '/:user_id' => \&modify_user;
+	put '/:user_id/picture' => \&put_user_photo;
 	post '/:user_id/disable' => \&disable_user;
 	post '/:user_id/enable' => \&enable_user;
 };
@@ -232,10 +266,54 @@ sub get_OU_users {
 	return $payload;
 }
 
+sub get_OU_user {
+	redirect '../../users/'.params->{user_id}, 301;
+}
+
+sub get_OU_photo {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	# We are getting the raw entry, as we don't want to encode / decode the entry, only the photo
+	my($success,$payload) = $uMgmt->getPeopleOU(params->{ou_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+	} elsif(! $payload->exists('jpegPhoto')) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' has not photo'}),404);
+	}
+	
+	# Here the payload is the user
+	my $data = $payload->get_value('jpegPhoto');
+	send_file(\$data, content_type => 'image/jpeg');
+}
+
+
+# next operations should be allowed only to privileged users
+
+sub put_OU_photo {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	# We are getting the raw entry, as we want just the photo
+	my $data = request->body;
+	
+	my($success,$payload) = $uMgmt->setPeopleOUPhoto(params->{ou_id},$data);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 prefix '/organizationalUnits' => sub {
 	get '' => \&get_OUs;
 	get '/:ou_id' => \&get_OU;
+	get '/:ou_id/picture' => \&get_OU_photo;
+	# next operations should be allowed only to privileged users
+	put '/:ou_id/picture' => \&put_OU_photo;
 	get '/:ou_id/users' => \&get_OU_users;
+	get '/:ou_id/users/:user_id' => \&get_OU_user;
 };
 
 package main;

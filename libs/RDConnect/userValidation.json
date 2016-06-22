@@ -56,9 +56,9 @@
 			"title": "Preferred way to address the user: Mr., Ms., Miss, Dr., MD., Dame, Lord, etc...",
 			"type": ["string","null"]
 		},
-		"jpegPhoto": {
+		"picture": {
 			"title": "A JPEG picture of the user",
-			"type": ["string"],
+			"type": ["string","null"],
 			"media": {
 				"type": "image/jpeg",
 				"binaryEncoding": "base64"
@@ -80,18 +80,42 @@
 		},
 		"registeredAddress": {
 			"title": "The address to physically reach the user",
-			"type": ["string"]
+			"type": ["string","null"]
 		},
 		"postalAddress": {
 			"title": "The address to send traditional mail to the user, when it is different from the physical address of the user",
-			"type": ["string"]
+			"type": ["string","null"]
+		},
+		"links": {
+			"title": "Optional links related to the user",
+			"type": ["array","null"],
+			"items": {
+				"type": "object",
+				"properties": {
+					"uri": {
+						"title": "The URI of the link related to the user",
+						"type": "string",
+						"format": "uri"
+					},
+					"label": {
+						"title": "The type of URI",
+						"type": "string",
+						"enum": ["ORCID","Publication","LinkedIn","ResearchGate","DepartmentProfile"]
+					}
+				},
+				"additionalProperties": false,
+				"required": [
+					"uri",
+					"label"
+				]
+			}
 		}
 	},
 	"additionalProperties": false,
 	"required": [
 		"givenName",
 		"surname",
-		"hashedPasswd64",
+		"userPassword",
 		"username",
 		"email"
 	],

@@ -146,6 +146,11 @@ sub encodePassword($) {
 	return $digestedPass;
 }
 
+my @LDAP_USER_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
+);
+
+
 # Parameters:
 #	username: the RD-Connect username
 #	hashedPasswd64: the password, already hashed and represented in the right way
@@ -178,11 +183,11 @@ sub createUser($$$$$$$;$) {
 		'givenName'	=>	$givenName,
 		'sn'	=>	$sn,
 		'userPassword'	=>	$hashedPasswd64,
-		'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
 		'uid'	=>	$username,
 		'disabledAccount'	=>	($active ? 'FALSE':'TRUE'),
 		'cn'	=>	$cn,
-		'mail'	=>	$email
+		'mail'	=>	$email,
+		@LDAP_USER_DEFAULT_ATTRIBUTES
 	);
 
 	my $updMesg = $entry->update($self->{'ldap'});
@@ -266,13 +271,14 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 	
 	'employeeType'	=>	['employeeType', boolean::true, boolean::false, undef, undef, boolean::false],
 	'title'	=>	['title', boolean::true, boolean::false, undef, undef, boolean::false],
-	'jpegPhoto'	=>	['jpegPhoto', boolean::true, boolean::false, sub { return decode_base64($_[1]);}, sub { return encode_base64($_[1]); }, boolean::false],
+	'picture'	=>	['jpegPhoto', boolean::true, boolean::false, sub { return decode_base64($_[1]);}, sub { return encode_base64($_[1]); }, boolean::false],
 	'telephoneNumber'	=>	['telephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
 	'facsimileTelephoneNumber'	=>	['facsimileTelephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
 	'registeredAddress'	=>	['registeredAddress', boolean::true, boolean::false, undef, undef, boolean::false],
 	'postalAddress'	=>	['postalAddress', boolean::true, boolean::false, undef, undef, boolean::false],
+	'links'	=>	['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
 	
-	'organizationalUnit'	=>	[undef, boolean::true, boolean::false, undef, undef, boolean::true]
+	'organizationalUnit'	=>	[undef, boolean::true, boolean::false, undef, undef, boolean::true],
 );
 
 # Inverse correspondence: LDAP attributes to JSON ones
@@ -280,7 +286,9 @@ my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_,
 
 my %JSON_LDAP_OU_ATTRIBUTES = (
 	'organizationalUnit'	=>	['ou', boolean::true, boolean::false, undef, undef, boolean::true],
-	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false]
+	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
+	'picture'	=>	['jpegPhoto', boolean::true, boolean::false,  sub { return decode_base64($_[1]);}, sub { return encode_base64($_[1]); }, boolean::false],
+	'links'	=>	['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
 );
 
 my %LDAP_JSON_OU_ATTRIBUTES = map { $JSON_LDAP_OU_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_OU_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_OU_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_OU_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_OU_ATTRIBUTES);
@@ -294,10 +302,6 @@ foreach my $p_jsonDesc (values(%LDAP_JSON_USER_ATTRIBUTES)) {
 }
 
 use constant USER_HOTCHPOTCH_ATTRIBUTE	=> 	'jsonData';
-
-my @LDAP_USER_DEFAULT_ATTRIBUTES = (
-	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
-);
 
 sub _getParentDNFromDN($) {
 	my($dn) = @_;
@@ -414,7 +418,7 @@ sub createExtUser(\[%@];$) {
 		
 		# Next, the attributes which go straight to LDAP
 		foreach my $jsonKey (keys(%{$p_userHash})) {
-			if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey})) {
+			if(exists($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}) && defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0])) {
 				my $ldapVal = defined($JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]) ? $JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[3]->($self,$p_userHash->{$jsonKey}) : $p_userHash->{$jsonKey};
 				push(@userAttributes,$JSON_LDAP_USER_ATTRIBUTES{$jsonKey}[0] => $ldapVal);
 			}
@@ -425,6 +429,9 @@ sub createExtUser(\[%@];$) {
 			$p_userHash->{$jsonKey} = undef  if(exists($p_userHash->{$jsonKey}));
 		}
 		push(@userAttributes, USER_HOTCHPOTCH_ATTRIBUTE() => $j->encode($p_userHash));
+		
+		use Data::Dumper;
+		print STDERR Dumper(\@userAttributes),"\n";
 		
 		$entry->add(@userAttributes);
 		
@@ -479,9 +486,10 @@ sub genJSONFromLDAP(\@\%;$) {
 				if($ldapDesc->[1]) {
 					# LDAP attribute values always take precedence over JSON ones
 					my @values = $entry->get_value($ldapKey);
-					@values = $ldapDesc->[4]->($self,@values)  if(defined($ldapDesc->[4]));
+					my $theVal = $ldapDesc->[2] ? \@values : $values[0];
+					$theVal = $ldapDesc->[4]->($self,$theVal)  if(defined($ldapDesc->[4]));
 					
-					$jsonEntry->{$ldapDesc->[0]} = $ldapDesc->[2] ? \@values : $values[0];
+					$jsonEntry->{$ldapDesc->[0]} = $theVal;
 				} else {
 					$jsonEntry->{$ldapDesc->[0]} = undef;
 				}
@@ -603,14 +611,14 @@ sub modifyJSONUser($\%;\@$) {
 					
 					$payload = [ "Validation errors for modifications on user $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors) ];
 				} else {
-					# cn normalization
-					unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
-						my $givenName = ref($p_userHash->{'givenName'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'givenName'}}) : $p_userHash->{'givenName'};
-						my $surname = ref($p_userHash->{'surname'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'surname'}}) : $p_userHash->{'surname'};
-						$p_userHash->{'cn'} = $givenName .' '.$surname;
-						
-						push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{'cn'}[0] => $p_userHash->{'cn'});
-					}
+					# cn normalization (disabled)
+					#unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
+					#	my $givenName = ref($p_userHash->{'givenName'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'givenName'}}) : $p_userHash->{'givenName'};
+					#	my $surname = ref($p_userHash->{'surname'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'surname'}}) : $p_userHash->{'surname'};
+					#	$p_userHash->{'cn'} = $givenName .' '.$surname;
+					#	
+					#	push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{'cn'}[0] => $p_userHash->{'cn'});
+					#}
 					
 					# Mask attributes and store the whole JSON in the hotchpotch
 					foreach my $jsonKey (@JSON_MASK_USER_ATTRIBUTES) {
@@ -619,6 +627,9 @@ sub modifyJSONUser($\%;\@$) {
 					
 					my $j = getJSONHandler();
 					push(@modifiedLDAPAttributes, USER_HOTCHPOTCH_ATTRIBUTE() => $j->encode($jsonUser));
+					
+					# These are needed to upgrade the entry
+					push(@modifiedLDAPAttributes, @LDAP_USER_DEFAULT_ATTRIBUTES);
 					
 					# Now, let's modify the LDAP entry
 					my $dn = $user->dn();
@@ -918,6 +929,10 @@ sub listJSONUsers(;$) {
 	return ($success,$payload);
 }
 
+my @LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 ['extensibleObject','organizationalUnit'],
+);
+
 # Parameters:
 #	ou: The short, organizational unit name, which will hang on userDN
 #	description: The description of the new organizational unit
@@ -938,7 +953,7 @@ sub createPeopleOU($$;$$) {
 	$entry->add(
 		'ou'	=>	$ou,
 		'description'	=>	$description,
-		'objectClass'	=>	[ 'organizationalUnit' ]
+		@LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES
 	);
 	
 	my $updMesg = $entry->update($self->{'ldap'});
@@ -1021,6 +1036,52 @@ sub getJSONPeopleOU($;$) {
 	}
 	
 	return wantarray ? ($success,$payload,$payload2) : $success;
+}
+
+# Parameters:
+#	ou: the RD-Connect organizational unit
+#	jpegPhoto: The raw, new photo to be set
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success (user enabled or disabled)
+sub setPeopleOUPhoto($$;$) {
+	my $self = shift;
+	
+	my($ou,$jpegPhoto,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my($success,$payload) = $self->getPeopleOU($ou,$userDN);
+	if($success) {
+		my $organizationalUnit = $payload;
+		my $dn = $organizationalUnit->dn();
+		$organizationalUnit->changetype('modify');
+		$organizationalUnit->replace(
+			'jpegPhoto'	=>	$jpegPhoto,
+			@LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES
+		);
+
+		my $updMesg = $organizationalUnit->update($self->{'ldap'});
+		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			$success = undef;
+			print STDERR $organizationalUnit->ldif()  unless(wantarray);
+			
+			$payload = [ "Unable to set photo for organizational unit $dn\n".Dumper($updMesg) ];
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
 }
 
 # Parameters:
