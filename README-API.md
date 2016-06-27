@@ -19,6 +19,7 @@ The user-management REST API has next endpoints:
 	* `POST /users/:user_id/disable`: It enables a disabled user (privileged operation)
 	
 	* `GET /users/:user_id/groups`: It lists the ids of the groups / roles where the user is member of.
+	* `PUT /users/:user_id/groups`: It adds the user to the groups / roles mentioned in the input array.
 
 * `GET /organizationalUnits`: It returns the list of registered organizational units.
 

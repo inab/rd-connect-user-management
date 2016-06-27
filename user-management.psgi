@@ -191,7 +191,7 @@ sub put_user_photo {
 	# We are getting the raw entry, as we want just the photo
 	my $data = request->body;
 	
-	my($success,$payload) = $uMgmt->setUserPhoto(params->{user_id},$data);
+	my($success,$payload) = $uMgmt->setUserPhoto(params->{'user_id'},$data);
 	
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
@@ -222,6 +222,25 @@ sub enable_user {
 	return set_user_enabled_state(boolean::true);
 }
 
+sub add_user_to_groups {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %newGroups = params;
+	# We remove so we don't disturb with garbage
+	delete $newGroups{'user_id'};
+	
+	my $p_newGroups = request->data;
+	
+	my($success,$payload) = $uMgmt->addUserToGroup(params->{user_id},$p_newGroups);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while adding user '.params->{user_id}.' to groups','trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 # Routing for /users prefix
 prefix '/users' => sub {
 	get '' => \&get_users;
@@ -234,6 +253,7 @@ prefix '/users' => sub {
 	put '/:user_id/picture' => \&put_user_photo;
 	post '/:user_id/disable' => \&disable_user;
 	post '/:user_id/enable' => \&enable_user;
+	post '/:user_id/groups' => \&add_user_to_groups;
 };
 
 ########################
