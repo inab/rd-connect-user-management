@@ -281,13 +281,11 @@ sub getUIDsFromDNs {
 	
 	my $p_DNs = shift;
 	my $retval = undef;
+	my $payload = undef;
 	
 	if(defined($p_DNs)) {
 		$retval = [];
 		$p_DNs = [ $p_DNs ]  unless(ref($p_DNs) eq 'ARRAY');
-		
-		my $success = 1;
-		my $payload = [];
 		
 		foreach my $DN (@{$p_DNs}) {
 			my $searchMesg = $self->{'ldap'}->search(
@@ -306,32 +304,28 @@ sub getUIDsFromDNs {
 					if($entry->exists('uid')) {
 						push(@{$retval},$entry->get_value('uid'));
 					} else {
-						$success = undef;
-						push(@{$payload},"Entry does not have a valid username for $DN");
-						last;
+						$payload = []  unless(defined($payload));
+						push(@{$payload},"Entry $DN does not have a valid username");
 					}
 				} else {
-					$success = undef;
+					$payload = []  unless(defined($payload));
 					push(@{$payload},"No matching entry found for $DN");
-					last;
 				}
 			} else {
-				$success = undef;
+				$payload = []  unless(defined($payload));
 				push(@{$payload},"Error while finding entry $DN\n".Dumper($searchMesg));
-				last;
-			}
-		}
-		
-		unless($success) {
-			$retval = undef;
-			
-			foreach my $err (@{$payload}) {
-				Carp::carp($err);
 			}
 		}
 	}
 	
-	return $retval;
+	# Show errors when they are not going to be processed upstream
+	if(defined($payload) && !wantarray) {
+		foreach my $err (@{$payload}) {
+			Carp::carp($err);
+		}
+	}
+	
+	return wantarray ? ($retval,$payload) : $retval;
 }
 
 # This method fetches the LDAP directory, in order to find the
@@ -341,28 +335,32 @@ sub getDNsFromUIDs {
 	
 	my $p_uids = shift;
 	my $retval = undef;
+	my $payload = undef;
 	
 	if(defined($p_uids)) {
 		$retval = [];
 		$p_uids = [ $p_uids ]  unless(ref($p_uids) eq 'ARRAY');
 		
 		foreach my $uid (@{$p_uids}) {
-			my($success,$payload) = $self->getUser($uid);
+			my($success,$partialPayload) = $self->getUser($uid);
 			
 			if($success) {
-				push(@{$retval},$payload->dn());
+				push(@{$retval},$partialPayload->dn());
 			} else {
-				$retval = undef;
-				
-				foreach my $err (@{$payload}) {
-					Carp::carp($err);
-				}
-				last;
+				$payload = []  unless(defined($payload));
+				push(@{$payload},@{$partialPayload});
 			}
 		}
 	}
 	
-	return $retval;
+	# Show errors when they are not going to be processed upstream
+	if(defined($payload) && !wantarray) {
+		foreach my $err (@{$payload}) {
+			Carp::carp($err);
+		}
+	}
+	
+	return wantarray ? ($retval,$payload) : $retval;
 }
 
 # Correspondence between JSON attribute names and LDAP attribute names
@@ -471,6 +469,17 @@ sub _getPeopleOUDNFromJSON($\%) {
 	return $dn;
 }
 
+sub _getGroupDNFromJSON($\%) {
+	my $uMgmt = shift;
+	
+	my($jsonGroup) = @_;
+	my $cn = exists($jsonGroup->{'cn'}) ? $jsonGroup->{'cn'} : '';
+	
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$uMgmt->{'groupDN'});
+	
+	return $dn;
+}
+
 sub _normalizeUserCNFromJSON(\%) {
 	my($jsonUser) = @_;
 	
@@ -524,14 +533,16 @@ sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 		}
 		
 		# GroupOU normalization
-		my $groupOU = exists($p_entryHash->{'organizationalUnit'}) ? $p_entryHash->{'organizationalUnit'} : undef;
-		if(defined($groupOU) && length($groupOU) > 0) {
-			$groupOU =~ s/^\s+//;
-			$groupOU =~ s/\s+$//;
+		if(exists($p_json2ldap->{'organizationalUnit'})) {
+			my $groupOU = exists($p_entryHash->{'organizationalUnit'}) ? $p_entryHash->{'organizationalUnit'} : undef;
+			if(defined($groupOU) && length($groupOU) > 0) {
+				$groupOU =~ s/^\s+//;
+				$groupOU =~ s/\s+$//;
+			}
+			
+			$groupOU = $self->{'defaultGroupOU'}  unless(defined($groupOU) && length($groupOU) > 0);
+			$p_entryHash->{'organizationalUnit'} = $groupOU;
 		}
-		
-		$groupOU = $self->{'defaultGroupOU'}  unless(defined($groupOU) && length($groupOU) > 0);
-		$p_entryHash->{'organizationalUnit'} = $groupOU;
 		
 		# Now, the validation of each input
 		my @valErrors = $validator->validate($p_entryHash);
@@ -540,7 +551,7 @@ sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 			
 			my $dn = $m_getDN->($self,$p_entryHash);
 			
-			push(@{$p_err},"Validation errors for not created user $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
+			push(@{$p_err},"Validation errors for not created entry $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
 		} else {
 			# cn normalization
 			$m_normalizePKJSON->($p_entryHash)  if(ref($m_normalizePKJSON) eq 'CODE');
@@ -579,7 +590,21 @@ sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 			if(exists($p_json2ldap->{$jsonKey}) && defined($p_json2ldap->{$jsonKey}[0])) {
 				my $ldapVal = $p_entryHash->{$jsonKey};
 				$ldapVal = [ $ldapVal ]  if($p_json2ldap->{$jsonKey}[2] && !ref($ldapVal) eq 'ARRAY');
-				$ldapVal = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal)  if(defined($p_json2ldap->{$jsonKey}[3]));
+				if(defined($p_json2ldap->{$jsonKey}[3])) {
+					my $retval = undef;
+					($ldapVal,$retval) = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal);
+					
+					if(defined($retval)) {
+						if(wantarray) {
+							return (undef,$retval);
+						} else {
+							foreach my $err (@{$retval}) {
+								Carp::carp($err);
+							}
+							return undef;
+						}
+					}
+				}
 				push(@ldapAttributes,$p_json2ldap->{$jsonKey}[0] => $ldapVal);
 			}
 		}
@@ -671,7 +696,17 @@ sub genJSONFromLDAP(\@\%;$) {
 					# LDAP attribute values always take precedence over JSON ones
 					my @values = $entry->get_value($ldapKey);
 					my $theVal = $ldapDesc->[2] ? \@values : $values[0];
-					$theVal = $ldapDesc->[4]->($self,$theVal)  if(defined($ldapDesc->[4]));
+					if(defined($ldapDesc->[4])) {
+						my $retval = undef;
+						($theVal, $retval) = $ldapDesc->[4]->($self,$theVal);
+						
+						if(defined($retval)) {
+							Carp::carp("Error postprocessing LDAP key $ldapKey");
+							foreach my $err (@{$retval}) {
+								Carp::carp($err);
+							}
+						}
+					}
 					
 					$jsonEntry->{$ldapDesc->[0]} = $theVal;
 				} else {
@@ -776,7 +811,16 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 					if(exists($p_json2ldap->{$jsonKey})) {
 						my $ldapVal = $p_entryHash->{$jsonKey};
 						$ldapVal = [ $ldapVal ]  if($p_json2ldap->{$jsonKey}[2] && !ref($ldapVal) eq 'ARRAY');
-						$ldapVal = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal)  if(defined($p_json2ldap->{$jsonKey}[3]));
+						if(defined($p_json2ldap->{$jsonKey}[3])) {
+							my $retval = undef;
+							($ldapVal,$retval) = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal);
+							
+							# Were there processing errors?
+							if(defined($retval)) {
+								$success = undef;
+								push(@{$payload},"Error on key $jsonKey post-processing",@{$retval});
+							}
+						}
 						
 						if(exists($jsonEntry->{$jsonKey})) {
 							push(@modifiedLDAPAttributes, $p_json2ldap->{$jsonKey}[0] => $ldapVal);
@@ -797,67 +841,69 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 			}
 		}
 		
-		if($modifications) {
-			# Before any modification, let's validate
-			my @valErrors = $validator->validate($jsonEntry);
-			
-			if(scalar(@valErrors) > 0) {
-				$success = undef;
+		if($success) {
+			if($modifications) {
+				# Before any modification, let's validate
+				my @valErrors = $validator->validate($jsonEntry);
 				
-				my $dn = $entry->dn();
-				
-				$payload = [ "Validation errors for modifications on entry $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors) ];
-			} else {
-				# cn normalization (disabled)
-				#unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
-				#	my $givenName = ref($p_userHash->{'givenName'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'givenName'}}) : $p_userHash->{'givenName'};
-				#	my $surname = ref($p_userHash->{'surname'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'surname'}}) : $p_userHash->{'surname'};
-				#	$p_userHash->{'cn'} = $givenName .' '.$surname;
-				#	
-				#	push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{'cn'}[0] => $p_userHash->{'cn'});
-				#}
-				
-				# Mask attributes and store the whole JSON in the hotchpotch
-				foreach my $jsonKey (keys(%{$p_json2ldap})) {
-					if(exists($jsonEntry->{$jsonKey})) {
-						my $p_jsonDesc = $p_json2ldap->{$jsonKey};
-						unless($p_jsonDesc->[1]) {
-							$jsonEntry->{$jsonKey} = undef;
+				if(scalar(@valErrors) > 0) {
+					$success = undef;
+					
+					my $dn = $entry->dn();
+					
+					$payload = [ "Validation errors for modifications on entry $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors) ];
+				} else {
+					# cn normalization (disabled)
+					#unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
+					#	my $givenName = ref($p_userHash->{'givenName'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'givenName'}}) : $p_userHash->{'givenName'};
+					#	my $surname = ref($p_userHash->{'surname'}) eq 'ARRAY' ? join(' ',@{$p_userHash->{'surname'}}) : $p_userHash->{'surname'};
+					#	$p_userHash->{'cn'} = $givenName .' '.$surname;
+					#	
+					#	push(@modifiedLDAPAttributes, $JSON_LDAP_USER_ATTRIBUTES{'cn'}[0] => $p_userHash->{'cn'});
+					#}
+					
+					# Mask attributes and store the whole JSON in the hotchpotch
+					foreach my $jsonKey (keys(%{$p_json2ldap})) {
+						if(exists($jsonEntry->{$jsonKey})) {
+							my $p_jsonDesc = $p_json2ldap->{$jsonKey};
+							unless($p_jsonDesc->[1]) {
+								$jsonEntry->{$jsonKey} = undef;
+							}
 						}
 					}
-				}
-				
-				if(defined($hotchpotchAttribute)) {
-					my $j = getJSONHandler();
-					push(@modifiedLDAPAttributes, $hotchpotchAttribute => $j->encode($jsonEntry));
-				}
-				
-				# These are needed to upgrade the entry
-				push(@modifiedLDAPAttributes, @{$p_ldap_default_attributes});
-				
-				# Now, let's modify the LDAP entry
-				my $dn = $entry->dn();
-				$entry->changetype('modify');
-				
-				# The batch of modifications
-				$entry->add(@addedLDAPAttributes)  if(scalar(@addedLDAPAttributes) > 0);
-				$entry->replace(@modifiedLDAPAttributes)  if(scalar(@modifiedLDAPAttributes) > 0);
-				$entry->delete(map { $_ => undef; } @removedLDAPAttributes)  if(scalar(@removedLDAPAttributes) > 0);
-
-				my $updMesg = $entry->update($self->{'ldap'});
-				if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-					$payload = $jsonEntry;
-					$payload2 = $entry;
-				} else {
-					$success = undef;
-					print STDERR $entry->ldif()  unless(wantarray);
 					
-					$payload = [ "Could not modify entry $dn\n".Dumper($updMesg) ];
+					if(defined($hotchpotchAttribute)) {
+						my $j = getJSONHandler();
+						push(@modifiedLDAPAttributes, $hotchpotchAttribute => $j->encode($jsonEntry));
+					}
+					
+					# These are needed to upgrade the entry
+					push(@modifiedLDAPAttributes, @{$p_ldap_default_attributes});
+					
+					# Now, let's modify the LDAP entry
+					my $dn = $entry->dn();
+					$entry->changetype('modify');
+					
+					# The batch of modifications
+					$entry->add(@addedLDAPAttributes)  if(scalar(@addedLDAPAttributes) > 0);
+					$entry->replace(@modifiedLDAPAttributes)  if(scalar(@modifiedLDAPAttributes) > 0);
+					$entry->delete(map { $_ => undef; } @removedLDAPAttributes)  if(scalar(@removedLDAPAttributes) > 0);
+
+					my $updMesg = $entry->update($self->{'ldap'});
+					if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+						$payload = $jsonEntry;
+						$payload2 = $entry;
+					} else {
+						$success = undef;
+						print STDERR $entry->ldif()  unless(wantarray);
+						
+						$payload = [ "Could not modify entry $dn\n".Dumper($updMesg) ];
+					}
 				}
+			} else {
+				# No modification, so give as payload the unmodified $jsonUser
+				$payload = $jsonEntry;
 			}
-		} else {
-			# No modification, so give as payload the unmodified $jsonUser
-			$payload = $jsonEntry;
 		}
 	} else {
 		push(@{$payload},'The input data to modify must be a hash ref!')  unless(ref($p_entryHash) eq 'HASH');
@@ -1519,6 +1565,10 @@ sub listJSONPeopleOUUsers($;$) {
 	return ($success,$payload);
 }
 
+my @LDAP_GROUP_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	[ 'groupOfNames' ]
+);
+
 # Parameters:
 #	cn: The short, common name, which will hang on groupDN
 #	description: The description of the new groupOfNames
@@ -1567,9 +1617,9 @@ sub createGroup($$$;$$) {
 		$entry->add(
 			'cn'	=>	$cn,
 			'description'	=>	$description,
-			'objectClass'	=>	[ 'groupOfNames' ],
 			'owner'	=>	\@ownersDN,
-			'member'	=>	\@ownersDN
+			'member'	=>	\@ownersDN,
+			@LDAP_GROUP_DEFAULT_ATTRIBUTES
 		);
 		
 		my $updMesg = $entry->update($self->{'ldap'});
@@ -1598,6 +1648,99 @@ sub createGroup($$$;$$) {
 			
 			push(@{$payload},"Unable to create group of names $dn (does the group of names already exist?)\n".Dumper($updMesg));
 		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	cn: The short, common name, which will hang on groupDN
+#	description: The description of the new groupOfNames
+#	p_ownerUIDs: The uid(s) of the owner and first member of this groupOfNames.
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+#	doReplace: (OPTIONAL) If true, the entry is an update
+sub createExtGroup($$$;$$) {
+	my $self = shift;
+	my($p_groupArray,$doReplace) = @_;
+	
+	$p_groupArray = [ $p_groupArray ]  unless(ref($p_groupArray) eq 'ARRAY');
+	
+	my $success;
+	my $payload = [];
+	foreach my $p_groupEntry (@{$p_groupArray}) {
+		# $p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace
+		
+		# Curating the entry
+		if(exists($p_groupEntry->{'owner'})) {
+			if(!exists($p_groupEntry->{'member'})) {
+				$p_groupEntry->{'member'} = $p_groupEntry->{'owner'};
+			} else {
+				# Find the owners in the members list, and initially add them
+				my %memberHash = map { $_ => undef } @{$p_groupEntry->{'member'}};
+				foreach my $owner (@{$p_groupEntry->{'owner'}}) {
+					push(@{$p_groupEntry->{'member'}},$owner)  unless(exists($memberHash{$owner}));
+				}
+			}
+		}
+		
+		my $partialPayload = undef;
+		($success,$partialPayload) = $self->createLDAPFromJSON(
+					$p_groupEntry,
+					\&_getGroupDNFromJSON,
+					undef,
+					getCASGroupValidator(),
+					\%JSON_LDAP_GROUP_ATTRIBUTES,
+					undef,
+					\@LDAP_GROUP_DEFAULT_ATTRIBUTES,
+					$doReplace
+				);
+		
+		last  unless($success);
+		
+		# The entry was created. Now, add all the members back!
+		# The dn of the entry
+		my $jsonGroupEntry = $partialPayload->[0];
+		my $dn = _getGroupDNFromJSON($self,%{$jsonGroupEntry});
+		
+		# Gathering the members
+		foreach my $memberUID (@{$jsonGroupEntry->{'member'}}) {
+			# The member entry
+			my($partialSuccess,$member) = $self->getUser($memberUID);
+			
+			if($partialSuccess) {
+				# Second step, point back to the groupOfNames
+				$member->changetype('modify');
+				$member->add(USER_MEMBEROF_ATTRIBUTE() => $dn);
+				
+				my $updMesg = $member->update($self->{'ldap'});
+				
+				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+					$success = undef;
+					print STDERR $member->ldif()  unless(wantarray);
+					
+					push(@{$payload},"Unable to add memberOf $dn to ".$member->dn()."\n".Dumper($updMesg));
+				}
+			} else {
+				# And all the errors must be gathered
+				$success = undef;
+				push(@{$payload},@{$member});
+			}
+		}
+		
+		last  unless($success);
 	}
 	
 	if(wantarray) {
@@ -1662,14 +1805,38 @@ sub getGroup($;$) {
 }
 
 # Parameters:
+#	groupCN: the RD-Connect group
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+# It returns the JSON entry of the group on success in array context
+sub getJSONGroup($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	
+	my $payload2 = undef;
+	
+	if($success) {
+		$payload2 = $payload;
+		# The original payload is an LDAP groupOfNames entry
+		$payload = $self->genJSONGroupsFromLDAPGroups([$payload2])->[0];
+	}
+	
+	return wantarray ? ($success,$payload,$payload2) : $success;
+}
+
+# Parameters:
 #	groupCN: The cn of the groupOfNames to find
+#	usersFacet: The facet where the users are listed
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
 #		If not set, it uses the one read from the configuration file.
 # It returns a reference to the array of LDAP entries corresponding to the group members on success
-sub getGroupMembers($;$) {
+sub getGroupUsersFacet($$;$) {
 	my $self = shift;
 	
-	my($groupCN,$groupDN)=@_;
+	my($groupCN,$usersFacet,$groupDN)=@_;
 	
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
 	
@@ -1678,10 +1845,12 @@ sub getGroupMembers($;$) {
 	
 	my $payload = [];
 	my @users = ();
-	my $p_userDNs = $group->get_value('member','asref' => 1);
+	my $p_userDNs = $group->get_value($usersFacet,'asref' => 1);
 	foreach my $userDN (@{$p_userDNs}) {
 		my $searchMesg = $self->{'ldap'}->search(
 			'base' => $userDN,
+			'filter' => '(objectClass=*)',
+			'sizelimit' => 1,
 			'scope' => 'base'
 		);
 		
@@ -1705,6 +1874,19 @@ sub getGroupMembers($;$) {
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
 #		If not set, it uses the one read from the configuration file.
 # It returns a reference to the array of LDAP entries corresponding to the group members on success
+sub getGroupMembers($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN)=@_;
+	
+	return $self->getGroupUsersFacet($groupCN,'member',$groupDN);
+}
+
+# Parameters:
+#	groupCN: The cn of the groupOfNames to find
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+# It returns a reference to the array of LDAP entries corresponding to the group members on success
 sub getJSONGroupMembers($;$) {
 	my $self = shift;
 	
@@ -1717,6 +1899,81 @@ sub getJSONGroupMembers($;$) {
 	}
 	
 	return ($success,$payload);
+}
+
+# Parameters:
+#	groupCN: The cn of the groupOfNames to find
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+# It returns a reference to the array of LDAP entries corresponding to the group owners on success
+sub getGroupOwners($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN)=@_;
+	
+	return $self->getGroupUsersFacet($groupCN,'owner',$groupDN);
+}
+
+# Parameters:
+#	groupCN: The cn of the groupOfNames to find
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+# It returns a reference to the array of LDAP entries corresponding to the group owners on success
+sub getJSONGroupOwners($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN)=@_;
+	
+	my($success,$payload) = $self->getGroupOwners($groupCN,$groupDN);
+	
+	if($success) {
+		$payload = $self->genJSONUsersFromLDAPUsers($payload);
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	cn: the RD-Connect group
+#	p_groupHash: a reference to a hash with the modified organizational unit information
+#	p_removedKeys: a reference to an array with the removed keys
+#	groupDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success
+sub modifyJSONGroup($\%;\@$) {
+	my $self = shift;
+	
+	my($groupCN,$p_groupHash,$p_removedKeys,$groupDN) = @_;
+	
+	my($success,$payload,$group) = $self->getJSONGroup($groupCN,$groupDN);
+	
+	if($success) {
+		# $jsonEntry,$entry,$p_entryHash,$p_json2ldap,$validator,$hotchpotchAttribute,$p_ldap_default_attributes
+		my $jsonGroup = $payload;
+		($success,$payload,$group) = $self->modifyJSONEntry(
+							$jsonGroup,
+							$group,
+							$p_groupHash,
+							\%JSON_LDAP_GROUP_ATTRIBUTES,
+							getCASGroupValidator(),
+							undef,
+							\@LDAP_GROUP_DEFAULT_ATTRIBUTES
+						);
+	} else {
+		push(@{$payload},'Problems fetching the group before modifying it');
+	}
+	
+	if(wantarray) {
+		return ($success,$payload,$group);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
 }
 
 # Parameters:
@@ -1765,17 +2022,19 @@ sub listJSONGroups(;$) {
 	return ($success,$payload);
 }
 
+
 # Parameters:
 #	userUID: The uid of the user to be added to the groupOfNames.
+#	isOwner: Is this one becoming an owner?
 #	p_groupCN: The cn(s) of the groupOfNames where the user must be added
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
 #		it uses the one read from the configuration file.
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
 #		If not set, it uses the one read from the configuration file.
-sub addUserToGroup($$;$$) {
+sub addUserToGroup($$$;$$) {
 	my $self = shift;
 	
-	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
+	my($userUID,$isOwner,$p_groupCN,$userDN,$groupDN)=@_;
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
@@ -1812,6 +2071,13 @@ sub addUserToGroup($$;$$) {
 				next ADD_USER_GROUPCN  if($member eq $user->dn());
 			}
 			
+			if($isOwner) {
+				my $p_owners = $group->get_value('owner', 'asref' => 1);
+				foreach my $owner (@{$p_owners}) {
+					next ADD_USER_GROUPCN  if($owner eq $user->dn());
+				}
+			}
+			
 			push(@newGroups,$group);
 		}
 		
@@ -1821,6 +2087,7 @@ sub addUserToGroup($$;$$) {
 				# Now, add the user dn to the group's member list
 				$group->changetype('modify');
 				$group->add('member' => $user->dn());
+				$group->add('owner' => $user->dn())  if($isOwner);
 				
 				my $updMesg = $group->update($self->{'ldap'});
 				
@@ -1828,7 +2095,7 @@ sub addUserToGroup($$;$$) {
 					$success = undef;
 					print STDERR $group->ldif()  unless(wantarray);
 					
-					push(@{$payload},"Unable to add member ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
+					push(@{$payload},"Unable to add ".($isOwner?"owner":"member")." ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
 					last;
 				}
 				push(@newGroupDNs,$group->dn());
@@ -1867,16 +2134,48 @@ sub addUserToGroup($$;$$) {
 }
 
 # Parameters:
+#	userUID: The uid of the user to be added to the groupOfNames as a member.
+#	p_groupCN: The cn(s) of the groupOfNames where the user must be added
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+sub addMemberToGroup($$;$$) {
+	my $self = shift;
+	
+	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
+	
+	return $self->addUserToGroup($userUID,undef,$p_groupCN,$userDN,$groupDN);
+}
+
+# Parameters:
+#	userUID: The uid of the user to be added to the groupOfNames as an owner.
+#	p_groupCN: The cn(s) of the groupOfNames where the user must be added
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+sub addOwnerToGroup($$;$$) {
+	my $self = shift;
+	
+	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
+	
+	return $self->addUserToGroup($userUID,1,$p_groupCN,$userDN,$groupDN);
+}
+
+
+# Parameters:
 #	userUID: The uid of the user to be removed from the groupOfNames.
+#	isOwner: Must this uid be removed as an owner instead of as a member?
 #	p_groupCN: The cn(s) of the groupOfNames where the user must be removed from
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
 #		it uses the one read from the configuration file.
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
 #		If not set, it uses the one read from the configuration file.
-sub removeUserFromGroup($$;$$) {
+sub removeUserFromGroup($$$;$$) {
 	my $self = shift;
 	
-	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
+	my($userUID,$isOwner,$p_groupCN,$userDN,$groupDN)=@_;
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
@@ -1894,7 +2193,8 @@ sub removeUserFromGroup($$;$$) {
 		my $user = $payload;
 		$payload = [];
 		
-		my @groupsToBeRemovedFrom = ();
+		my @groupsToBeRemovedFromAsMember = ();
+		my @groupsToBeRemovedFromAsOwner = ();
 		
 		REMOVE_USER_GROUPCN:
 		foreach my $groupCN (@{$p_groupCN}) {
@@ -1907,34 +2207,45 @@ sub removeUserFromGroup($$;$$) {
 				next;
 			}
 			
-			# Is the user already in the group?
-			my $p_members = $group->get_value('member', 'asref' => 1);
-			foreach my $member (@{$p_members}) {
-				if($member eq $user->dn()) {
-					push(@groupsToBeRemovedFrom,$group);
-					last;
+			if($isOwner) {
+				my $p_owners = $group->get_value('owner', 'asref' => 1);
+				foreach my $owner (@{$p_owners}) {
+					if($owner eq $user->dn()) {
+						push(@groupsToBeRemovedFromAsOwner,$group);
+						last;
+					}
+				}
+			} else {
+				my $p_members = $group->get_value('member', 'asref' => 1);
+				foreach my $member (@{$p_members}) {
+					if($member eq $user->dn()) {
+						push(@groupsToBeRemovedFromAsMember,$group);
+						last;
+					}
 				}
 			}
 		}
 		
-		if($success && scalar(@groupsToBeRemovedFrom) > 0) {
-			my @removeGroupDNs = map { $_->dn(); } @groupsToBeRemovedFrom;
-			
-			# And, at last, add the group dn to the user's memberOf list
-			$user->changetype('modify');
-			$user->delete(USER_MEMBEROF_ATTRIBUTE() => \@removeGroupDNs);
-			
-			my $updMesg = $user->update($self->{'ldap'});
-			
-			if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-				$success = undef;
-				print STDERR $user->ldif()  unless(wantarray);
+		if($success && (scalar(@groupsToBeRemovedFromAsMember) > 0 || scalar(@groupsToBeRemovedFromAsOwner) > 0)) {
+			if(scalar(@groupsToBeRemovedFromAsMember) > 0) {
+				my @removeGroupDNs = map { $_->dn(); } @groupsToBeRemovedFromAsMember;
 				
-				push(@{$payload},"Unable to remove memberOf ".join(',',@removeGroupDNs)." from ".$user->dn()."\n".Dumper($updMesg));
+				# And, at last, add the group dn to the user's memberOf list
+				$user->changetype('modify');
+				$user->delete(USER_MEMBEROF_ATTRIBUTE() => \@removeGroupDNs);
+				
+				my $updMesg = $user->update($self->{'ldap'});
+				
+				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+					$success = undef;
+					print STDERR $user->ldif()  unless(wantarray);
+					
+					push(@{$payload},"Unable to remove memberOf ".join(',',@removeGroupDNs)." from ".$user->dn()."\n".Dumper($updMesg));
+				}
 			}
 			
 			if($success) {
-				foreach my $group (@groupsToBeRemovedFrom) {
+				foreach my $group (@groupsToBeRemovedFromAsMember) {
 					# Now, remove the user dn from the group's member list
 					$group->changetype('modify');
 					$group->delete('member' => [ $user->dn() ]);
@@ -1947,6 +2258,23 @@ sub removeUserFromGroup($$;$$) {
 						
 						push(@{$payload},"Unable to remove member ".$user->dn()." from ".$group->dn()."\n".Dumper($updMesg));
 						last;
+					}
+				}
+				if($success) {
+					foreach my $group (@groupsToBeRemovedFromAsOwner) {
+						# Now, remove the user dn from the group's member list
+						$group->changetype('modify');
+						$group->delete('owner' => [ $user->dn() ]);
+						
+						my $updMesg = $group->update($self->{'ldap'});
+						
+						if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+							$success = undef;
+							print STDERR $group->ldif()  unless(wantarray);
+							
+							push(@{$payload},"Unable to remove owner ".$user->dn()." from ".$group->dn()."\n".Dumper($updMesg));
+							last;
+						}
 					}
 				}
 			}
@@ -1965,6 +2293,37 @@ sub removeUserFromGroup($$;$$) {
 		return $success;
 	} 
 }
+
+# Parameters:
+#	userUID: The uid of the member to be removed from the groupOfNames.
+#	p_groupCN: The cn(s) of the groupOfNames where the user must be removed from
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+sub removeMemberFromGroup($$;$$) {
+	my $self = shift;
+	
+	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
+	
+	return $self->removeUserFromGroup($userUID,undef,$p_groupCN,$userDN,$groupDN);
+}
+
+# Parameters:
+#	userUID: The uid of the owner to be removed from the groupOfNames.
+#	p_groupCN: The cn(s) of the groupOfNames where the user must be removed from
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+sub removeOwnerFromGroup($$;$$) {
+	my $self = shift;
+	
+	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
+	
+	return $self->removeUserFromGroup($userUID,1,$p_groupCN,$userDN,$groupDN);
+}
+
 
 # Parameters:
 #	keyName: the key name of the alias

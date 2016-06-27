@@ -39,3 +39,22 @@ The user-management REST API has next endpoints:
 	* `GET /organizationalUnits/:ou_id/users`: It returns the list of registered users (both enabled and disabled) under this organizational unit which matches the record, or 404 if not found.
 
 * `GET /groups`: It returns the list of registered groups / roles.
+
+	* `PUT /groups`: It creates a new group / role. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
+	
+	* `GET /groups/:group_id`: It returns the group which matches the record, or 404 if not found.
+
+	* `POST /groups/:group_id`: It modifies an existing group features, but not its members or owners. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
+	
+	* `GET /groups/:group_id/members`: It returns the list of users which are members of this group, or 404 if not found.
+	
+	* `POST /groups/:group_id/members`: It adds the users in the input array to the group as members.
+	
+	* `DELETE /groups/:group_id/members`: It removes the users in the input array from the group as members.
+	
+	* `GET /groups/:group_id/owners`: It returns the list of users which are owners of this group, or 404 if not found.
+
+	* `POST /groups/:group_id/owners`: It adds the users in the input array to the group as owners.
+	
+	* `DELETE /groups/:group_id/owners`: It removes the users in the input array from the group as owners.
+	

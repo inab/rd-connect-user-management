@@ -235,7 +235,7 @@ sub add_user_to_groups {
 	
 	my $p_newGroups = request->data;
 	
-	my($success,$payload) = $uMgmt->addUserToGroup(params->{user_id},$p_newGroups);
+	my($success,$payload) = $uMgmt->addMemberToGroup(params->{user_id},$p_newGroups);
 	
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while adding user '.params->{user_id}.' to groups','trace' => $payload}),500);
@@ -254,7 +254,7 @@ sub remove_user_from_groups {
 	
 	my $p_groupsToRemove = request->data;
 	
-	my($success,$payload) = $uMgmt->removeUserFromGroup(params->{user_id},$p_groupsToRemove);
+	my($success,$payload) = $uMgmt->removeMemberFromGroup(params->{user_id},$p_groupsToRemove);
 	
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while removing user '.params->{user_id}.' from groups','trace' => $payload}),500);
@@ -425,11 +425,157 @@ sub get_groups {
 	return $payload;
 }
 
+sub get_group {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONGroup(params->{group_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload is the group
+	return $payload;
+}
+
+sub get_group_members {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONGroupMembers(params->{group_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload are the users
+	return $payload;
+}
+
+sub get_group_owners {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONGroupOwners(params->{group_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload are the users
+	return $payload;
+}
+
 # next operations should be allowed only to allowed / privileged users
+
+sub create_group {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $p_newGroup = request->data;
+	
+	my($success,$payload) = $uMgmt->createExtGroup($p_newGroup);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating group','trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub modify_group {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $p_newGroup = request->data;
+	
+	my($success,$payload) = $uMgmt->modifyJSONGroup(params->{group_id},$p_newGroup);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying group '.params->{group_id},'trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub add_group_users {
+	my $isOwner = shift;
+	
+	my $p_newUsers = request->data;
+	
+	send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Input must be an array'}),500)  unless(ref($p_newUsers) eq 'ARRAY');
+	
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $p_newGroups = [ params->{group_id} ];
+	
+	foreach my $user_id (@{$p_newUsers}) {
+		next  unless(defined($user_id));
+		
+		my($success,$payload) = $uMgmt->addUserToGroup($user_id,$isOwner,$p_newGroups);
+		
+		unless($success) {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while adding user '.$user_id.' to group '.params->{group_id},'trace' => $payload}),500);
+		}
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub add_group_members {
+	return add_group_users();
+}
+
+sub add_group_owners {
+	return add_group_users(1);
+}
+
+
+sub remove_users_from_group {
+	my $isOwner = shift;
+	
+	my $p_newUsers = request->data;
+	
+	send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Input must be an array'}),500)  unless(ref($p_newUsers) eq 'ARRAY');
+	
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $p_newGroups = [ params->{group_id} ];
+	
+	foreach my $user_id (@{$p_newUsers}) {
+		next  unless(defined($user_id));
+		
+		my($success,$payload) = $uMgmt->removeUserFromGroup($user_id,$isOwner,$p_newGroups);
+		
+		unless($success) {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while removing user '.$user_id.' from group '.params->{group_id},'trace' => $payload}),500);
+		}
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub remove_group_members {
+	return remove_users_from_group();
+}
+
+sub remove_group_owners {
+	return remove_users_from_group(1);
+}
+
 
 prefix '/groups' => sub {
 	get '' => \&get_groups;
+	get '/:group_id' => \&get_group;
+	get '/:group_id/members' => \&get_group_members;
+	get '/:group_id/owners' => \&get_group_owners;
 	# next operations should be allowed only to allowed / privileged users
+	put '' => \&create_group;
+	post '/:group_id' => \&modify_group;
+	post '/:group_id/members' => \&add_group_members;
+	del '/:group_id/members' => \&remove_group_members;
+	post '/:group_id/owners' => \&add_group_owners;
+	del '/:group_id/owners' => \&remove_group_owners;
 };
 
 package main;

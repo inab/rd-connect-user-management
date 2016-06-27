@@ -40,7 +40,7 @@ if(scalar(@ARGV)>=2) {
 				
 				my @groupCNs = split(/,/,$groupCN);
 				
-				Carp::croak("Unable to associate user $userUID to group(s) $groupCN")  unless($uMgmt->addUserToGroup($userUID,\@groupCNs));
+				Carp::croak("Unable to associate user $userUID to group(s) $groupCN")  unless($uMgmt->addMemberToGroup($userUID,\@groupCNs));
 				
 				print "$userUID => $groupCN\n";
 			}
