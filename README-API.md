@@ -17,6 +17,8 @@ The user-management REST API has next endpoints:
 	* `POST /users/:user_id/enable`: It enables a disabled user (privileged operation)
 
 	* `POST /users/:user_id/disable`: It enables a disabled user (privileged operation)
+	
+	* `GET /users/:user_id/groups`: It lists the ids of the groups / roles where the user is member of.
 
 * `GET /organizationalUnits`: It returns the list of registered organizational units.
 
@@ -31,3 +33,5 @@ The user-management REST API has next endpoints:
 	* `PUT /organizationalUnits/:ou_id/picture`: It sets up the photo associated to the organizational unit which matches the record, or 404 if not found. It should be a JPEG photo.
 
 	* `GET /organizationalUnits/:ou_id/users`: It returns the list of registered users (both enabled and disabled) under this organizational unit which matches the record, or 404 if not found.
+
+* `GET /groups`: It returns the list of registered groups / roles.

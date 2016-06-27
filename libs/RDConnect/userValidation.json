@@ -109,6 +109,13 @@
 					"label"
 				]
 			}
+		},
+		"groups": {
+			"title": "The list of groups where this user is registered in",
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
 		}
 	},
 	"additionalProperties": false,

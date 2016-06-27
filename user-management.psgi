@@ -138,6 +138,18 @@ sub get_user_photo {
 	send_file(\$data, content_type => 'image/jpeg');
 }
 
+sub get_user_groups {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONUserGroups(params->{user_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload is the list of groups
+	return $payload;
+}
 
 # next operations should be allowed only to privileged users
 
@@ -215,6 +227,7 @@ prefix '/users' => sub {
 	get '' => \&get_users;
 	get '/:user_id' => \&get_user;
 	get '/:user_id/picture' => \&get_user_photo;
+	get '/:user_id/groups' => \&get_user_groups;
 	# next operations should be allowed only to privileged users
 	put '' => \&create_user;
 	post '/:user_id' => \&modify_user;

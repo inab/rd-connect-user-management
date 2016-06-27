@@ -280,6 +280,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 	'postalAddress'	=>	['postalAddress', boolean::true, boolean::false, undef, undef, boolean::false],
 	'links'	=>	['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
 	
+	'groups'	=>	['memberOf', boolean::true, boolean::true, undef, sub { return [ map { _getCNFromGroupDN($_); } @{$_[1]} ]; }, boolean::true],
 	'organizationalUnit'	=>	[undef, boolean::true, boolean::false, undef, undef, boolean::true],
 );
 
@@ -298,6 +299,7 @@ my %LDAP_JSON_OU_ATTRIBUTES = map { $JSON_LDAP_OU_ATTRIBUTES{$_}[0] => [ $_, @{$
 # Hotchpotches
 
 use constant USER_HOTCHPOTCH_ATTRIBUTE	=> 	'jsonData';
+use constant USER_MEMBEROF_ATTRIBUTE	=>	'memberOf';
 
 sub _getParentDNFromDN($) {
 	my($dn) = @_;
@@ -315,6 +317,14 @@ sub _getParentOUFromDN($) {
 	shift(@{$p_components});
 	
 	return exists($p_components->[0]{'ou'}) ? $p_components->[0]{'ou'} : undef;
+}
+
+sub _getCNFromGroupDN($) {
+	my($dn) = @_;
+	
+	my $p_components = Net::LDAP::Util::ldap_explode_dn($dn,@LDAP_UTIL_SERIALIZATION_PARAMS);
+	
+	return exists($p_components->[0]{'cn'}) ? $p_components->[0]{'cn'} : undef;
 }
 
 sub _getUserDNFromJSON($\%) {
@@ -855,6 +865,35 @@ sub getJSONUser($;$) {
 	
 	return wantarray ? ($success,$payload,$payload2) : $success;
 }
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+# It returns the JSON entry of the user on success in array context
+sub getJSONUserGroups($;$) {
+	my $self = shift;
+	
+	my($username,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	
+	if($success) {
+		my $user = $payload;
+		# The original payload is an LDAP user entry
+		my @groupCNs = ();
+		$payload = \@groupCNs;
+		if($user->exists(USER_MEMBEROF_ATTRIBUTE)) {
+			my $p_memberOfs = $user->get_value(USER_MEMBEROF_ATTRIBUTE,'asref' => 1);
+			foreach my $memberOf (@{$p_memberOfs}) {
+				push(@groupCNs,_getCNFromGroupDN($memberOf));
+			}
+		}
+	}
+	
+	return wantarray ? ($success,$payload) : $success;
+}
+
 
 # Parameters:
 #	username: the RD-Connect username or user e-mail
@@ -1412,7 +1451,7 @@ sub createGroup($$$;$$) {
 			foreach my $owner (@owners) {
 				# And, at last, add the dn to the memberOf list
 				$owner->changetype('modify');
-				$owner->add('memberOf' => $dn);
+				$owner->add(USER_MEMBEROF_ATTRIBUTE() => $dn);
 				
 				$updMesg = $owner->update($self->{'ldap'});
 				
@@ -1511,7 +1550,7 @@ sub getGroupMembers($;$) {
 	
 	my $payload = [];
 	my @users = ();
-	my $p_userDNs = $group->get_value('member',asref => 1);
+	my $p_userDNs = $group->get_value('member','asref' => 1);
 	foreach my $userDN (@{$p_userDNs}) {
 		my $searchMesg = $self->{'ldap'}->search(
 			'base' => $userDN,
@@ -1655,7 +1694,7 @@ sub addUserToGroup($$;$$) {
 				
 				# And, at last, add the group dn to the user's memberOf list
 				$user->changetype('modify');
-				$user->add('memberOf' => \@newGroupDNs);
+				$user->add(USER_MEMBEROF_ATTRIBUTE() => \@newGroupDNs);
 				
 				my $updMesg = $user->update($self->{'ldap'});
 				
