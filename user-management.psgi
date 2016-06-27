@@ -151,6 +151,10 @@ sub get_user_groups {
 	return $payload;
 }
 
+sub get_user_group {
+	redirect '../../groups/'.params->{'group_id'}, 301;
+}
+
 # next operations should be allowed only to privileged users
 
 sub create_user {
@@ -266,6 +270,7 @@ prefix '/users' => sub {
 	get '/:user_id' => \&get_user;
 	get '/:user_id/picture' => \&get_user_photo;
 	get '/:user_id/groups' => \&get_user_groups;
+	get '/:user_id/groups/:group_id' => \&get_user_group;
 	# next operations should be allowed only to privileged users
 	put '' => \&create_user;
 	post '/:user_id' => \&modify_user;
@@ -401,6 +406,30 @@ prefix '/organizationalUnits' => sub {
 	put '' => \&create_OU;
 	post '/:ou_id' => \&modify_OU;
 	put '/:ou_id/picture' => \&put_OU_photo;
+};
+
+##################
+# Groups / roles #
+##################
+
+sub get_groups {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONGroups();
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Could not fulfill internal queries','trace' => $payload}),500);
+	}
+	
+	# Here the payload is the list of organizational units
+	return $payload;
+}
+
+# next operations should be allowed only to allowed / privileged users
+
+prefix '/groups' => sub {
+	get '' => \&get_groups;
+	# next operations should be allowed only to allowed / privileged users
 };
 
 package main;

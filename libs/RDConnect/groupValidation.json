@@ -1,0 +1,46 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#CASGroup",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect CAS group / role",
+	"type": "object",
+	"properties": {
+		"cn": {
+			"title": "The common name of the group (something short and meaningful)",
+			"type": ["string","null"]
+		},
+		"description": {
+			"title": "The description of the group",
+			"type": "string"
+		},
+		"groupPurpose": {
+			"title": "Purpose of the created group",
+			"type": "string",
+			"enum": [ "sampleAccessControl", "applicationAccessControl", "management", "other" ]
+		},
+		"owner": {
+			"title": "The username(s) of the owner(s) / manager(s) of this group / role",
+			"type": ["array","null"],
+			"items": {
+				"type": "string"
+			},
+			"minItems": 1,
+			"uniqueItems": true
+		},
+		"members": {
+			"title": "The username(s) of the members of this group / role",
+			"type": "array",
+			"items": {
+				"type": "string"
+			},
+			"minItems": 1,
+			"uniqueItems": true
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"cn",
+		"owner"
+	],
+	"dependencies": {
+	}
+}

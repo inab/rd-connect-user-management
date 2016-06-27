@@ -257,6 +257,112 @@ sub createUser($$$$$$$;$) {
 		return $ouValidator;
 	}
 	
+	use constant GROUP_VALIDATION_SCHEMA_FILE	=>	'groupValidation.json';
+	my $groupValidator = undef;
+	
+	sub getCASGroupValidator() {
+		unless(defined($groupValidator)) {
+			my $groupSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),GROUP_VALIDATION_SCHEMA_FILE);
+			if(-r $groupSchemaPath) {
+				$groupValidator = JSON::Validator->new();
+				$groupValidator->schema($groupSchemaPath);
+			}
+		}
+		
+		return $groupValidator;
+	}
+	
+}
+
+# This method fetches the LDAP directory, in order to find the
+# correspondence between DNs and their usernames
+sub getUIDsFromDNs {
+	my $self = shift;
+	
+	my $p_DNs = shift;
+	my $retval = undef;
+	
+	if(defined($p_DNs)) {
+		$retval = [];
+		$p_DNs = [ $p_DNs ]  unless(ref($p_DNs) eq 'ARRAY');
+		
+		my $success = 1;
+		my $payload = [];
+		
+		foreach my $DN (@{$p_DNs}) {
+			my $searchMesg = $self->{'ldap'}->search(
+				'base' => $DN,
+				'filter' => "(objectClass=*)",
+				'sizelimit' => 1,
+				'scope' => 'base'
+			);
+			
+			if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+				if($searchMesg->count>0) {
+					# The entry
+					my $entry = $searchMesg->entry(0);
+					
+					# Now, let's get the uid
+					if($entry->exists('uid')) {
+						push(@{$retval},$entry->get_value('uid'));
+					} else {
+						$success = undef;
+						push(@{$payload},"Entry does not have a valid username for $DN");
+						last;
+					}
+				} else {
+					$success = undef;
+					push(@{$payload},"No matching entry found for $DN");
+					last;
+				}
+			} else {
+				$success = undef;
+				push(@{$payload},"Error while finding entry $DN\n".Dumper($searchMesg));
+				last;
+			}
+		}
+		
+		unless($success) {
+			$retval = undef;
+			
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+	}
+	
+	return $retval;
+}
+
+# This method fetches the LDAP directory, in order to find the
+# correspondence between input usernames and their DNs
+sub getDNsFromUIDs {
+	my $self = shift;
+	
+	my $p_uids = shift;
+	my $retval = undef;
+	
+	if(defined($p_uids)) {
+		$retval = [];
+		$p_uids = [ $p_uids ]  unless(ref($p_uids) eq 'ARRAY');
+		
+		foreach my $uid (@{$p_uids}) {
+			my($success,$payload) = $self->getUser($uid);
+			
+			if($success) {
+				push(@{$retval},$payload->dn());
+			} else {
+				$retval = undef;
+				
+				foreach my $err (@{$payload}) {
+					Carp::carp($err);
+				}
+				last;
+			}
+		}
+	}
+	
+	return $retval;
 }
 
 # Correspondence between JSON attribute names and LDAP attribute names
@@ -287,6 +393,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 # Inverse correspondence: LDAP attributes to JSON ones
 my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_USER_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_USER_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_USER_ATTRIBUTES);
 
+
 my %JSON_LDAP_OU_ATTRIBUTES = (
 	'organizationalUnit'	=>	['ou', boolean::true, boolean::false, undef, undef, boolean::true],
 	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
@@ -296,10 +403,25 @@ my %JSON_LDAP_OU_ATTRIBUTES = (
 
 my %LDAP_JSON_OU_ATTRIBUTES = map { $JSON_LDAP_OU_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_OU_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_OU_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_OU_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_OU_ATTRIBUTES);
 
+
+my %JSON_LDAP_GROUP_ATTRIBUTES = (
+	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
+	'groupPurpose'	=>	['businessCategory',boolean::true, boolean::false, undef, undef, boolean::false],
+	'owner'	=>	['owner', boolean::true, boolean::true, \&getDNsFromUIDs, \&getUIDsFromDNs, boolean::true],
+	'members'	=>	['member', boolean::true, boolean::true, \&getDNsFromUIDs, \&getUIDsFromDNs, boolean::true],
+);
+
+my %LDAP_JSON_GROUP_ATTRIBUTES = map { $JSON_LDAP_GROUP_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_GROUP_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_GROUP_ATTRIBUTES);
+
 # Hotchpotches
 
 use constant USER_HOTCHPOTCH_ATTRIBUTE	=> 	'jsonData';
+
+# Other constants
 use constant USER_MEMBEROF_ATTRIBUTE	=>	'memberOf';
+
+# And now, methods (again)!
 
 sub _getParentDNFromDN($) {
 	my($dn) = @_;
@@ -585,6 +707,12 @@ sub genJSONouFromLDAPou(\@) {
 	my $self = shift;
 	
 	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_OU_ATTRIBUTES);
+}
+
+sub genJSONGroupsFromLDAPGroups(\@) {
+	my $self = shift;
+	
+	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_GROUP_ATTRIBUTES);
 }
 
 # Parameters:
@@ -1615,6 +1743,23 @@ sub listGroups(;$) {
 		$payload = [ $searchMesg->entries ];
 	} else {
 		$payload = [ "Error while finding groups\n".Dumper($searchMesg) ];
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	groupDN: (OPTIONAL) The DN used as parent of all the groups. If not set,
+#		it uses the one read from the configuration file.
+sub listJSONGroups(;$) {
+	my $self = shift;
+	
+	my($groupDN) = @_;
+	
+	my($success,$payload) = $self->listGroups($groupDN);
+	
+	if($success) {
+		$payload = $self->genJSONGroupsFromLDAPGroups($payload);
 	}
 	
 	return ($success,$payload);

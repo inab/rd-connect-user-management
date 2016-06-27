@@ -42,6 +42,7 @@
 			"title": "The e-mail address(es) of the user",
 			"type": ["array","string"],
 			"format": "email",
+			"uniqueItems": true,
 			"items": {
 				"type": "string",
 				"format": "email"
@@ -113,6 +114,7 @@
 		"groups": {
 			"title": "The list of groups where this user is registered in",
 			"type": "array",
+			"uniqueItems": true,
 			"items": {
 				"type": "string"
 			}
