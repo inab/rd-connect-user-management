@@ -1700,9 +1700,109 @@ sub addUserToGroup($$;$$) {
 				
 				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 					$success = undef;
-					print STDERR $user->ldif();
+					print STDERR $user->ldif()  unless(wantarray);
 					
 					push(@{$payload},"Unable to add memberOf ".join(',',@newGroupDNs)." to ".$user->dn()."\n".Dumper($updMesg));
+				}
+			}
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	userUID: The uid of the user to be removed from the groupOfNames.
+#	p_groupCN: The cn(s) of the groupOfNames where the user must be removed from
+#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
+#		it uses the one read from the configuration file.
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+sub removeUserFromGroup($$;$$) {
+	my $self = shift;
+	
+	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	$p_groupCN = [ $p_groupCN ]  unless(ref($p_groupCN) eq 'ARRAY');
+	
+	# First, the user must be found
+	my($success, $payload) = $self->getUser($userUID,$userDN);
+	#if($success && $payload->get_value('disabledAccount') eq 'TRUE') {
+	#	$success = undef;
+	#	$payload = [ 'Cannot modify a disabled user' ];
+	#}
+	
+	if($success) {
+		my $user = $payload;
+		$payload = [];
+		
+		my @groupsToBeRemovedFrom = ();
+		
+		REMOVE_USER_GROUPCN:
+		foreach my $groupCN (@{$p_groupCN}) {
+			# Second, each group of names must be found
+			my($partialSuccess,$group) = $self->getGroup($groupCN,$groupDN);
+			
+			unless($partialSuccess) {
+				$success = undef;
+				push(@{$payload},@{$group});
+				next;
+			}
+			
+			# Is the user already in the group?
+			my $p_members = $group->get_value('member', 'asref' => 1);
+			foreach my $member (@{$p_members}) {
+				if($member eq $user->dn()) {
+					push(@groupsToBeRemovedFrom,$group);
+					last;
+				}
+			}
+		}
+		
+		if($success && scalar(@groupsToBeRemovedFrom) > 0) {
+			my @removeGroupDNs = map { $_->dn(); } @groupsToBeRemovedFrom;
+			
+			# And, at last, add the group dn to the user's memberOf list
+			$user->changetype('modify');
+			$user->delete(USER_MEMBEROF_ATTRIBUTE() => \@removeGroupDNs);
+			
+			my $updMesg = $user->update($self->{'ldap'});
+			
+			if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+				$success = undef;
+				print STDERR $user->ldif()  unless(wantarray);
+				
+				push(@{$payload},"Unable to remove memberOf ".join(',',@removeGroupDNs)." from ".$user->dn()."\n".Dumper($updMesg));
+			}
+			
+			if($success) {
+				foreach my $group (@groupsToBeRemovedFrom) {
+					# Now, remove the user dn from the group's member list
+					$group->changetype('modify');
+					$group->delete('member' => [ $user->dn() ]);
+					
+					my $updMesg = $group->update($self->{'ldap'});
+					
+					if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+						$success = undef;
+						print STDERR $group->ldif()  unless(wantarray);
+						
+						push(@{$payload},"Unable to remove member ".$user->dn()." from ".$group->dn()."\n".Dumper($updMesg));
+						last;
+					}
 				}
 			}
 		}

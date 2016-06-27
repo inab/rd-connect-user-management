@@ -241,6 +241,25 @@ sub add_user_to_groups {
 	return [];
 }
 
+sub remove_user_from_groups {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %newGroups = params;
+	# We remove so we don't disturb with garbage
+	delete $newGroups{'user_id'};
+	
+	my $p_groupsToRemove = request->data;
+	
+	my($success,$payload) = $uMgmt->removeUserFromGroup(params->{user_id},$p_groupsToRemove);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while removing user '.params->{user_id}.' from groups','trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 # Routing for /users prefix
 prefix '/users' => sub {
 	get '' => \&get_users;
@@ -254,6 +273,7 @@ prefix '/users' => sub {
 	post '/:user_id/disable' => \&disable_user;
 	post '/:user_id/enable' => \&enable_user;
 	post '/:user_id/groups' => \&add_user_to_groups;
+	del '/:user_id/groups' => \&remove_user_from_groups;
 };
 
 ########################
