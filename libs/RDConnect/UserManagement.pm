@@ -11,11 +11,13 @@ package RDConnect::UserManagement;
 use Carp;
 use Config::IniFiles;
 use Digest;
+use IO::Scalar;
 use MIME::Base64;
 use Net::LDAP;
 use Net::LDAP::Entry;
 use Net::LDAP::Util;
 use Scalar::Util qw();
+use File::MimeInfo::Magic qw();
 
 use constant SECTION	=>	'main';
 use constant LDAP_SECTION	=>	'ldap';
@@ -272,10 +274,77 @@ sub createUser($$$$$$$;$) {
 		return $groupValidator;
 	}
 	
+	use constant RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	'documentValidation.json';
+	my $rdDocumentValidator = undef;
+	
+	sub getCASRDDocumentValidator() {
+		unless(defined($rdDocumentValidator)) {
+			my $rdDocumentSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),RDDOCUMENT_VALIDATION_SCHEMA_FILE);
+			if(-r $rdDocumentSchemaPath) {
+				$rdDocumentValidator = JSON::Validator->new();
+				$rdDocumentValidator->schema($rdDocumentSchemaPath);
+			}
+		}
+		
+		return $rdDocumentValidator;
+	}
+	
 }
 
 # This method fetches the LDAP directory, in order to find the
 # correspondence between DNs and their usernames
+sub getUIDFromDN($;$) {
+	my $self = shift;
+	
+	my($DN,$beStrict) = shift;
+	
+	my $retval = undef;
+	my $payload = undef;
+	
+	if(defined($DN)) {
+		my $searchMesg = $self->{'ldap'}->search(
+			'base' => $DN,
+			'filter' => "(objectClass=*)",
+			'sizelimit' => 1,
+			'scope' => 'base'
+		);
+		
+		if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+			if($searchMesg->count>0) {
+				# The entry
+				my $entry = $searchMesg->entry(0);
+				
+				# Now, let's get the uid
+				if($entry->exists('uid')) {
+					$retval = $entry->get_value('uid');
+				} elsif($beStrict) {
+					$payload = []  unless(defined($payload));
+					push(@{$payload},"Entry $DN does not have a valid username");
+				} else {
+					# Being permissive
+					$retval = $entry->dn();
+				}
+			} else {
+				$payload = []  unless(defined($payload));
+				push(@{$payload},"No matching entry found for $DN");
+			}
+		} else {
+			$payload = []  unless(defined($payload));
+			push(@{$payload},"Error while finding entry $DN\n".Dumper($searchMesg));
+		}
+	}
+	
+	# Show errors when they are not going to be processed upstream
+	if(defined($payload) && !wantarray) {
+		foreach my $err (@{$payload}) {
+			Carp::carp($err);
+		}
+	}
+	
+	return wantarray ? ($retval,$payload) : $retval;
+}
+
+
 sub getUIDsFromDNs {
 	my $self = shift;
 	
@@ -288,32 +357,12 @@ sub getUIDsFromDNs {
 		$p_DNs = [ $p_DNs ]  unless(ref($p_DNs) eq 'ARRAY');
 		
 		foreach my $DN (@{$p_DNs}) {
-			my $searchMesg = $self->{'ldap'}->search(
-				'base' => $DN,
-				'filter' => "(objectClass=*)",
-				'sizelimit' => 1,
-				'scope' => 'base'
-			);
+			my($partialRetval,$partialPayload) = $self->getUIDFromDN($DN,1);
 			
-			if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-				if($searchMesg->count>0) {
-					# The entry
-					my $entry = $searchMesg->entry(0);
-					
-					# Now, let's get the uid
-					if($entry->exists('uid')) {
-						push(@{$retval},$entry->get_value('uid'));
-					} else {
-						$payload = []  unless(defined($payload));
-						push(@{$payload},"Entry $DN does not have a valid username");
-					}
-				} else {
-					$payload = []  unless(defined($payload));
-					push(@{$payload},"No matching entry found for $DN");
-				}
-			} else {
+			push(@{$retval}, $partialRetval);
+			if(defined($partialPayload)) {
 				$payload = []  unless(defined($payload));
-				push(@{$payload},"Error while finding entry $DN\n".Dumper($searchMesg));
+				push(@{$payload},@{$partialPayload});
 			}
 		}
 	}
@@ -375,7 +424,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
 	'email'	=>	['mail',boolean::true, boolean::true, undef, undef, boolean::false],
 	
-	'employeeType'	=>	['employeeType', boolean::true, boolean::false, undef, undef, boolean::false],
+	'userCategory'	=>	['userClass', boolean::true, boolean::false, undef, undef, boolean::false],
 	'title'	=>	['title', boolean::true, boolean::false, undef, undef, boolean::false],
 	'picture'	=>	['jpegPhoto', boolean::true, boolean::false, sub { return decode_base64($_[1]);}, sub { return encode_base64($_[1]); }, boolean::false],
 	'telephoneNumber'	=>	['telephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
@@ -411,6 +460,20 @@ my %JSON_LDAP_GROUP_ATTRIBUTES = (
 );
 
 my %LDAP_JSON_GROUP_ATTRIBUTES = map { $JSON_LDAP_GROUP_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_GROUP_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_GROUP_ATTRIBUTES);
+
+
+my %JSON_LDAP_RDDOCUMENT_ATTRIBUTES = (
+	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
+	'documentClass'	=>	['documentClass', boolean::true, boolean::false, undef, undef, boolean::false],
+	'creationTimestamp'	=>	['createTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+	'modificationTimestamp'	=>	['modifyTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+	'owner'	=>	['owner', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
+	'creator'	=>	['creatorsName', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
+	'modifier'	=>	['modifiersName', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
+);
+
+my %LDAP_JSON_RDDOCUMENT_ATTRIBUTES = map { $JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_RDDOCUMENT_ATTRIBUTES);
 
 # Hotchpotches
 
@@ -488,6 +551,16 @@ sub _normalizeUserCNFromJSON(\%) {
 		my $surname = ref($jsonUser->{'surname'}) eq 'ARRAY' ? join(' ',@{$jsonUser->{'surname'}}) : $jsonUser->{'surname'};
 		$jsonUser->{'cn'} = $givenName .' '.$surname;
 	}
+}
+
+sub _LDAP_ISO8601_RFC3339($$) {
+	my($uMgmt,$timestamp) = @_;
+	
+	if($timestamp =~ /^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})Z/) {
+		$timestamp = join('-',$1,$2,$3).'T'.join(':',$4,$5,$6).'Z';
+	}
+	
+	return $timestamp;
 }
 
 # Parameters:
@@ -669,7 +742,7 @@ sub createExtUser(\[%@];$) {
 #	m_postfixup: a post fixup method, which takes the whole LDAP entry
 #	hotchpotchAttribute: The name of the hotchpotch attribute, if any
 # It returns an array of JSON user entries
-sub genJSONFromLDAP(\@\%;$) {
+sub genJSONFromLDAP(\@\%;$$) {
 	my $self = shift;
 	
 	my($p_entries,$p_ldap2json,$m_postFixup,$hotchpotchAttribute) = @_;
@@ -719,7 +792,7 @@ sub genJSONFromLDAP(\@\%;$) {
 		}
 		
 		# Last, but not the least important, the organizationalUnit
-		$m_postFixup->($entry,$jsonEntry)  if($doPostFixup);
+		$m_postFixup->($self,$entry,$jsonEntry)  if($doPostFixup);
 		
 		push(@retval,$jsonEntry);
 	}
@@ -728,8 +801,15 @@ sub genJSONFromLDAP(\@\%;$) {
 }
 
 sub postFixupUser($$) {
-	my($entry,$jsonEntry) = @_;
+	my($uMgmt,$entry,$jsonEntry) = @_;
 	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn());
+}
+
+sub postFixupDocument($$) {
+	my($uMgmt,$entry,$jsonEntry) = @_;
+	my $payload;
+	($jsonEntry->{'owner'},$payload) = $uMgmt->getUIDFromDN(_getParentDNFromDN($entry->dn()));
+	print STDERR Dumper($payload),"\n";
 }
 
 sub genJSONUsersFromLDAPUsers(\@) {
@@ -748,6 +828,12 @@ sub genJSONGroupsFromLDAPGroups(\@) {
 	my $self = shift;
 	
 	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_GROUP_ATTRIBUTES);
+}
+
+sub genJSONDocumentsFromLDAPDocuments(\@) {
+	my $self = shift;
+	
+	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_RDDOCUMENT_ATTRIBUTES, \&postFixupDocument);
 }
 
 # Parameters:
@@ -1167,7 +1253,7 @@ sub enableUser($$;$) {
 #	jpegPhoto: The raw, new photo to be set
 #	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
 #		it uses the one read from the configuration file.
-# It returns the LDAP entry of the user on success (user enabled or disabled)
+# It returns the LDAP entry of the user on success
 sub setUserPhoto($$;$) {
 	my $self = shift;
 	
@@ -1206,6 +1292,7 @@ sub setUserPhoto($$;$) {
 		return $success;
 	} 
 }
+
 
 # Parameters:
 #	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
@@ -2322,6 +2409,687 @@ sub removeOwnerFromGroup($$;$$) {
 	my($userUID,$p_groupCN,$userDN,$groupDN)=@_;
 	
 	return $self->removeUserFromGroup($userUID,1,$p_groupCN,$userDN,$groupDN);
+}
+
+
+my @LDAP_RDDOCUMENT_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 ['RDConnectDocument'],
+);
+
+# Parameters:
+#	dn: The owner of the document.
+#	p_documentMetadata: a reference to a hash with the required keys needed to create new document
+#	data: The document itself as raw data
+sub attachDocumentForEntry($\%$) {
+	my $self = shift;
+	my($dn,$p_documentMetadata,$data) = @_;
+	
+	# $p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace
+	my $mimeType = 'application/octet-stream';
+	
+	# Trying to guess the type of file
+	eval {
+		$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$data));
+	};
+	
+	return $self->createLDAPFromJSON(
+				$p_documentMetadata,
+				sub {
+					my $uMgmt = shift;
+					
+					my($jsonDocumentMetadata) = @_;
+					my $cn = exists($jsonDocumentMetadata->{'cn'}) ? $jsonDocumentMetadata->{'cn'} : '';
+					
+					my $docdn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$dn);
+					
+					return $docdn;
+				},
+				\&_normalizeUserCNFromJSON,
+				getCASRDDocumentValidator(),
+				\%JSON_LDAP_RDDOCUMENT_ATTRIBUTES,
+				undef,
+				[
+					# Injecting the file itself, as these attributes are outside
+					# of JSON data model due design decisions
+					'content' => $data,
+					'mimeType' => $mimeType,
+					@LDAP_RDDOCUMENT_DEFAULT_ATTRIBUTES
+				]
+			);
+}
+
+# Parameters:
+#	dn: the distinguished named of the parent entry
+# It returns the list of documents attached to this distinguished name
+sub listDocumentsFromEntry($) {
+	my $self = shift;
+	
+	my($dn) = @_;
+	
+	# First, search the entries
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $dn,
+		# We know what we want
+		'attrs'	=>	['cn','description','documentClass','createTimestamp','modifyTimestamp','creatorsName','modifiersName'],
+		'filter' => "(objectClass=RDConnectDocument)",
+		'sizelimit' => 10000,
+		'scope' => 'children'
+	);
+	
+	my $success = undef;
+	my $payload = [];
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		# Second, build the entry
+		if($searchMesg->count>0) {
+			$success = 1;
+			$payload = [ $searchMesg->entries() ];
+		#} else {
+		#	push(@{$payload},"No matching user found for $username");
+		}
+	} else {
+		push(@{$payload},"Error while finding entry $dn\n".Dumper($searchMesg));
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	dn: the distinguished named of the parent entry
+sub listJSONDocumentsFromEntry($) {
+	my $self = shift;
+	
+	my($dn) = @_;
+	
+	my($success,$payload) = $self->listDocumentsFromEntry($dn);
+	
+	if($success && defined($payload)) {
+		$payload = $self->genJSONDocumentsFromLDAPDocuments($payload);
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	dn: the distinguished named of the parent entry
+#	documentName: the name of the document to look for
+# It returns the document attached to this distinguished name
+sub getDocumentFromEntry($$) {
+	my $self = shift;
+	
+	my($dn,$documentName) = @_;
+	
+	# First, search the entries
+	my $escaped_documentName = Net::LDAP::Util::escape_filter_value($documentName);
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $dn,
+		# We know what we want
+		'attrs'	=>	['*','createTimestamp','modifyTimestamp','creatorsName','modifiersName'],
+		'filter' => "(&(objectClass=RDConnectDocument)(cn=".$escaped_documentName."))",
+		'sizelimit' => 1,
+		'scope' => 'children'
+	);
+	
+	my $success = undef;
+	my $payload = undef;
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		# Second, build the entry
+		$success = 1;
+		if($searchMesg->count>0) {
+			$payload = $searchMesg->entry(0);
+		#} else {
+		#	push(@{$payload},"No matching user found for $username");
+		}
+	#} elsif($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+	#	$success = 1;
+	} else {
+		$payload = ["Error while finding entry $dn\n".Dumper($searchMesg)];
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	dn: the distinguished named of the parent entry
+#	documentName: the name of the document to look for
+# It returns the document attached to this distinguished name
+sub getJSONDocumentMetadataFromEntry($$) {
+	my $self = shift;
+	
+	my($dn,$documentName) = @_;
+	
+	my($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
+	my $documentMetadataEntry = undef;
+	
+	if($success && defined($payload)) {
+		$documentMetadataEntry = $payload;
+		$payload = $self->genJSONDocumentsFromLDAPDocuments([ $documentMetadataEntry ])->[0];
+	}
+	
+	return ($success,$payload,$documentMetadataEntry);
+}
+
+# Parameters:
+#	dn: the distinguished named of the parent entry
+#	documentName: the name of the document to look for
+#	p_metadataHash: a reference to a hash with the modified organizational unit information
+#	p_removedKeys: a reference to an array with the removed keys
+# It returns the LDAP entry on success
+sub modifyJSONDocumentMetadataFromEntry($$\%;\@) {
+	my $self = shift;
+	
+	my($dn,$documentName,$p_metadataHash,$p_removedKeys) = @_;
+	
+	my($success,$payload,$documentEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
+	
+	if($success) {
+		# $jsonEntry,$entry,$p_entryHash,$p_json2ldap,$validator,$hotchpotchAttribute,$p_ldap_default_attributes
+		my $jsonDocumentEntry = $payload;
+		($success,$payload,$documentEntry) = $self->modifyJSONEntry(
+							$jsonDocumentEntry,
+							$documentEntry,
+							$p_metadataHash,
+							\%JSON_LDAP_RDDOCUMENT_ATTRIBUTES,
+							getCASRDDocumentValidator(),
+							undef,
+							\@LDAP_RDDOCUMENT_DEFAULT_ATTRIBUTES
+						);
+	} else {
+		push(@{$payload},'Problems fetching the document metadata before modifying it');
+	}
+	
+	if(wantarray) {
+		return ($success,$payload,$documentEntry);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	dn: the distinguished named of the parent entry
+#	documentName: the name of the document to look for
+#	data: The raw document
+sub modifyDocumentFromEntry($$$) {
+	my $self = shift;
+	
+	my($dn,$documentName,$data) = @_;
+	
+	my($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
+	my $documentMetadataEntry = undef;
+	
+	if($success && defined($payload)) {
+		my $mimeType = 'application/octet-stream';
+		
+		# Trying to guess the type of file
+		eval {
+			$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$data));
+		};
+		
+		# Silent "magic" errors
+		#if($@) {
+		#	print STDERR $@,"\n";
+		#}
+		
+		my $document = $payload;
+		my $dn = $document->dn();
+		$document->changetype('modify');
+		$document->replace(
+			'content'	=>	$data,
+			'mimeType'	=>	$mimeType,
+		);
+
+		my $updMesg = $document->update($self->{'ldap'});
+		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			$success = undef;
+			print STDERR $document->ldif()  unless(wantarray);
+			
+			$payload = [ "Unable to set content for document $dn\n".Dumper($updMesg) ];
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	dn: the distinguished named of the parent entry
+#	documentName: the name of the document to look for
+sub removeDocumentFromEntry($$) {
+	my $self = shift;
+	
+	my($dn,$documentName,$data) = @_;
+	
+	my $docdn = join(',','cn='.Net::LDAP::Util::escape_dn_value($documentName),$dn);
+	my $deleteMesg = $self->{'ldap'}->delete($docdn);
+	
+	my $success = $deleteMesg->code() == Net::LDAP::LDAP_SUCCESS;
+	my $payload;
+	
+	if($success) {
+		$payload = [ ];
+	} else {
+		$payload = [ "Error while removing document entry $docdn\n".Dumper($deleteMesg) ];
+	}
+	
+	return ($success,$payload);
+}
+
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	p_documentMetadata: a reference to a hash with the required keys needed to create new document
+#	data: The document itself as raw data
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+sub attachDocumentForUser($\%$;$) {
+	my $self = shift;
+	
+	my($username,$p_documentMetadata,$data,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found user
+			my $dn = $payload->dn();
+			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
+		} else {
+			$success = undef;
+			$payload = ['User not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+sub listJSONDocumentsFromUser($;$) {
+	my $self = shift;
+	
+	my($username,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found user
+			my $dn = $payload->dn();
+			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
+		} else {
+			$success = undef;
+			$payload = ['User not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	documentName: the name of the document to look for
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+sub getDocumentFromUser($$;$) {
+	my $self = shift;
+	
+	my($username,$documentName,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found user
+			my $dn = $payload->dn();
+			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['User not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	documentName: the name of the document to look for
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+sub getJSONDocumentMetadataFromUser($$;$) {
+	my $self = shift;
+	
+	my($username,$documentName,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	my $documentMetadataEntry = undef;
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found user
+			my $dn = $payload->dn();
+			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['User not found'];
+		}
+	}
+	
+	return ($success,$payload,$documentMetadataEntry);
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	documentName: the name of the document to look for
+#	p_metadataHash: a reference to a hash with the modified organizational unit information
+#	p_removedKeys: a reference to an array with the removed keys
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry on success
+sub modifyJSONDocumentMetadataFromUser($$\%;\@$) {
+	my $self = shift;
+	
+	my($username,$documentName,$p_metadataHash,$p_removedKeys,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	my $documentMetadataEntry = undef;
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found user
+			my $dn = $payload->dn();
+			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
+		} else {
+			$success = undef;
+			$payload = ['User not found'];
+		}
+	}
+	
+	return ($success,$payload,$documentMetadataEntry);
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	documentName: the name of the document to look for
+#	data: The raw file content
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry on success
+sub modifyDocumentFromUser($$$;$) {
+	my $self = shift;
+	
+	my($username,$documentName,$data,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found user
+			my $dn = $payload->dn();
+			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
+		} else {
+			$success = undef;
+			$payload = ['User not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	documentName: the name of the document to look for
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry on success
+sub removeDocumentFromUser($$;$) {
+	my $self = shift;
+	
+	my($username,$documentName,$userDN) = @_;
+	
+	my($success,$payload) = $self->getUser($username,$userDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found user
+			my $dn = $payload->dn();
+			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['User not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+
+# Parameters:
+#	groupCN: the RD-Connect group
+#	p_documentMetadata: a reference to a hash with the required keys needed to create new document
+#	data: The document itself as raw data
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+sub attachDocumentForGroup($\%$;$) {
+	my $self = shift;
+	
+	my($groupCN,$p_documentMetadata,$data,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
+		} else {
+			$success = undef;
+			$payload = ['Group not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+	
+# Parameters:
+#	groupCN: the RD-Connect group
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+sub listJSONDocumentsFromGroup($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
+		} else {
+			$success = undef;
+			$payload = ['Group not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	groupCN: the RD-Connect group
+#	documentName: the name of the document to look for
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+sub getDocumentFromGroup($$;$) {
+	my $self = shift;
+	
+	my($groupCN,$documentName,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['Group not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	groupCN: the RD-Connect group
+#	documentName: the name of the document to look for
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+sub getJSONDocumentMetadataFromGroup($$;$) {
+	my $self = shift;
+	
+	my($groupCN,$documentName,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	my $documentMetadataEntry = undef;
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['Group not found'];
+		}
+	}
+	
+	return ($success,$payload,$documentMetadataEntry);
+}
+
+# Parameters:
+#	groupCN: the RD-Connect group
+#	documentName: the name of the document to look for
+#	p_metadataHash: a reference to a hash with the modified organizational unit information
+#	p_removedKeys: a reference to an array with the removed keys
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+# It returns the LDAP entry on success
+sub modifyJSONDocumentMetadataFromGroup($$\%;\@$) {
+	my $self = shift;
+	
+	my($groupCN,$documentName,$p_metadataHash,$p_removedKeys,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	my $documentMetadataEntry = undef;
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
+		} else {
+			$success = undef;
+			$payload = ['Group not found'];
+		}
+	}
+	
+	return ($success,$payload,$documentMetadataEntry);
+}
+
+# Parameters:
+#	groupCN: the RD-Connect group
+#	documentName: the name of the document to look for
+#	data: The raw document data
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+# It returns the LDAP entry on success
+sub modifyDocumenFromGroup($$$;$) {
+	my $self = shift;
+	
+	my($groupCN,$documentName,$data,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
+		} else {
+			$success = undef;
+			$payload = ['Group not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	groupCN: the RD-Connect group
+#	documentName: the name of the document to look for
+#	groupDN: (OPTIONAL) The DN used as ancestor of this group.
+#		 If not set, it uses the one read from the configuration file.
+# It returns the LDAP entry on success
+sub removeDocumenFromGroup($$;$) {
+	my $self = shift;
+	
+	my($groupCN,$documentName,$groupDN) = @_;
+	
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['Group not found'];
+		}
+	}
+	
+	return ($success,$payload);
 }
 
 

@@ -48,8 +48,8 @@
 				"format": "email"
 			}
 		},
-		"employeeType": {
-			"title": "Employee type (principal investigator, researcher, etc...)",
+		"userCategory": {
+			"title": "User category (principal investigator, researcher, etc...)",
 			"type": ["string","null"],
 			"enum": [ "PI", "Researcher", "PhD", "Student", "Technician", "Collaborator", "External" , null ]
 		},

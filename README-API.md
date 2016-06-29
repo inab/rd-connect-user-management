@@ -6,7 +6,7 @@ The user-management REST API has next endpoints:
 
 	* `PUT /users`: It creates a new user. The input must be a JSON document following [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
 
-	* `GET /users/:user_id`: It returns the user which matches the record, or 404 if not found.
+	* `GET /users/:user_id`: It returns the user which matches the record, or 404 if not found. It follows [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
 	
 	* `POST /users/:user_id`: It modifies an existing user. The input must be a JSON document following [userValidation.json](libs/RDConnect/userValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 
@@ -23,12 +23,24 @@ The user-management REST API has next endpoints:
 	* `POST /users/:user_id/groups`: It adds the user to the groups / roles mentioned in the input array.
 	
 	* `DELETE /users/:user_id/groups`: It removes the user from the groups / roles mentioned in the input array.
+	
+	* `GET /users/:user_id/documents`: It lists the documents (for instance, the user agreement) for this user. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+
+	* `GET /users/:user_id/documents/:document_name`: It gets the contents of an specific document for this user.
+
+	* `PUT /users/:user_id/documents/:document_name`: It replaces the contents of an specific document for this user.
+
+	* `REMOVE /users/:user_id/documents/:document_name`: It removes an specific document for this user.
+
+	* `GET /users/:user_id/documents/:document_name/metadata`: It gets the metadata of an specific document for this user. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+
+	* `POST /users/:user_id/documents/:document_name/metadata`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to modify the metadata of the document.
 
 * `GET /organizationalUnits`: It returns the list of registered organizational units.
 
 	* `PUT /organizationalUnits`: It creates a new organizational unit. The input must be a JSON document following [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema.
 
-	* `GET /organizationalUnits/:ou_id`: It returns the organizational unit which matches the record, or 404 if not found.
+	* `GET /organizationalUnits/:ou_id`: It returns the organizational unit which matches the record, or 404 if not found. It follows [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema.
 
 	* `POST /organizationalUnits/:ou_id`: It modifies an existing organizational unit. The input must be a JSON document following [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 
@@ -42,7 +54,7 @@ The user-management REST API has next endpoints:
 
 	* `PUT /groups`: It creates a new group / role. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
 	
-	* `GET /groups/:group_id`: It returns the group which matches the record, or 404 if not found.
+	* `GET /groups/:group_id`: It returns the group which matches the record, or 404 if not found. It follows [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
 
 	* `POST /groups/:group_id`: It modifies an existing group features, but not its members or owners. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 	
@@ -58,3 +70,14 @@ The user-management REST API has next endpoints:
 	
 	* `DELETE /groups/:group_id/owners`: It removes the users in the input array from the group as owners.
 	
+	* `GET /groups/:group_id/documents`: It lists the documents attached to this group, role. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+
+	* `GET /groups/:group_id/documents/:document_name`: It gets the contents of an specific document for this group.
+
+	* `PUT /groups/:group_id/documents/:document_name`: It replaces the contents of an specific document for this group.
+
+	* `DELETE /groups/:group_id/documents/:document_name`: It removes an specific document for this group.
+
+	* `GET /groups/:group_id/documents/:document_name/metadata`: It gets the metadata of an specific document for this group. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+
+	* `POST /groups/:group_id/documents/:document_name/metadata`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to update the document metadata.

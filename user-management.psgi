@@ -155,6 +155,49 @@ sub get_user_group {
 	redirect '../../groups/'.params->{'group_id'}, 301;
 }
 
+sub list_user_documents {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONDocumentsFromUser(params->{user_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Documents from user '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload is the list of groups
+	return $payload;
+}
+
+sub get_user_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getDocumentFromUser(params->{user_id},params->{document_name});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	} elsif(!defined($payload)) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' does not have document '.params->{document_name}}),404);
+	}
+	
+	# Here the payload is the document
+	my $data = $payload->get_value('content');
+	send_file(\$data, content_type => $payload->get_value('mimeType'));
+}
+
+sub get_user_document_metadata {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONDocumentMetadataFromUser(params->{user_id},params->{document_name});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	} elsif(!defined($payload)) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' does not have document '.params->{document_name}}),404);
+	}
+	
+	return $payload;
+}
+
 # next operations should be allowed only to privileged users
 
 sub create_user {
@@ -175,11 +218,9 @@ sub create_user {
 sub modify_user {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	my %newUser = params;
-	# We remove so we don't disturb with garbage
-	delete $newUser{user_id};
+	my $p_newUser = request->data;
 	
-	my($success,$payload) = $uMgmt->modifyJSONUser(params->{user_id},\%newUser);
+	my($success,$payload) = $uMgmt->modifyJSONUser(params->{user_id},$p_newUser);
 	
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying user '.params->{user_id},'trace' => $payload}),500);
@@ -264,6 +305,50 @@ sub remove_user_from_groups {
 	return [];
 }
 
+sub modify_user_document_metadata {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $p_newMetadata = request->data;
+	
+	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromUser(params->{user_id},params->{document_name},$p_newMetadata);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from user '.params->{user_id},'trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub modify_user_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	# We are getting the raw entry, as we want just the photo
+	my $data = request->body;
+	
+	my($success,$payload) = $uMgmt->modifyDocumentFromUser(params->{'user_id'},params->{'document_name'},$data);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub remove_user_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->modifyDocumentFromUser(params->{'user_id'},params->{'document_name'});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 # Routing for /users prefix
 prefix '/users' => sub {
 	get '' => \&get_users;
@@ -279,6 +364,17 @@ prefix '/users' => sub {
 	post '/:user_id/enable' => \&enable_user;
 	post '/:user_id/groups' => \&add_user_to_groups;
 	del '/:user_id/groups' => \&remove_user_from_groups;
+	
+	# Legal documents related to the user
+	prefix '/:user_id/documents' => sub {
+		get '' => \&list_user_documents;
+		#post '' => \&attach_user_document;
+		get '/:document_name' => \&get_user_document;
+		put '/:document_name' => \&modify_user_document;
+		del '/:document_name' => \&remove_user_document;
+		get '/:document_name/metadata' => \&get_user_document_metadata;
+		post '/:document_name/metadata' => \&modify_user_document_metadata;
+	};
 };
 
 ########################
@@ -464,6 +560,37 @@ sub get_group_owners {
 	return $payload;
 }
 
+sub list_group_documents {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONDocumentsFromGroup(params->{group_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	} elsif(!defined($payload)) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' does not have document '.params->{document_name}}),404);
+	}
+	
+	# Here the payload is the list of groups
+	return $payload;
+}
+
+sub get_group_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getDocumentFromUser(params->{user_id},params->{document_name});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	} elsif(!defined($payload)) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' does not have document '.params->{document_name}}),404);
+	}
+	
+	# Here the payload is the document
+	my $data = $payload->get_value('content');
+	send_file(\$data, content_type => $payload->get_value('mimeType'));
+}
+
 # next operations should be allowed only to allowed / privileged users
 
 sub create_group {
@@ -563,6 +690,50 @@ sub remove_group_owners {
 	return remove_users_from_group(1);
 }
 
+sub modify_group_document_metadata {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $p_newMetadata = request->data;
+	
+	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromGroup(params->{group_id},params->{document_name},$p_newMetadata);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from group '.params->{group_id},'trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub modify_group_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	# We are getting the raw entry, as we want just the photo
+	my $data = request->body;
+	
+	my($success,$payload) = $uMgmt->modifyDocumentFromGroup(params->{'group_id'},params->{'document_name'},$data);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub remove_group_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->removeDocumentFromGroup(params->{'group_id'},params->{'document_name'});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 
 prefix '/groups' => sub {
 	get '' => \&get_groups;
@@ -576,6 +747,16 @@ prefix '/groups' => sub {
 	del '/:group_id/members' => \&remove_group_members;
 	post '/:group_id/owners' => \&add_group_owners;
 	del '/:group_id/owners' => \&remove_group_owners;
+	
+	prefix '/:group_id/documents' => sub {
+		get '' => \&list_group_documents;
+		#post '' => \&attach_group_document;
+		get '/:document_name' => \&get_group_document;
+		put '/:document_name' => \&modify_group_document;
+		del '/:document_name' => \&remove_group_document;
+		get '/:document_name/metadata' => \&get_group_document_metadata;
+		post '/:document_name/metadata' => \&modify_group_document_metadata;
+	};
 };
 
 package main;

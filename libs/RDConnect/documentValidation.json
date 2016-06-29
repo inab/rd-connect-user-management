@@ -1,0 +1,52 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#CASDocument",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect document (agreements et al)",
+	"type": "object",
+	"properties": {
+		"cn": {
+			"title": "The common name of the document (something short and meaningful)",
+			"type": ["string","null"]
+		},
+		"description": {
+			"title": "The description of the group",
+			"type": "string"
+		},
+		"documentClass": {
+			"title": "Document category: user agreement, ...",
+			"type": ["string","null"],
+			"enum": ["userAgreement","genericAgreement","otherAgreement","miscelaneous"]
+		},
+		"creationTimestamp": {
+			"title": "When this document was stored in the LDAP",
+			"type": "string",
+			"format": "date-time"
+		},
+		"modificationTimestamp": {
+			"title": "When this document was updated in the LDAP",
+			"type": "string",
+			"format": "date-time"
+		},
+		"owner": {
+			"title": "The username of the owner of this entry",
+			"type": ["string","null"],
+		},
+		"creator": {
+			"title": "The username of the creator of this entry",
+			"type": ["string","null"],
+		},
+		"modifier": {
+			"title": "The username of the modifier of this entry",
+			"type": ["string","null"],
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"cn",
+		"owner",
+		"creator",
+		"modifier"
+	],
+	"dependencies": {
+	}
+}
