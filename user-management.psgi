@@ -336,6 +336,25 @@ sub modify_user_document {
 	return [];
 }
 
+sub attach_user_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %documentMetadata = (
+		'cn'	=> params->{'cn'},
+	);
+	$documentMetadata{'description'} = params->{'description'}  if(exists(params->{'description'}));
+	$documentMetadata{'documentClass'} = params->{'documentClass'}  if(exists(params->{'documentClass'}));
+	
+	my($success,$payload) = $uMgmt->attachDocumentForUser(params->{'user_id'},\%documentMetadata,upload('content')->content);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 sub remove_user_document {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
@@ -368,7 +387,7 @@ prefix '/users' => sub {
 	# Legal documents related to the user
 	prefix '/:user_id/documents' => sub {
 		get '' => \&list_user_documents;
-		#post '' => \&attach_user_document;
+		post '' => \&attach_user_document;
 		get '/:document_name' => \&get_user_document;
 		put '/:document_name' => \&modify_user_document;
 		del '/:document_name' => \&remove_user_document;
@@ -721,6 +740,25 @@ sub modify_group_document {
 	return [];
 }
 
+sub attach_group_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %documentMetadata = (
+		'cn'	=> params->{'cn'},
+	);
+	$documentMetadata{'description'} = params->{'description'}  if(exists(params->{'description'}));
+	$documentMetadata{'documentClass'} = params->{'documentClass'}  if(exists(params->{'documentClass'}));
+	
+	my($success,$payload) = $uMgmt->attachDocumentForGroup(params->{'group_id'},\%documentMetadata,upload('content')->content);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 sub remove_group_document {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
@@ -750,7 +788,7 @@ prefix '/groups' => sub {
 	
 	prefix '/:group_id/documents' => sub {
 		get '' => \&list_group_documents;
-		#post '' => \&attach_group_document;
+		post '' => \&attach_group_document;
 		get '/:document_name' => \&get_group_document;
 		put '/:document_name' => \&modify_group_document;
 		del '/:document_name' => \&remove_group_document;

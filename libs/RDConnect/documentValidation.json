@@ -42,10 +42,7 @@
 	},
 	"additionalProperties": false,
 	"required": [
-		"cn",
-		"owner",
-		"creator",
-		"modifier"
+		"cn"
 	],
 	"dependencies": {
 	}

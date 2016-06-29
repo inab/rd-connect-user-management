@@ -26,6 +26,8 @@ The user-management REST API has next endpoints:
 	
 	* `GET /users/:user_id/documents`: It lists the documents (for instance, the user agreement) for this user. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
 
+	* `POST /users/:user_id/documents`: It attaches the described document in the multipart/form-data transferred field to this user. The valid parameters are 'cn' (the name), 'description', 'documentClass' and 'content' (this last is the uploaded document).
+
 	* `GET /users/:user_id/documents/:document_name`: It gets the contents of an specific document for this user.
 
 	* `PUT /users/:user_id/documents/:document_name`: It replaces the contents of an specific document for this user.
@@ -71,6 +73,8 @@ The user-management REST API has next endpoints:
 	* `DELETE /groups/:group_id/owners`: It removes the users in the input array from the group as owners.
 	
 	* `GET /groups/:group_id/documents`: It lists the documents attached to this group, role. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+
+	* `POST /groups/:group_id/documents`: It attaches the described document in the multipart/form-data transferred field to this group, role. The valid parameters are 'cn' (the name), 'description', 'documentClass' and 'content' (this last is the uploaded document).
 
 	* `GET /groups/:group_id/documents/:document_name`: It gets the contents of an specific document for this group.
 
