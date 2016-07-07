@@ -803,5 +803,6 @@ use Plack::Builder;
 builder {
 # Enabling this we get some issues, so disabled for now
 #	enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
+	enable 'CrossOrigin', origins => '*';
 	mount '/'    => RDConnect::UserManagement::API->to_app;
 };

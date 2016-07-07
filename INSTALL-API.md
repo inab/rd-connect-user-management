@@ -3,6 +3,7 @@
 For the user-management REST API these additional dependencies are required:
 
 * Dancer2
+* Plack::Middleware::CrossOrigin
 * Plack::Middleware::Deflater
 * FCGI	(needed by Plack::Handler::FCGI)
 * A web server with a proper setup.
@@ -37,7 +38,7 @@ For the user-management REST API these additional dependencies are required:
 	
 	cpan -i Test::More boolean experimental Config::IniFiles Net::LDAP MIME::Base64 Digest::MD5 Digest::SHA1 JSON::Validator Email::Address Email::MIME Email::Sender::Transport::SMTPS Env File::MimeInfo Text::Unidecode
 	(echo y; echo y) | cpan -i Template::Toolkit
-	cpan -i Dancer2 Plack::Middleware::Deflater FCGI
+	cpan -i Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI
 	```
 
 4. Clone this code, in order to install the API
