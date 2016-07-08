@@ -5,40 +5,44 @@
 	"type": "object",
 	"properties": {
 		"cn": {
-			"title": "The common name of the group (something short and meaningful)",
-			"type": ["string","null"]
+			"title": "Group acronym",
+			"minLength": 1,
+			"type": "string"
 		},
 		"description": {
-			"title": "The description of the group",
+			"title": "Long group name or description",
+			"minLength": 1,
 			"type": "string"
 		},
 		"groupPurpose": {
-			"title": "Purpose of the created group",
+			"title": "Purpose of the group",
 			"type": "string",
 			"enum": [ "sampleAccessControl", "applicationAccessControl", "management", "other" ]
 		},
 		"owner": {
-			"title": "The username(s) of the owner(s) / manager(s) of this group / role",
-			"type": ["array","null"],
+			"title": "Owner(s) username(s)",
+			"type": "array",
 			"items": {
-				"type": "string"
+				"type": "string",
+				"minLength": 1
 			},
 			"minItems": 1,
 			"uniqueItems": true
 		},
 		"members": {
-			"title": "The username(s) of the members of this group / role",
+			"title": "Member(s) username(s)",
 			"type": "array",
 			"items": {
-				"type": "string"
+				"type": "string",
+				"minLength": 1
 			},
-			"minItems": 1,
 			"uniqueItems": true
 		}
 	},
 	"additionalProperties": false,
 	"required": [
 		"cn",
+		"description",
 		"owner"
 	],
 	"dependencies": {
