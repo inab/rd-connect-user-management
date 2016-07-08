@@ -5,44 +5,46 @@
 	"type": "object",
 	"properties": {
 		"cn": {
-			"title": "The common name of the document (something short and meaningful)",
-			"type": ["string","null"]
+			"title": "Document name (something short and meaningful)",
+			"type": "string",
+			"minLength": 1
 		},
 		"description": {
-			"title": "The description of the group",
+			"title": "Document description",
 			"type": "string"
 		},
 		"documentClass": {
-			"title": "Document category: user agreement, ...",
-			"type": ["string","null"],
+			"title": "Document category",
+			"type": "string",
 			"enum": ["userAgreement","genericAgreement","otherAgreement","miscelaneous"]
 		},
 		"creationTimestamp": {
-			"title": "When this document was stored in the LDAP",
+			"title": "Creation timestamp",
 			"type": "string",
 			"format": "date-time"
 		},
 		"modificationTimestamp": {
-			"title": "When this document was updated in the LDAP",
+			"title": "Last modification timestamp",
 			"type": "string",
 			"format": "date-time"
 		},
 		"owner": {
-			"title": "The username of the owner of this entry",
-			"type": ["string","null"],
+			"title": "Owner's username",
+			"type": "string"
 		},
 		"creator": {
-			"title": "The username of the creator of this entry",
-			"type": ["string","null"],
+			"title": "Creator's username",
+			"type": "string"
 		},
 		"modifier": {
-			"title": "The username of the modifier of this entry",
-			"type": ["string","null"],
+			"title": "Last modification's username",
+			"type": "string"
 		}
 	},
 	"additionalProperties": false,
 	"required": [
-		"cn"
+		"cn",
+		"documentClass"
 	],
 	"dependencies": {
 	}
