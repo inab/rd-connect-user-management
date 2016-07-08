@@ -5,61 +5,72 @@
 	"type": "object",
 	"properties": {
 		"givenName": {
-			"title": "The first / given name",
-			"type": ["array","string"],
+			"title": "First / given name",
+			"type": "array",
+			"minItems": 1,
 			"items": {
-				"type": "string"
+				"type": "string",
+				"minLength": 1
 			}
 		},
 		"surname": {
-			"title": "The surname(s)",
-			"type": ["array","string"],
+			"title": "Surname(s)",
+			"type": "array",
+			"minItems": 1,
 			"items": {
-				"type": "string"
+				"type": "string",
+				"minLength": 1
 			}
 		},
 		"userPassword": {
-			"title": "The password, when the user is being created",
-			"type": ["string","null"]
+			"title": "Password",
+			"type": "string",
+			"minLength": 1
 		},
 		"username": {
 			"title": "The username",
-			"type": "string"
+			"type": "string",
+			"minLength": 1
 		},
 		"organizationalUnit": {
 			"title": "The organizational unit where this user entry is living",
-			"type": "string"
+			"type": "string",
+			"minLength": 1
 		},
 		"enabled": {
-			"title": "Is this user enabled?",
-			"type": ["boolean","null"]
+			"title": "User enabled",
+			"type": "boolean"
 		},
 		"cn": {
-			"title": "The common name of the user (usually givenName + surname)",
-			"type": ["string","null"]
+			"title": "Common name (usually givenName + surname)",
+			"type": "string",
+			"minLength": 1
 		},
 		"email": {
 			"title": "The e-mail address(es) of the user",
-			"type": ["array","string"],
+			"type": "array",
 			"format": "email",
+			"minItems": 1,
 			"uniqueItems": true,
 			"items": {
 				"type": "string",
+				"minLength": 1,
 				"format": "email"
 			}
 		},
 		"userCategory": {
-			"title": "User category (principal investigator, researcher, etc...)",
-			"type": ["string","null"],
-			"enum": [ "PI", "Researcher", "PhD", "Student", "Technician", "Collaborator", "External" , null ]
+			"title": "User category",
+			"type": "string",
+			"enum": [ "PI", "Researcher", "PhD", "Student", "Technician", "Collaborator", "External"]
 		},
 		"title": {
 			"title": "Preferred way to address the user: Mr., Ms., Miss, Dr., MD., Dame, Lord, etc...",
-			"type": ["string","null"]
+			"type": "string"
 		},
 		"picture": {
 			"title": "A JPEG picture of the user",
-			"type": ["string","null"],
+			"type": "string",
+			"format": "data-url",
 			"media": {
 				"type": "image/jpeg",
 				"binaryEncoding": "base64"
@@ -67,35 +78,38 @@
 		},
 		"telephoneNumber": {
 			"title": "A contact phone number, including the international prefix",
-			"type": ["array","string","null"],
+			"type": "array",
 			"items": {
-				"type": "string"
+				"type": "string",
+				"minLength": 1
 			}
 		},
 		"facsimileTelephoneNumber": {
 			"title": "A fax number, including the international prefix",
-			"type": ["array","string","null"],
+			"type": "array",
 			"items": {
-				"type": "string"
+				"type": "string",
+				"minLength": 1
 			}
 		},
 		"registeredAddress": {
 			"title": "The address to physically reach the user",
-			"type": ["string","null"]
+			"type": "string"
 		},
 		"postalAddress": {
 			"title": "The address to send traditional mail to the user, when it is different from the physical address of the user",
-			"type": ["string","null"]
+			"type": "string"
 		},
 		"links": {
 			"title": "Optional links related to the user",
-			"type": ["array","null"],
+			"type": "array",
 			"items": {
 				"type": "object",
 				"properties": {
 					"uri": {
 						"title": "The URI of the link related to the user",
 						"type": "string",
+						"minLength": 1,
 						"format": "uri"
 					},
 					"label": {
@@ -116,7 +130,8 @@
 			"type": "array",
 			"uniqueItems": true,
 			"items": {
-				"type": "string"
+				"type": "string",
+				"minLength": 1
 			}
 		}
 	},
@@ -124,7 +139,6 @@
 	"required": [
 		"givenName",
 		"surname",
-		"userPassword",
 		"username",
 		"email"
 	],
