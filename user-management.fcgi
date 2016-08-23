@@ -14,22 +14,32 @@ BEGIN {
 
 use Dancer2;
 use Dancer2::FileUtils;
+use File::Spec;
 use FindBin;
 
 set apphandler => 'PSGI';
 set environment => 'production';
-my $psgi = Dancer2::FileUtils::path($FindBin::Script.'.psgi');
-die "Unable to find RD-Connect User Management REST API script: $psgi" unless(-r $psgi);
 
-# This is for plain CGIs
-#use Plack::Runner;
-#Plack::Runner->run($psgi);
+# Removing the extension
+my $psgi = Dancer2::FileUtils::path($FindBin::Script);
+my($volume,$directories,$file) = File::Spec->splitpath($psgi);
+
+my $rdot = rindex($file,'.');
+if($rdot != -1) {
+	$file = substr($file,0,$rdot);
+	
+	$psgi = File::Spec->catpath($volume,$directories,$file);
+}
+# Adding the new extension
+$psgi .= '.psgi';
+
+die "Unable to find RD-Connect User Management REST API script: $psgi" unless(-r $psgi);
 
 # This is for FastCGI
 use Plack::Handler::FCGI;
 
 my $app = do($psgi);
-die "Unable to parse BDAP REST API script: $@" if $@;
+die "Unable to parse RD-Connect User Management REST API script: $@" if $@;
 my $server = Plack::Handler::FCGI->new(nproc => 5, detach => 1);
 
 $server->run($app);

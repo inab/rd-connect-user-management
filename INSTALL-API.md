@@ -1,12 +1,14 @@
 # RD-Connect user management API installation
 
+This document explains how to install and setup RD-Connect User Management REST API.
+
 For the user-management REST API these additional dependencies are required:
 
 * Dancer2
 * Plack::Middleware::CrossOrigin
 * Plack::Middleware::Deflater
 * FCGI	(needed by Plack::Handler::FCGI)
-* A web server with a proper setup.
+* A web server, like Apache, with a proper setup.
 
 ## Deployment
 1. Check you have installed gcc, cpan, the development version of Perl and [APG](http://www.adel.nursat.kz/apg/ "Another Password Generator") (which is available in EPEL):
@@ -18,7 +20,7 @@ For the user-management REST API these additional dependencies are required:
 	yum install -y apg
 	```
 	
-2. Create user `rdconnect-rest`, with a separate group
+2. Create a separate user (for instance, `rdconnect-rest` with group `rdconnect-rest`), with a separate group
 
 	```bash
 	useradd -m -U -c 'RD-Connect REST API unprivileged user' rdconnect-rest
@@ -43,14 +45,16 @@ For the user-management REST API these additional dependencies are required:
 
 4. Clone this code, in order to install the API
 
-5. Create directory `DOCUMENT_ROOT`, and copy next content there:
+5. Create a file called `user-management.ini`, based on [template-config.ini](template-config.ini), with the connection and authentication parameters to use the LDAP server, as well as the mail server.
+
+6. Create an installation directory (for instance, `/home/rdconnect-rest/RDConnect-UserManagement-REST-API`), and copy at least next content there:
 
 	```bash
-	mkdir -p "${HOME}"/DOCUMENT_ROOT/cgi-bin
-	cp -dpr user-management user-management.psgi libs "${HOME}"/DOCUMENT_ROOT/cgi-bin
+	mkdir -p "${HOME}"/RDConnect-UserManagement-REST-API
+	cp -dpr user-management.ini user-management.cgi user-management.fcgi user-management.psgi libs "${HOME}"/RDConnect-UserManagement-REST-API
 	```
 
-6. Create a file called `user-management.ini`, based on [template-config.ini](template-config.ini), with the connection and authentication parameters to use the LDAP server, as well as the mail server.
+5. Create a directory `DOCUMENT_ROOT`, which will be used to host the [https://github.com/inab/rd-connect-user-management-interface](user interface), and follow the installation procedures in order to put it there.
 
 ## Web server setup with a virtual host (in CentOS)
 
@@ -73,4 +77,129 @@ For the user-management REST API these additional dependencies are required:
 	echo 'IncludeOptional sites-enabled/*.conf' >> /etc/httpd/conf/httpd.conf
 	```
 
-4. Copy configuration file apache/RD-Connect.conf to `/etc/httpd/sites-enabled`
+4. Copy template configuration file apache/RD-Connect.conf to `/etc/httpd/sites-enabled`
+
+## Apache Web server setup with a virtual host (in CentOS and Ubuntu)
+
+1. You have to install and setup Apache:
+	
+	```bash
+	# This is for CentOS
+	yum install -y httpd
+	```
+	
+	```bash
+	# This is for Ubuntu
+	apt-get install apache2
+	```
+
+2. As CentOS does not come with the virtual hosts infrastructure for Apache, you have to create it, and include its usage in the configuration file:
+
+	```bash
+	mkdir -p /etc/httpd/sites-available /etc/httpd/sites-enabled
+	echo 'IncludeOptional sites-enabled/*.conf' >> /etc/httpd/conf/httpd.conf
+	```
+
+3. If you are going to use `user-management.cgi`, you optionally have to install [http://mpm-itk.sesse.net/](MPM ITK) and enable it *without switching off* MPM prefork, in order to run it as the user you have created:
+	
+	```bash
+	# This is for CentOS
+	yum install -y httpd-itk
+	sed -i 's/^#\(LoadModule \)/\1/' /etc/httpd/conf.modules.d/00-mpm-itk.conf
+	```
+	
+	```bash
+	# This is for Ubuntu
+	apt-get install libapache2-mpm-itk
+	a2enmod mpm_itk
+	```
+	
+	Next, you have to enable `cgi` module:
+	
+	```bash
+	# This is for Ubuntu
+	a2enmod cgi
+	```
+	
+	You have to put next Apache configuration block inside de virtualhost definition, in order to enable the API handler at `/RDConnect-UserManagement-API`:
+	
+	```
+	<IfModule mpm_itk_module>
+		AssignUserId rdconnect-rest rdconnect-rest
+	</IfModule>
+	
+	# This line is needed if you locally installed the Perl modules needed
+	SetEnv PERL5LIB /home/rdconnect-rest/perl5/lib/perl5
+	
+	ScriptAlias "/RDConnect-UserManagement-API" "/home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.cgi"
+	<Directory /home/rdconnect-rest/RDConnect-UserManagement-REST-API>
+		AllowOverride None
+		SetHandler cgi-script
+		Options ExecCGI SymLinksIfOwnerMatch
+		
+		# These sentences are for Apache 2.2 and Apache 2.4 with mod_access_compat enabled
+		<IfModule !mod_authz_core.c>
+			Order allow,deny
+			Allow from all
+		</IfModule>
+		
+		# This sentence is for Apache 2.4 without mod_access_compat
+		<IfModule mod_authz_core.c>
+			Require all granted
+		</IfModule>
+	</Directory>
+	```
+	
+4. If you are going to use `user-management.fcgi` you have to install [https://httpd.apache.org/mod_fcgid/mod/mod_fcgid.html](mod_fcgid):
+
+	
+	```bash
+	# This is for CentOS
+	yum install -y mod_fcgid
+	```
+	
+	```bash
+	# This is for Ubuntu
+	apt-get install libapache2-mod-fcgid
+	a2enmod fcgid
+	```
+	
+	You optionally have to install [https://httpd.apache.org/docs/2.4/mod/mod_suexec.html](mod_suexec), if you want the FCGI run as `rdconnect-rest`
+	
+	```bash
+	# This is for Ubuntu
+	apt-get install apache2-suexec
+	a2enmod suexec
+	```
+
+	You have to put next Apache configuration block inside de virtualhost definition, in order to enable the API handler at `/RDConnect-UserManagement-API`:
+	
+	```
+	<IfModule mod_suexec>
+		SuexecUserGroup rdconnect-rest rdconnect-rest
+	</IfModule>
+	
+	
+	FcgidIOTimeout 300
+	FcgidMaxRequestLen 104857600
+	# This line is needed if you locally installed the Perl modules needed
+	FcgidInitialEnv PERL5LIB /home/rdconnect-rest/perl5/lib/perl5
+	
+	ScriptAlias "/RDConnect-UserManagement-API" "/home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.fcgi"
+	<Directory /home/rdconnect-rest/RDConnect-UserManagement-REST-API>
+		AllowOverride None
+		SetHandler fcgid-script
+		Options ExecCGI SymLinksIfOwnerMatch
+		
+		# These sentences are for Apache 2.2 and Apache 2.4 with mod_access_compat enabled
+		<IfModule !mod_authz_core.c>
+			Order allow,deny
+			Allow from all
+		</IfModule>
+		
+		# This sentence is for Apache 2.4 without mod_access_compat
+		<IfModule mod_authz_core.c>
+			Require all granted
+		</IfModule>
+	</Directory>
+	```
