@@ -67,6 +67,7 @@ package RDConnect::UserManagement::API;
 use Dancer2;
 use Dancer2::Serializer::JSON;
 use Dancer2::Session::YAML;
+use Dancer2::Plugin::Auth::CAS;
 
 set engines => {
 	'serializer' => {
@@ -87,15 +88,35 @@ set engines => {
 	}
 };
 
-set charset => 'UTF-8';
-set serializer => 'JSON';
+set plugins => {
+	"Auth::CAS" => {
+		cas_url => "https://rdconnectcas.rd-connect.eu:9443/cas",
+		cas_denied_path => "/denied",
+		cas_version => "3.0",
+		cas_user_map => "user",
+		cas_attr_map => {
+			email => "email",
+			username => "username",
+			firstName => "firstname",
+			lastName => "lastname"
+		}
+	}
+};
+
+# Order DOES matter!
 set session => 'YAML';
+set serializer => 'JSON';
+set charset => 'UTF-8';
 
 #########
 # Users #
 #########
 
 sub get_users {
+	if(exists(query_parameters->{'schema'})) {
+		return send_file(RDConnect::UserManagement::FULL_USER_VALIDATION_SCHEMA_FILE, system_path => 1);
+	}
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
 	my($success,$payload) = $uMgmt->listJSONUsers();
@@ -376,7 +397,7 @@ prefix '/users' => sub {
 	get '/:user_id/groups' => \&get_user_groups;
 	get '/:user_id/groups/:group_id' => \&get_user_group;
 	# next operations should be allowed only to privileged users
-	put '' => \&create_user;
+	put '' => auth_cas login => \&create_user;
 	post '/:user_id' => \&modify_user;
 	put '/:user_id/picture' => \&put_user_photo;
 	post '/:user_id/disable' => \&disable_user;
@@ -401,6 +422,10 @@ prefix '/users' => sub {
 ########################
 
 sub get_OUs {
+	if(exists(query_parameters->{'schema'})) {
+		return send_file(RDConnect::UserManagement::FULL_OU_VALIDATION_SCHEMA_FILE, system_path => 1);
+	}
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
 	my($success,$payload) = $uMgmt->listJSONPeopleOU();
@@ -528,6 +553,10 @@ prefix '/organizationalUnits' => sub {
 ##################
 
 sub get_groups {
+	if(exists(query_parameters->{'schema'})) {
+		return send_file(RDConnect::UserManagement::FULL_GROUP_VALIDATION_SCHEMA_FILE, system_path => 1);
+	}
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
 	my($success,$payload) = $uMgmt->listJSONGroups();
@@ -797,12 +826,20 @@ prefix '/groups' => sub {
 	};
 };
 
+get 'documents' => sub {
+	if(exists(query_parameters->{'schema'})) {
+		return send_file(RDConnect::UserManagement::FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE, system_path => 1);
+	}
+	
+	pass;
+};
+
 package main;
 
 use Plack::Builder;
 builder {
-# Enabling this we get some issues, so disabled for now
-#	enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
-	enable 'CrossOrigin', origins => '*';
+	# Order does matter!
+	enable 'CrossOrigin', origins => '*', headers => '*';
+	enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
 	mount '/'    => RDConnect::UserManagement::API->to_app;
 };

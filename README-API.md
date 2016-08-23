@@ -3,7 +3,9 @@
 The user-management REST API has next endpoints:
 
 * `GET /users`: It returns the list of registered users (both enabled and disabled).
-
+	
+	* `GET /users?schema`: It returns the JSON Schema which validates a user entry.
+	
 	* `PUT /users`: It creates a new user. The input must be a JSON document following [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
 
 	* `GET /users/:user_id`: It returns the user which matches the record, or 404 if not found. It follows [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
@@ -39,7 +41,9 @@ The user-management REST API has next endpoints:
 	* `POST /users/:user_id/documents/:document_name/metadata`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to modify the metadata of the document.
 
 * `GET /organizationalUnits`: It returns the list of registered organizational units.
-
+	
+	* `GET /organizationalUnits?schema`: It returns the JSON Schema which validates an organizational unit entry.
+	
 	* `PUT /organizationalUnits`: It creates a new organizational unit. The input must be a JSON document following [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema.
 
 	* `GET /organizationalUnits/:ou_id`: It returns the organizational unit which matches the record, or 404 if not found. It follows [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema.
@@ -53,7 +57,9 @@ The user-management REST API has next endpoints:
 	* `GET /organizationalUnits/:ou_id/users`: It returns the list of registered users (both enabled and disabled) under this organizational unit which matches the record, or 404 if not found.
 
 * `GET /groups`: It returns the list of registered groups / roles.
-
+	
+	* `GET /groups?schema`: It returns the JSON Schema which validates a group entry.
+	
 	* `PUT /groups`: It creates a new group / role. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
 	
 	* `GET /groups/:group_id`: It returns the group which matches the record, or 404 if not found. It follows [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
@@ -85,3 +91,5 @@ The user-management REST API has next endpoints:
 	* `GET /groups/:group_id/documents/:document_name/metadata`: It gets the metadata of an specific document for this group. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
 
 	* `POST /groups/:group_id/documents/:document_name/metadata`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to update the document metadata.
+
+* GET '/documents?schema': It returns the JSON Schema which validates a document entry.

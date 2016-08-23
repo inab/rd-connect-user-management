@@ -223,18 +223,29 @@ sub createUser($$$$$$$;$) {
 # http://jsonschemalint.com/draft4/
 # http://www.jsonschemavalidator.net/
 
+use File::Spec;
+
+use constant USER_VALIDATION_SCHEMA_FILE	=>	'userValidation.json';
+use constant FULL_USER_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),USER_VALIDATION_SCHEMA_FILE);
+
+use constant OU_VALIDATION_SCHEMA_FILE	=>	'organizationalUnitValidation.json';
+use constant FULL_OU_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),OU_VALIDATION_SCHEMA_FILE);
+
+use constant GROUP_VALIDATION_SCHEMA_FILE	=>	'groupValidation.json';
+use constant FULL_GROUP_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),GROUP_VALIDATION_SCHEMA_FILE);
+
+use constant RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	'documentValidation.json';
+use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),RDDOCUMENT_VALIDATION_SCHEMA_FILE);
 {
 
 	use JSON::Validator;
 	use File::Basename ();
-	use File::Spec;
 
-	use constant USER_VALIDATION_SCHEMA_FILE	=>	'userValidation.json';
 	my $userValidator = undef;
 
 	sub getCASUserValidator() {
 		unless(defined($userValidator)) {
-			my $userSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),USER_VALIDATION_SCHEMA_FILE);
+			my $userSchemaPath = FULL_USER_VALIDATION_SCHEMA_FILE;
 			if(-r $userSchemaPath) {
 				$userValidator = JSON::Validator->new();
 				$userValidator->schema($userSchemaPath);
@@ -244,12 +255,11 @@ sub createUser($$$$$$$;$) {
 		return $userValidator;
 	}
 
-	use constant OU_VALIDATION_SCHEMA_FILE	=>	'organizationalUnitValidation.json';
 	my $ouValidator = undef;
 	
 	sub getCASouValidator() {
 		unless(defined($ouValidator)) {
-			my $ouSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),OU_VALIDATION_SCHEMA_FILE);
+			my $ouSchemaPath = FULL_OU_VALIDATION_SCHEMA_FILE;
 			if(-r $ouSchemaPath) {
 				$ouValidator = JSON::Validator->new();
 				$ouValidator->schema($ouSchemaPath);
@@ -259,12 +269,11 @@ sub createUser($$$$$$$;$) {
 		return $ouValidator;
 	}
 	
-	use constant GROUP_VALIDATION_SCHEMA_FILE	=>	'groupValidation.json';
 	my $groupValidator = undef;
 	
 	sub getCASGroupValidator() {
 		unless(defined($groupValidator)) {
-			my $groupSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),GROUP_VALIDATION_SCHEMA_FILE);
+			my $groupSchemaPath = FULL_GROUP_VALIDATION_SCHEMA_FILE;
 			if(-r $groupSchemaPath) {
 				$groupValidator = JSON::Validator->new();
 				$groupValidator->schema($groupSchemaPath);
@@ -274,12 +283,11 @@ sub createUser($$$$$$$;$) {
 		return $groupValidator;
 	}
 	
-	use constant RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	'documentValidation.json';
 	my $rdDocumentValidator = undef;
 	
 	sub getCASRDDocumentValidator() {
 		unless(defined($rdDocumentValidator)) {
-			my $rdDocumentSchemaPath = File::Spec->catfile(File::Basename::dirname(__FILE__),RDDOCUMENT_VALIDATION_SCHEMA_FILE);
+			my $rdDocumentSchemaPath = FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE;
 			if(-r $rdDocumentSchemaPath) {
 				$rdDocumentValidator = JSON::Validator->new();
 				$rdDocumentValidator->schema($rdDocumentSchemaPath);

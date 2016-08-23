@@ -4,6 +4,7 @@ This document explains how to install and setup RD-Connect User Management REST 
 
 For the user-management REST API these additional dependencies are required:
 
+* Authen::CAS::Client
 * Dancer2
 * Plack::Middleware::CrossOrigin
 * Plack::Middleware::Deflater
@@ -14,7 +15,7 @@ For the user-management REST API these additional dependencies are required:
 1. Check you have installed gcc, cpan, the development version of Perl and [APG](http://www.adel.nursat.kz/apg/ "Another Password Generator") (which is available in EPEL):
 
 	```bash
-	yum install -y gcc automake flex bison make patch perl perl-devel perl-CPAN perl-Net-IDN-Encode perl-IO-Compress perl-Net-SSLeay perl-Crypt-SSLeay
+	yum install -y gcc automake flex bison make patch perl perl-devel perl-CPAN perl-Net-IDN-Encode perl-IO-Compress perl-Net-SSLeay perl-Crypt-SSLeay perl-XML-LibXML
 	# Next ones are needed only if you don't have them already
 	yum install -y epel-release git
 	yum install -y apg
@@ -40,7 +41,7 @@ For the user-management REST API these additional dependencies are required:
 	
 	cpan -i Test::More boolean experimental Config::IniFiles Net::LDAP MIME::Base64 Digest::MD5 Digest::SHA1 JSON::Validator Email::Address Email::MIME Email::Sender::Transport::SMTPS Env File::MimeInfo Text::Unidecode
 	(echo y; echo y) | cpan -i Template::Toolkit
-	cpan -i Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI
+	cpan -i Authen::CAS::Client Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI
 	```
 
 4. Clone this code, in order to install the API
