@@ -32,6 +32,15 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_FIL
 		return $cfg;
 	}
 	
+	use constant UMGMT_API_SECTION	=>	'rdconnect-usermanagement-api';
+	use constant DEFAULT_RDCONNECT_CAS_URL	=>	"https://rdconnectcas.rd-connect.eu:9443/cas";
+	
+	sub getCASurl() {
+		my $cfg = getRDConnectConfig();
+		
+		return $cfg->val(UMGMT_API_SECTION,'cas_url',DEFAULT_RDCONNECT_CAS_URL);
+	}
+	
 	use RDConnect::UserManagement;
 	
 	my $uMgmt = undef;
@@ -83,17 +92,26 @@ set engines => {
 	},
 	'session' => {
 		'YAML' => {
-			'session_dir' => '/tmp/dancer-rdconnect-sessions'
+			'session_config' => {
+				'cookie_name' => 'rd.umgmt.api',
+				'cookie_duration'	=>	'1 hour',
+				'session_duration'	=>	'1 hour'
+			},
+			'session_dir' => '/tmp/.RDConnect-UserManagement-API-sessions'
 		}
 	}
 };
 
+use constant CAS_USER_MAP	=>	"user";
+
 set plugins => {
 	"Auth::CAS" => {
-		cas_url => "https://rdconnectcas.rd-connect.eu:9443/cas",
+		ssl_verify_hostname	=>	0,
+		cas_url => RDConnect::UserManagement::DancerCommon::getCASurl(),
 		cas_denied_path => "/denied",
 		cas_version => "3.0",
-		cas_user_map => "user",
+#		cas_version => "2.0",
+		cas_user_map => CAS_USER_MAP,
 		cas_attr_map => {
 			email => "email",
 			username => "username",
@@ -107,6 +125,29 @@ set plugins => {
 set session => 'YAML';
 set serializer => 'JSON';
 set charset => 'UTF-8';
+
+# Basic information #
+
+get '/'	=> sub {
+	return {
+		'cas_login'	=>	RDConnect::UserManagement::DancerCommon::getCASurl() . '/login',
+		'cas_logout'	=>	RDConnect::UserManagement::DancerCommon::getCASurl() . '/logout',
+	};
+};
+
+post '/login' => auth_cas pre_auth => sub {
+	my $retval = vars->{CAS_USER_MAP()};
+	$retval->{'session_id'} = vars->{'api_session_id'};
+	return $retval;
+};
+
+get '/login' => auth_cas login => sub {
+	return vars->{CAS_USER_MAP()};
+};
+
+get '/logout' => auth_cas logout => sub {
+	return {};
+};
 
 #########
 # Users #
@@ -151,7 +192,7 @@ sub get_user_photo {
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
 	} elsif(! $payload->exists('jpegPhoto')) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' has not photo'}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' does not have photo'}),404);
 	}
 	
 	# Here the payload is the user
@@ -392,28 +433,28 @@ sub remove_user_document {
 # Routing for /users prefix
 prefix '/users' => sub {
 	get '' => \&get_users;
-	get '/:user_id' => \&get_user;
+	get '/:user_id' => => \&get_user;
 	get '/:user_id/picture' => \&get_user_photo;
 	get '/:user_id/groups' => \&get_user_groups;
 	get '/:user_id/groups/:group_id' => \&get_user_group;
 	# next operations should be allowed only to privileged users
 	put '' => auth_cas login => \&create_user;
-	post '/:user_id' => \&modify_user;
-	put '/:user_id/picture' => \&put_user_photo;
-	post '/:user_id/disable' => \&disable_user;
-	post '/:user_id/enable' => \&enable_user;
-	post '/:user_id/groups' => \&add_user_to_groups;
-	del '/:user_id/groups' => \&remove_user_from_groups;
+	post '/:user_id' => auth_cas login => \&modify_user;
+	put '/:user_id/picture' => auth_cas login => \&put_user_photo;
+	post '/:user_id/disable' => auth_cas login => \&disable_user;
+	post '/:user_id/enable' => auth_cas login => \&enable_user;
+	post '/:user_id/groups' => auth_cas login => \&add_user_to_groups;
+	del '/:user_id/groups' => auth_cas login => \&remove_user_from_groups;
 	
 	# Legal documents related to the user
 	prefix '/:user_id/documents' => sub {
-		get '' => \&list_user_documents;
-		post '' => \&attach_user_document;
-		get '/:document_name' => \&get_user_document;
-		put '/:document_name' => \&modify_user_document;
-		del '/:document_name' => \&remove_user_document;
-		get '/:document_name/metadata' => \&get_user_document_metadata;
-		post '/:document_name/metadata' => \&modify_user_document_metadata;
+		get '' => auth_cas login => \&list_user_documents;
+		post '' => auth_cas login => \&attach_user_document;
+		get '/:document_name' => auth_cas login => \&get_user_document;
+		put '/:document_name' => auth_cas login => \&modify_user_document;
+		del '/:document_name' => auth_cas login => \&remove_user_document;
+		get '/:document_name/metadata' => auth_cas login => \&get_user_document_metadata;
+		post '/:document_name/metadata' => auth_cas login => \&modify_user_document_metadata;
 	};
 };
 
@@ -477,7 +518,7 @@ sub get_OU_photo {
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
 	} elsif(! $payload->exists('jpegPhoto')) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' has not photo'}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' does not have photo'}),404);
 	}
 	
 	# Here the payload is the user
@@ -543,9 +584,9 @@ prefix '/organizationalUnits' => sub {
 	get '/:ou_id/users' => \&get_OU_users;
 	get '/:ou_id/users/:user_id' => \&get_OU_user;
 	# next operations should be allowed only to privileged users
-	put '' => \&create_OU;
-	post '/:ou_id' => \&modify_OU;
-	put '/:ou_id/picture' => \&put_OU_photo;
+	put '' => auth_cas login => \&create_OU;
+	post '/:ou_id' => auth_cas login => \&modify_OU;
+	put '/:ou_id/picture' => auth_cas login => \&put_OU_photo;
 };
 
 ##################
@@ -808,21 +849,21 @@ prefix '/groups' => sub {
 	get '/:group_id/members' => \&get_group_members;
 	get '/:group_id/owners' => \&get_group_owners;
 	# next operations should be allowed only to allowed / privileged users
-	put '' => \&create_group;
-	post '/:group_id' => \&modify_group;
-	post '/:group_id/members' => \&add_group_members;
-	del '/:group_id/members' => \&remove_group_members;
-	post '/:group_id/owners' => \&add_group_owners;
-	del '/:group_id/owners' => \&remove_group_owners;
+	put '' => auth_cas login => \&create_group;
+	post '/:group_id' => auth_cas login => \&modify_group;
+	post '/:group_id/members' => auth_cas login => \&add_group_members;
+	del '/:group_id/members' => auth_cas login => \&remove_group_members;
+	post '/:group_id/owners' => auth_cas login => \&add_group_owners;
+	del '/:group_id/owners' => auth_cas login => \&remove_group_owners;
 	
 	prefix '/:group_id/documents' => sub {
-		get '' => \&list_group_documents;
-		post '' => \&attach_group_document;
-		get '/:document_name' => \&get_group_document;
-		put '/:document_name' => \&modify_group_document;
-		del '/:document_name' => \&remove_group_document;
-		get '/:document_name/metadata' => \&get_group_document_metadata;
-		post '/:document_name/metadata' => \&modify_group_document_metadata;
+		get '' => auth_cas login => \&list_group_documents;
+		post '' => auth_cas login => \&attach_group_document;
+		get '/:document_name' => auth_cas login => \&get_group_document;
+		put '/:document_name' => auth_cas login => \&modify_group_document;
+		del '/:document_name' => auth_cas login => \&remove_group_document;
+		get '/:document_name/metadata' => auth_cas login => \&get_group_document_metadata;
+		post '/:document_name/metadata' => auth_cas login => \&modify_group_document_metadata;
 	};
 };
 
@@ -840,6 +881,7 @@ use Plack::Builder;
 builder {
 	# Order does matter!
 	enable 'CrossOrigin', origins => '*', headers => '*';
+	# When this module is enabled, it introduces a double encoding issue.
 	enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
 	mount '/'    => RDConnect::UserManagement::API->to_app;
 };

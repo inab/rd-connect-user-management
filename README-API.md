@@ -1,18 +1,30 @@
 # RD-Connect user management API
 
-The user-management REST API has next endpoints:
+The user-management REST API has many services. In order to use almost any of them, you have to send a custom HTTP header:
 
-* `GET /users`: It returns the list of registered users (both enabled and disabled).
+* `X-RDConnect-UserManagement-Session`: The session associated to the logged in user.
+
+And these are the services under the endpoint. All of them need the custom header, but the ones labelled with an `*`:
+
+* `GET /` (*): It returns basic REST API information, like the CAS server to be used.
+
+* `GET /login`: It returns basic information about the logged in user.
+
+* `POST /login` (*): Sending a JSON document of type `{'username': 'theusername', 'password': 'theSECRETpassword;-)', 'service': 'http://serviceurltorequestticketsfor'}`, the user is logged in if the credentials are valid. The URI of the service is needed to obtain a [https://apereo.github.io/cas/4.2.x/protocol/CAS-Protocol.html](CAS service ticket). It is usually the one which is calling the user-management REST API. This method returns a JSON document in the format `{'session_id': 'theSESSIONid'}`, plus other additional keys from the logged-in user profile. The obtained `session_id` is reused on later calls through `X-RDConnect-UserManagement-Session` header.
+
+* `GET /logout`: The user associated to the given session is logged out.
+
+* `GET /users` (*): It returns the list of registered users (both enabled and disabled).
 	
-	* `GET /users?schema`: It returns the JSON Schema which validates a user entry.
+	* `GET /users?schema` (*): It returns the JSON Schema which validates a user entry.
 	
 	* `PUT /users`: It creates a new user. The input must be a JSON document following [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
 
-	* `GET /users/:user_id`: It returns the user which matches the record, or 404 if not found. It follows [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
+	* `GET /users/:user_id` (*): It returns the user which matches the record, or 404 if not found. It follows [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
 	
 	* `POST /users/:user_id`: It modifies an existing user. The input must be a JSON document following [userValidation.json](libs/RDConnect/userValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 
-	* `GET /users/:user_id/picture`: It returns the photo associated to the user which matches the record, or 404 if the user does not exist, or the user does not have an associated photo.
+	* `GET /users/:user_id/picture` (*): It returns the photo associated to the user which matches the record, or 404 if the user does not exist, or the user does not have an associated photo.
 
 	* `PUT /users/:user_id/picture`: It sets up the photo associated to the user which matches the record, or 404 if the user does not exist. It should be a JPEG photo.
 
@@ -20,7 +32,7 @@ The user-management REST API has next endpoints:
 
 	* `POST /users/:user_id/disable`: It enables a disabled user (privileged operation)
 	
-	* `GET /users/:user_id/groups`: It lists the ids of the groups / roles where the user is member of.
+	* `GET /users/:user_id/groups` (*): It lists the ids of the groups / roles where the user is member of.
 	
 	* `POST /users/:user_id/groups`: It adds the user to the groups / roles mentioned in the input array.
 	
@@ -34,45 +46,45 @@ The user-management REST API has next endpoints:
 
 	* `PUT /users/:user_id/documents/:document_name`: It replaces the contents of an specific document for this user.
 
-	* `REMOVE /users/:user_id/documents/:document_name`: It removes an specific document for this user.
+	* `DELETE /users/:user_id/documents/:document_name`: It removes an specific document for this user.
 
 	* `GET /users/:user_id/documents/:document_name/metadata`: It gets the metadata of an specific document for this user. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
 
 	* `POST /users/:user_id/documents/:document_name/metadata`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to modify the metadata of the document.
 
-* `GET /organizationalUnits`: It returns the list of registered organizational units.
+* `GET /organizationalUnits` (*): It returns the list of registered organizational units.
 	
-	* `GET /organizationalUnits?schema`: It returns the JSON Schema which validates an organizational unit entry.
+	* `GET /organizationalUnits?schema` (*): It returns the JSON Schema which validates an organizational unit entry.
 	
 	* `PUT /organizationalUnits`: It creates a new organizational unit. The input must be a JSON document following [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema.
 
-	* `GET /organizationalUnits/:ou_id`: It returns the organizational unit which matches the record, or 404 if not found. It follows [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema.
+	* `GET /organizationalUnits/:ou_id` (*): It returns the organizational unit which matches the record, or 404 if not found. It follows [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema.
 
 	* `POST /organizationalUnits/:ou_id`: It modifies an existing organizational unit. The input must be a JSON document following [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 
-	* `GET /organizationalUnits/:ou_id/picture`: It returns the photo associated to the organizational unit which matches the record, or 404 if not found, or the organizational unit does not have an associated photo.
+	* `GET /organizationalUnits/:ou_id/picture` (*): It returns the photo associated to the organizational unit which matches the record, or 404 if not found, or the organizational unit does not have an associated photo.
 
 	* `PUT /organizationalUnits/:ou_id/picture`: It sets up the photo associated to the organizational unit which matches the record, or 404 if not found. It should be a JPEG photo.
 
-	* `GET /organizationalUnits/:ou_id/users`: It returns the list of registered users (both enabled and disabled) under this organizational unit which matches the record, or 404 if not found.
+	* `GET /organizationalUnits/:ou_id/users` (*): It returns the list of registered users (both enabled and disabled) under this organizational unit which matches the record, or 404 if not found.
 
-* `GET /groups`: It returns the list of registered groups / roles.
+* `GET /groups` (*): It returns the list of registered groups / roles.
 	
-	* `GET /groups?schema`: It returns the JSON Schema which validates a group entry.
+	* `GET /groups?schema` (*): It returns the JSON Schema which validates a group entry.
 	
 	* `PUT /groups`: It creates a new group / role. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
 	
-	* `GET /groups/:group_id`: It returns the group which matches the record, or 404 if not found. It follows [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
+	* `GET /groups/:group_id` (*): It returns the group which matches the record, or 404 if not found. It follows [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
 
 	* `POST /groups/:group_id`: It modifies an existing group features, but not its members or owners. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 	
-	* `GET /groups/:group_id/members`: It returns the list of users which are members of this group, or 404 if not found.
+	* `GET /groups/:group_id/members` (*): It returns the list of users which are members of this group, or 404 if not found.
 	
 	* `POST /groups/:group_id/members`: It adds the users in the input array to the group as members.
 	
 	* `DELETE /groups/:group_id/members`: It removes the users in the input array from the group as members.
 	
-	* `GET /groups/:group_id/owners`: It returns the list of users which are owners of this group, or 404 if not found.
+	* `GET /groups/:group_id/owners` (*): It returns the list of users which are owners of this group, or 404 if not found.
 
 	* `POST /groups/:group_id/owners`: It adds the users in the input array to the group as owners.
 	
@@ -92,4 +104,4 @@ The user-management REST API has next endpoints:
 
 	* `POST /groups/:group_id/documents/:document_name/metadata`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to update the document metadata.
 
-* GET '/documents?schema': It returns the JSON Schema which validates a document entry.
+* GET '/documents?schema' (*): It returns the JSON Schema which validates a document entry.

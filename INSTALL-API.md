@@ -2,10 +2,11 @@
 
 This document explains how to install and setup RD-Connect User Management REST API.
 
-For the user-management REST API these additional dependencies are required:
+First, you have to install all the dependencies listed in [README.md]. For the user-management REST API the latest versions of these additional dependencies are required:
 
 * Authen::CAS::Client
 * Dancer2
+* LWP::Protocol::https
 * Plack::Middleware::CrossOrigin
 * Plack::Middleware::Deflater
 * FCGI	(needed by Plack::Handler::FCGI)

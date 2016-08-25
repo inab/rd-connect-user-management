@@ -8,6 +8,7 @@ package Authen::CAS::Client;
 
 sub p3_service_validate {
   my ( $self, $service, $ticket, %args ) = @_;
+  print STDERR "SER: $service TICK: $ticket\n";
   return $self->_v20_validate( '/p3/serviceValidate', $service, $ticket, %args );
 }
  
@@ -31,16 +32,24 @@ use strict;
 use Carp;
 use Dancer2::Plugin;
 use HTTP::Headers;
-#use Authen::CAS::Client;
 use Scalar::Util 'blessed';
+use Authen::CAS::External;
 
 our $VERSION;
 
 use constant InvalidConfig => "Invalid or missing configuration: ";
+use constant NoSession => "Unavailable session";
+use constant ExpiredSession => "Expired session";
+use constant CorruptedSession => "Corrupted session";
 use constant CasError => "Unable to auth with CAS backend: ";
+use constant FailedToAuthenticate => "Failed to authenticate. Destroying session.";
 
 my $settings;
-my %dispatch = ( login => \&_auth_cas, );
+my %dispatch = (
+	login => \&_auth_cas,
+	logout => \&_deauth_cas,
+	pre_auth => \&_pre_auth_cas
+);
 
 register 'auth_cas' => sub {
 	my ( $dsl, $condition, @args ) = @_;
@@ -65,30 +74,51 @@ sub extend {
 sub _default_conf {
 	return (
 		cas_user_map	=>	'cas_user',
-		cas_transient_params	=>	'cas_transient_params',
+		#cas_transient_params	=>	'cas_transient_params',
 		cas_denied_path	=>	'denied',
 		ssl_verify_hostname	=>	1,
 		cas_attr_map	=>	{}
 	);
 }
 
+use constant SESSION_HEADER	=>	'X-RDConnect-UserManagement-Session';
+
+sub _deauth_cas {
+	my ( $dsl, $coderef ) = @_;
+	
+	$settings ||= { _default_conf(), %{ plugin_setting() } };
+	#use Data::Dumper;
+	#print STDERR Dumper($settings),"\n";
+	
+	return sub {
+		my $app = $dsl->app;
+		my $request = $app->request;
+		my $sessionId = $request->header(SESSION_HEADER);
+		if(defined($sessionId)) {
+			my $sessionFactory = $app->session_engine;
+			$sessionFactory->destroy($sessionId);
+		}
+		
+		# Jump to the code
+		goto $coderef;
+	};
+}
+
 sub _auth_cas {
 	my ( $dsl, $coderef ) = @_;
 	
 	$settings ||= { _default_conf(), %{ plugin_setting() } };
-	use Data::Dumper;
-	print STDERR Dumper($settings),"\n";
+	#use Data::Dumper;
+	#print STDERR Dumper($settings),"\n";
 	
 	return sub {
 		my $app = $dsl->app;
 		my $request = $app->request;
 		
-		my $base_url = $settings->{cas_url} || $app->send_error(InvalidConfig . "cas_url is unset" );
+		my $cas_url = $settings->{cas_url} || $app->send_error(InvalidConfig . "cas_url is unset" );
 		my $cas_version = $settings->{cas_version} ||  $app->send_error(InvalidConfig . "cas_version is unset");
 		my $cas_user_map = $settings->{cas_user_map};
-		my $cas_transient_params = $settings->{cas_transient_params};
-		my $cas_denied_url = $settings->{cas_denied_path};
-
+		
 		my $ssl_verify_hostname = $settings->{ssl_verify_hostname};
 		$ENV{"PERL_LWP_SSL_VERIFY_HOSTNAME"} = $ssl_verify_hostname;
 
@@ -98,93 +128,197 @@ sub _auth_cas {
 		}
 		
 		my $mapping = $settings->{cas_attr_map};
-		
-		my $ticket = undef;
-		$ticket = $settings->{ticket}  if(exists($settings->{ticket}));
 		my $params = $request->params;
-		unless( $ticket ) {
-			my $tickets = $params->{ticket};
-			# For the case when application also uses 'ticket' parameters
-			# we only remove the real cas service ticket
-			if( ref($tickets) eq "ARRAY" ) {
-				while( my ($index, $value) = each @$tickets ) {
-					# The 'ST-' is specified in CAS-protocol
-					if( $value =~ m/^ST\-/ ) {
-						$ticket = delete $tickets->[$index];
-					}
-				}
-			} else {
-				$ticket = delete $params->{ticket};
+		
+		my $sessionFactory = $app->session_engine;
+		my $sessionId = $request->header(SESSION_HEADER);
+		my $session;
+		if(defined($sessionId)) {
+			$session = $sessionFactory->retrieve(id => $sessionId);
+			unless(defined($session)) {
+				# Raise hard error, backend has errors
+				$app->log( error => "Unable to authenticate: expired session");
+				$app->send_error(ExpiredSession);
 			}
-		}
-		
-		# Do we have to restore previous params?
-		# We are not going to overwrite a possibly legitimate incoming request
-		if(scalar(keys(%{$params})) == 0) {
-			my $transient_params = $app->session->read($cas_transient_params);
-			$params = $transient_params  if(defined($transient_params));
-			$app->session->delete($cas_transient_params);
-		}
-		
-		
-		my $user = $app->session->read( $cas_user_map );
-
-		if( $user ) {
-			goto $coderef;
 		} else {
-			# This operation can be dangerous for user creation APIs, as clear passwords could travel
-			my $service = $request->uri_for( $request->path_info, $params );
-			my $service_naked = $request->header('X-CAS-Referer');
-			$service_naked = $request->referer  unless(defined($service_naked));
-			$service_naked = $request->uri_for( $request->path_info )  unless(defined($service_naked));
-			my $cas = Authen::CAS::Client->new( $base_url );
+			$app->log( error => "Unable to authenticate: no session");
+			$app->send_error(NoSession);
+		}
+		
+		# Do we have the credentials?
+		my $cas_user = $session->read('cas_user');
+		my $cas_pass = $session->read('cas_pass');
+		my $cas_service = $session->read('cas_service');
+		
+		unless(defined($cas_user) && defined($cas_pass) && defined($cas_service)) {
+			$sessionFactory->destroy($sessionId);
+			$app->log( error => "Unable to authenticate: ".CorruptedSession);
+			$app->send_error(CorruptedSession);
+		}
+	
+		# Let's authenticate!
+		my $cas_auth = Authen::CAS::External->new(
+			cas_url => $cas_url,
+			username => $cas_user,
+			password => $cas_pass
+		);
+		
+		my $cas_response = $cas_auth->authenticate(service => $cas_service);
+		if($cas_response->has_notification) {
+			$app->log( info => "CAS notification on authentication: ".$cas_response->notification );
+		}
+		
+		my $ticket = $cas_response->service_ticket;
+		if(defined($ticket)) {
+			$request->var('api_session_id' => $sessionId);
+			my $cas = Authen::CAS::Client->new( $cas_url );
 			
-			my $redirect_url;
-
-			if( $ticket) {
-				$app->log( debug => "Trying to validate via CAS '$cas_version' with ticket=$ticket");
-            
-				my $r;
+			$app->log( debug => "Trying to validate via CAS '$cas_version' with ticket=$ticket");
+    
+			my $r;
+			if( $cas_version eq "1.0" ) {
+				$r = $cas->validate( $cas_service, $ticket );
+			} elsif( $cas_version eq "2.0" ) {
+				$r = $cas->service_validate( $cas_service, $ticket );
+			} elsif( $cas_version eq "3.0" ) {
+				$r = $cas->p3_service_validate( $cas_service, $ticket );
+			} else {
+				$app->send_error(InvalidConfig .  "cas_version '$cas_version' not supported");
+			}
+			
+			if( $r->is_success ) {
+				# Redirect to given path
+				$app->log( info => "Authenticated as: ".$r->user);
 				if( $cas_version eq "1.0" ) {
-					$r = $cas->validate( $service_naked, $ticket );
-				} elsif( $cas_version eq "2.0" ) {
-					$r = $cas->service_validate( $service_naked, $ticket );
-				} elsif( $cas_version eq "3.0" ) {
-					$r = $cas->p3_service_validate( $service_naked, $ticket );
+					$request->var($cas_user_map => $r->user);
 				} else {
-					$app->send_error(InvalidConfig .  "cas_version '$cas_version' not supported");
+					my $attrs = _map_attributes( $r->doc, $mapping );
+					$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
+					$request->var($cas_user_map => $attrs);
+				}
+				$sessionFactory->flush('session' => $session);
+				# Jump to the code
+				goto $coderef;
+			} elsif( $r->is_failure ) {
+				# Redirect to denied
+				$app->log( debug => "Failed to authenticate: ".$r->code." / ".$r->message );
+				$app->send_error(CasError);
+			} else {
+				# Raise hard error, backend has errors
+				$app->log( error => "Unable to authenticate: ".$r->error);
+				$app->send_error(CasError . $r->error );
+			}
+		} else {
+			$sessionFactory->destroy($sessionId);
+			$app->log( error => FailedToAuthenticate);
+			$app->send_error(FailedToAuthenticate);
+		}
+	};
+
+    
+}
+
+sub _pre_auth_cas {
+	my ( $dsl, $coderef ) = @_;
+	
+	$settings ||= { _default_conf(), %{ plugin_setting() } };
+	#use Data::Dumper;
+	#print STDERR Dumper($settings),"\n";
+	
+	return sub {
+		my $app = $dsl->app;
+		my $request = $app->request;
+		
+		my $cas_url = $settings->{cas_url} || $app->send_error(InvalidConfig . "cas_url is unset" );
+		my $cas_version = $settings->{cas_version} ||  $app->send_error(InvalidConfig . "cas_version is unset");
+		my $cas_user_map = $settings->{cas_user_map};
+		
+		my $ssl_verify_hostname = $settings->{ssl_verify_hostname};
+		$ENV{"PERL_LWP_SSL_VERIFY_HOSTNAME"} = $ssl_verify_hostname;
+
+		# check supported versions
+		unless( grep(/$cas_version/, qw( 3.0 2.0 1.0 )) ) {
+			$app->send_error(InvalidConfig . "cas_version '$cas_version' not supported");
+		}
+		
+		my $mapping = $settings->{cas_attr_map};
+		my $params = $request->params;
+		# Do we have the credentials?
+		unless(exists($params->{'username'}) && exists($params->{'password'}) && exists($params->{'service'})) {
+			$app->log( error => "Unable to authenticate: ".CorruptedSession);
+			$app->send_error(CorruptedSession);
+		}
+		
+		my $cas_user = $params->{'username'};
+		my $cas_pass = $params->{'password'};
+		my $cas_service = $params->{'service'};
+		
+		# Let's authenticate!
+		my $cas_auth = Authen::CAS::External->new(
+			cas_url => $cas_url,
+			username => $cas_user,
+			password => $cas_pass
+		);
+		
+		my $cas_response = $cas_auth->authenticate(service => $cas_service);
+		if($cas_response->has_notification) {
+			$app->log( info => "CAS notification on authentication: ".$cas_response->notification );
+		}
+		
+		my $ticket = $cas_response->service_ticket;
+		if(defined($ticket)) {
+			my $cas = Authen::CAS::Client->new( $cas_url );
+			
+			$app->log( debug => "Trying to validate via CAS '$cas_version' with ticket=$ticket");
+    
+			my $r;
+			if( $cas_version eq "1.0" ) {
+				$r = $cas->validate( $cas_service, $ticket );
+			} elsif( $cas_version eq "2.0" ) {
+				$r = $cas->service_validate( $cas_service, $ticket );
+			} elsif( $cas_version eq "3.0" ) {
+				$r = $cas->p3_service_validate( $cas_service, $ticket );
+			} else {
+				$app->send_error(InvalidConfig .  "cas_version '$cas_version' not supported");
+			}
+			
+			if( $r->is_success ) {
+				# Redirect to given path
+				$app->log( info => "Authenticated as: ".$r->user);
+				if( $cas_version eq "1.0" ) {
+					$request->var($cas_user_map => $r->user);
+				} else {
+					my $attrs = _map_attributes( $r->doc, $mapping );
+					$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
+					$request->var($cas_user_map => $attrs);
 				}
 				
-				if( $r->is_success ) {
-					# Redirect to given path
-					$app->log( info => "Authenticated as: ".$r->user);
-					if( $cas_version eq "1.0" ) {
-						$app->session->write($cas_user_map => $r->user);
-					} else {
-						my $attrs = _map_attributes( $r->doc, $mapping );
-						$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
-						$app->session->write($cas_user_map => $attrs);
-					}
-					$redirect_url = $service;
-
-				} elsif( $r->is_failure ) {
-					# Redirect to denied
-					$app->log( debug => "Failed to authenticate: ".$r->code." / ".$r->message );
-					$redirect_url = $request->uri_for( $cas_denied_url );
-				} else {
-					# Raise hard error, backend has errors
-					$app->log( error => "Unable to authenticate: ".$r->error);
-					$app->send_error(CasError . $r->error );
-				}
+				# We are sure it is working, so let's save
+				my $sessionFactory = $app->session_engine;
+				my $session = $sessionFactory->create();
+				my $sessionId = $session->id();
+				
+				$request->var('api_session_id' => $sessionId);
+				
+				$session->write('cas_user' => $cas_user);
+				$session->write('cas_pass' => $cas_pass);
+				$session->write('cas_service' => $cas_service);
+				
+				$sessionFactory->flush('session' => $session);
+				# Jump to the code
+				goto $coderef;
+			} elsif( $r->is_failure ) {
+				# Redirect to denied
+				$app->log( debug => "Failed to authenticate: ".$r->code." / ".$r->message );
+				$app->send_error(CasError);
 			} else {
-				# Has no ticket, needs one
-				$redirect_url = $cas->login_url( $service_naked );
-				$app->session->write($cas_transient_params,$params);
-				$app->log( debug => "Redirecting to CAS: ".$redirect_url );
+				# Raise hard error, backend has errors
+				$app->log( error => "Unable to authenticate: ".$r->error);
+				$app->send_error(CasError . $r->error );
 			}
-			
-			# General redir response
-			return $app->redirect($redirect_url);
+		} else {
+			$app->log( error => FailedToAuthenticate);
+			$app->send_error(FailedToAuthenticate);
 		}
 	};
 
@@ -205,6 +339,8 @@ sub _map_attributes {
         foreach my $a (@attributes) {
             my $name = (split(/:/, $a->nodeName, 2))[1];
             my $val = $a->textContent;
+            # Encoding to UTF-8, as parsing fails sometimes
+            utf8::encode($val);
 
             my $mapped_name = $mapping->{ $name } // $name;
             $attrs->{ $mapped_name } = $val;
