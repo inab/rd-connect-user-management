@@ -420,6 +420,16 @@ sub getDNsFromUIDs {
 	return wantarray ? ($retval,$payload) : $retval;
 }
 
+sub encodePhoto {
+	return 'data:image/jpeg;base64,'.encode_base64($_[1],'');
+}
+
+sub decodePhoto {
+	my $photo = $_[1];
+	$photo =~ s/^data:(?:[^\/]+)\/(?:[^\/]+)?(?:;base64)?,//;
+	return decode_base64($photo);
+}
+
 # Correspondence between JSON attribute names and LDAP attribute names
 # and whether these attributes should be masked on return
 # Array element meaning:	LDAP attribute name, visible attribute on JSON, array attribute on LDAP, method to translate from JSON to LDAP, method to translate from LDAP to JSON, is read-only
@@ -434,7 +444,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 	
 	'userCategory'	=>	['userClass', boolean::true, boolean::false, undef, undef, boolean::false],
 	'title'	=>	['title', boolean::true, boolean::false, undef, undef, boolean::false],
-	'picture'	=>	['jpegPhoto', boolean::true, boolean::false, sub { return decode_base64($_[1]);}, sub { return encode_base64($_[1]); }, boolean::false],
+	'picture'	=>	['jpegPhoto', boolean::true, boolean::false, \&decodePhoto, \&encodePhoto, boolean::false],
 	'telephoneNumber'	=>	['telephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
 	'facsimileTelephoneNumber'	=>	['facsimileTelephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
 	'registeredAddress'	=>	['registeredAddress', boolean::true, boolean::false, undef, undef, boolean::false],
@@ -452,7 +462,7 @@ my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_,
 my %JSON_LDAP_OU_ATTRIBUTES = (
 	'organizationalUnit'	=>	['ou', boolean::true, boolean::false, undef, undef, boolean::true],
 	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
-	'picture'	=>	['jpegPhoto', boolean::true, boolean::false,  sub { return decode_base64($_[1]);}, sub { return encode_base64($_[1]); }, boolean::false],
+	'picture'	=>	['jpegPhoto', boolean::true, boolean::false,  \&decodePhoto, \&encodePhoto, boolean::false],
 	'links'	=>	['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
 );
 
