@@ -113,10 +113,13 @@ set plugins => {
 #		cas_version => "2.0",
 		cas_user_map => CAS_USER_MAP,
 		cas_attr_map => {
-			email => "email",
-			username => "username",
-			firstName => "firstname",
-			lastName => "lastname"
+		#	email => "email",
+		#	username => "username",
+		#	firstName => "firstname",
+		#	lastName => "lastname"
+		},
+		cas_attr_as_array_map => {
+			'memberOf'	=>	1
 		}
 	}
 };

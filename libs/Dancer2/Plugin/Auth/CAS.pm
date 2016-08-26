@@ -77,7 +77,8 @@ sub _default_conf {
 		#cas_transient_params	=>	'cas_transient_params',
 		cas_denied_path	=>	'denied',
 		ssl_verify_hostname	=>	1,
-		cas_attr_map	=>	{}
+		cas_attr_map	=>	{},
+		cas_attr_as_array_map => {}
 	);
 }
 
@@ -128,6 +129,7 @@ sub _auth_cas {
 		}
 		
 		my $mapping = $settings->{cas_attr_map};
+		my $asArray = $settings->{cas_attr_as_array_map};
 		my $params = $request->params;
 		
 		my $sessionFactory = $app->session_engine;
@@ -192,7 +194,7 @@ sub _auth_cas {
 				if( $cas_version eq "1.0" ) {
 					$request->var($cas_user_map => $r->user);
 				} else {
-					my $attrs = _map_attributes( $r->doc, $mapping );
+					my $attrs = _map_attributes( $r->doc, $mapping , $asArray);
 					$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
 					$request->var($cas_user_map => $attrs);
 				}
@@ -242,6 +244,7 @@ sub _pre_auth_cas {
 		}
 		
 		my $mapping = $settings->{cas_attr_map};
+		my $asArray = $settings->{cas_attr_as_array_map};
 		my $params = $request->params;
 		# Do we have the credentials?
 		unless(exists($params->{'username'}) && exists($params->{'password'}) && exists($params->{'service'})) {
@@ -288,7 +291,7 @@ sub _pre_auth_cas {
 				if( $cas_version eq "1.0" ) {
 					$request->var($cas_user_map => $r->user);
 				} else {
-					my $attrs = _map_attributes( $r->doc, $mapping );
+					my $attrs = _map_attributes( $r->doc, $mapping , $asArray);
 					$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
 					$request->var($cas_user_map => $attrs);
 				}
@@ -326,7 +329,7 @@ sub _pre_auth_cas {
 }
 
 sub _map_attributes {
-    my ( $doc, $mapping ) = @_;
+    my ( $doc, $mapping , $asArray ) = @_;
 
     my $attrs = {};
 
@@ -342,8 +345,16 @@ sub _map_attributes {
             # Encoding to UTF-8, as parsing fails sometimes
             utf8::encode($val);
 
-            my $mapped_name = $mapping->{ $name } // $name;
-            $attrs->{ $mapped_name } = $val;
+		my $mapped_name = $mapping->{ $name } // $name;
+		
+		if((!exists($attrs->{ $mapped_name }) && (!exists($asArray->{ $mapped_name }) || !$asArray->{ $mapped_name })) || (exists($attrs->{ $mapped_name }) && exists($asArray->{ $mapped_name }) && !$asArray->{ $mapped_name })){
+			$attrs->{ $mapped_name } = $val;
+		} else {
+			$attrs->{ $mapped_name } = []  unless(exists($attrs->{ $mapped_name }));
+			$attrs->{ $mapped_name } = [ $attrs->{ $mapped_name } ]  unless(ref($attrs->{ $mapped_name }) eq 'ARRAY');
+			
+			push(@{$attrs->{ $mapped_name }},$val);
+		}
         }
             
     }
