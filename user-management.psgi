@@ -882,6 +882,6 @@ builder {
 	# Order does matter!
 	enable 'CrossOrigin', origins => '*', headers => '*';
 	# When this module is enabled, it introduces a double encoding issue.
-	enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
+	#enable 'Deflater', content_type => ['text/plain','text/css','text/html','text/javascript','application/javascript','application/json'];
 	mount '/'    => RDConnect::UserManagement::API->to_app;
 };
