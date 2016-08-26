@@ -1,10 +1,10 @@
 # RD-Connect user management API
 
-The user-management REST API has many services. In order to use almost any of them, you have to send a custom HTTP header:
+The user-management REST API has many services. In order to use almost any of them, you have to send a custom HTTP header, which contains the authentication token:
 
 * `X-RDConnect-UserManagement-Session`: The session associated to the logged in user.
 
-And these are the services under the endpoint. All of them need the custom header, but the ones labelled with an `*`:
+And these are the services under the endpoint. All of them, but the ones labelled with an `*`, need the custom header. Some of them can deny the operation if the logged user does not have enough privileges to do it:
 
 * `GET /` (*): It returns basic REST API information, like the CAS server to be used.
 

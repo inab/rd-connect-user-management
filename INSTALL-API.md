@@ -47,7 +47,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 
 4. Clone this code, in order to install the API
 
-5. Create a file called `user-management.ini`, based on [template-config.ini](template-config.ini), with the connection and authentication parameters to use the LDAP server, as well as the mail server.
+5. Create a file called `user-management.ini`, based on [template-config.ini](template-config.ini), with the connection and authentication parameters to use the LDAP server, as well as the mail server and the proper setup in `rdconnect-usermanagement-api` section.
 
 6. Create an installation directory (for instance, `/home/rdconnect-rest/RDConnect-UserManagement-REST-API`), and copy at least next content there:
 

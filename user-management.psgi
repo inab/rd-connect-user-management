@@ -41,6 +41,27 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_FIL
 		return $cfg->val(UMGMT_API_SECTION,'cas_url',DEFAULT_RDCONNECT_CAS_URL);
 	}
 	
+	sub getAdminGroups() {
+		my $cfg = getRDConnectConfig();
+		
+		my $retval = ['cn=admin,ou=groups,dc=rd-connect,dc=eu'];
+		
+		if($cfg->exists(UMGMT_API_SECTION,'admin_group')) {
+			my @adminGroups = $cfg->val(UMGMT_API_SECTION,'admin_group');
+			$retval = \@adminGroups;
+		}
+		
+		return $retval;
+	}
+	
+	use constant DEFAULT_RDCONNECT_GROUP_CREATOR	=>	'PI';
+	
+	sub getGroupCreator() {
+		my $cfg = getRDConnectConfig();
+		
+		return $cfg->val(UMGMT_API_SECTION,'group_creator',DEFAULT_RDCONNECT_GROUP_CREATOR);
+	}
+	
 	use RDConnect::UserManagement;
 	
 	my $uMgmt = undef;
@@ -77,6 +98,7 @@ use Dancer2;
 use Dancer2::Serializer::JSON;
 use Dancer2::Session::YAML;
 use Dancer2::Plugin::Auth::CAS;
+use Dancer2::Plugin::Auth::RDConnect;
 
 set engines => {
 	'serializer' => {
@@ -103,6 +125,9 @@ set engines => {
 };
 
 use constant CAS_USER_MAP	=>	"user";
+use constant MEMBEROF_ATTRIBUTE	=>	"memberOf";
+use constant USERNAME_ATTRIBUTE	=>	"username";
+use constant USER_CATEGORY_ATTRIBUTE	=>	'userCategory';
 
 set plugins => {
 	"Auth::CAS" => {
@@ -114,13 +139,23 @@ set plugins => {
 		cas_user_map => CAS_USER_MAP,
 		cas_attr_map => {
 		#	email => "email",
-		#	username => "username",
+			uid => USERNAME_ATTRIBUTE,
+			userClass => USER_CATEGORY_ATTRIBUTE,
 		#	firstName => "firstname",
 		#	lastName => "lastname"
 		},
 		cas_attr_as_array_map => {
-			'memberOf'	=>	1
+			MEMBEROF_ATTRIBUTE()	=>	1
 		}
+	},
+	"Auth::RDConnect" => {
+		cas_user_map => CAS_USER_MAP,
+		username_attribute	=>	USERNAME_ATTRIBUTE,
+		groups_attribute	=>	MEMBEROF_ATTRIBUTE,
+		userCategory_attribute	=>	USER_CATEGORY_ATTRIBUTE,
+		rdconnect_admin_groups	=>	RDConnect::UserManagement::DancerCommon::getAdminGroups(),
+		rdconnect_group_creator	=>	RDConnect::UserManagement::DancerCommon::getGroupCreator(),
+		uMgmt	=>	RDConnect::UserManagement::DancerCommon::getUserManagementInstance()
 	}
 };
 
@@ -441,23 +476,23 @@ prefix '/users' => sub {
 	get '/:user_id/groups' => \&get_user_groups;
 	get '/:user_id/groups/:group_id' => \&get_user_group;
 	# next operations should be allowed only to privileged users
-	put '' => auth_cas login => \&create_user;
-	post '/:user_id' => auth_cas login => \&modify_user;
-	put '/:user_id/picture' => auth_cas login => \&put_user_photo;
-	post '/:user_id/disable' => auth_cas login => \&disable_user;
-	post '/:user_id/enable' => auth_cas login => \&enable_user;
-	post '/:user_id/groups' => auth_cas login => \&add_user_to_groups;
-	del '/:user_id/groups' => auth_cas login => \&remove_user_from_groups;
+	put '' => auth_cas login => rdconnect_auth PI => \&create_user;
+	post '/:user_id' => auth_cas login => rdconnect_auth user => \&modify_user;
+	put '/:user_id/picture' => auth_cas login => rdconnect_auth user => \&put_user_photo;
+	post '/:user_id/disable' => auth_cas login => rdconnect_auth user => \&disable_user;
+	post '/:user_id/enable' => auth_cas login => rdconnect_auth user => \&enable_user;
+	post '/:user_id/groups' => auth_cas login => rdconnect_auth admin => \&add_user_to_groups;
+	del '/:user_id/groups' => auth_cas login => rdconnect_auth admin => \&remove_user_from_groups;
 	
 	# Legal documents related to the user
 	prefix '/:user_id/documents' => sub {
 		get '' => auth_cas login => \&list_user_documents;
-		post '' => auth_cas login => \&attach_user_document;
-		get '/:document_name' => auth_cas login => \&get_user_document;
-		put '/:document_name' => auth_cas login => \&modify_user_document;
-		del '/:document_name' => auth_cas login => \&remove_user_document;
-		get '/:document_name/metadata' => auth_cas login => \&get_user_document_metadata;
-		post '/:document_name/metadata' => auth_cas login => \&modify_user_document_metadata;
+		post '' => auth_cas login => rdconnect_auth user => \&attach_user_document;
+		get '/:document_name' => auth_cas login => rdconnect_auth user => \&get_user_document;
+		put '/:document_name' => auth_cas login => rdconnect_auth user => \&modify_user_document;
+		del '/:document_name' => auth_cas login => rdconnect_auth user => \&remove_user_document;
+		get '/:document_name/metadata' => auth_cas login => rdconnect_auth user => \&get_user_document_metadata;
+		post '/:document_name/metadata' => auth_cas login => rdconnect_auth user => \&modify_user_document_metadata;
 	};
 };
 
@@ -587,9 +622,9 @@ prefix '/organizationalUnits' => sub {
 	get '/:ou_id/users' => \&get_OU_users;
 	get '/:ou_id/users/:user_id' => \&get_OU_user;
 	# next operations should be allowed only to privileged users
-	put '' => auth_cas login => \&create_OU;
-	post '/:ou_id' => auth_cas login => \&modify_OU;
-	put '/:ou_id/picture' => auth_cas login => \&put_OU_photo;
+	put '' => auth_cas login => rdconnect_auth admin => \&create_OU;
+	post '/:ou_id' => auth_cas login => rdconnect_auth admin => \&modify_OU;
+	put '/:ou_id/picture' => auth_cas login => rdconnect_auth admin => \&put_OU_photo;
 };
 
 ##################
@@ -852,21 +887,21 @@ prefix '/groups' => sub {
 	get '/:group_id/members' => \&get_group_members;
 	get '/:group_id/owners' => \&get_group_owners;
 	# next operations should be allowed only to allowed / privileged users
-	put '' => auth_cas login => \&create_group;
-	post '/:group_id' => auth_cas login => \&modify_group;
-	post '/:group_id/members' => auth_cas login => \&add_group_members;
-	del '/:group_id/members' => auth_cas login => \&remove_group_members;
-	post '/:group_id/owners' => auth_cas login => \&add_group_owners;
-	del '/:group_id/owners' => auth_cas login => \&remove_group_owners;
+	put '' => auth_cas login => rdconnect_auth PI => \&create_group;
+	post '/:group_id' => auth_cas login => rdconnect_auth owner => \&modify_group;
+	post '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&add_group_members;
+	del '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&remove_group_members;
+	post '/:group_id/owners' => auth_cas login => rdconnect_auth owner => \&add_group_owners;
+	del '/:group_id/owners' => auth_cas login => rdconnect_auth owner => \&remove_group_owners;
 	
 	prefix '/:group_id/documents' => sub {
-		get '' => auth_cas login => \&list_group_documents;
-		post '' => auth_cas login => \&attach_group_document;
-		get '/:document_name' => auth_cas login => \&get_group_document;
-		put '/:document_name' => auth_cas login => \&modify_group_document;
-		del '/:document_name' => auth_cas login => \&remove_group_document;
-		get '/:document_name/metadata' => auth_cas login => \&get_group_document_metadata;
-		post '/:document_name/metadata' => auth_cas login => \&modify_group_document_metadata;
+		get '' => auth_cas login => rdconnect_auth owner => \&list_group_documents;
+		post '' => auth_cas login => rdconnect_auth owner => \&attach_group_document;
+		get '/:document_name' => auth_cas login => rdconnect_auth owner => \&get_group_document;
+		put '/:document_name' => auth_cas login => rdconnect_auth owner => \&modify_group_document;
+		del '/:document_name' => auth_cas login => rdconnect_auth owner => \&remove_group_document;
+		get '/:document_name/metadata' => auth_cas login => rdconnect_auth owner => \&get_group_document_metadata;
+		post '/:document_name/metadata' => auth_cas login => rdconnect_auth owner => \&modify_group_document_metadata;
 	};
 };
 
