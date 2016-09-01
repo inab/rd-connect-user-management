@@ -15,6 +15,12 @@ use constant MAILSECTION	=>	'mail';
 
 my %DEFAULT_keyval = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
 
+
+use File::Spec;
+
+use constant MAIL_VALIDATION_SCHEMA_FILE	=>	'mailValidation.json';
+use constant FULL_MAIL_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),MAIL_VALIDATION_SCHEMA_FILE);
+
 # Parameters:
 #	cfg: A Config::IniFiles instance
 #	mailTemplate: a file with the mail template, or a reference to a string containing it
