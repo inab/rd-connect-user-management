@@ -187,6 +187,164 @@ get '/logout' => auth_cas logout => sub {
 	return {};
 };
 
+
+#########################
+# Mail common functions #
+#########################
+sub dataUrl2TmpFile {
+	my($baseDir,$dataUrl,$num) = @_;
+	
+	my $filename;
+	
+	# Extracting the filename
+	if($dataUrl =~ /^data:(?:[^\/]+\/[^\/]+;)name=([^;]+);/) {
+		$filename = $1;
+	} else {
+		$filename = 'Attachment_'.$num;
+	}
+	
+	my $retval = File::Spec->catfile($baseDir,$filename);
+	
+	if(open(my $T,'<:raw',$retval)) {
+		print $T MIME::Base64::decode_base64url($dataUrl);
+		
+		close($T);
+	} else {
+		$retval = undef;
+	}
+	
+	return $retval;
+}
+
+sub send_email {
+	my($subject,$mailTemplateBase64,$p_attachmentsBase64,$p_users,$p_groups,$p_organizationalUnits) = @_;
+	
+	# First, let's save the file contents in real files (in a temporal directory)
+	my $tempdir = File::Temp->newdir(TMPDIR => 1);
+	
+	my $mailTemplate = dataUrl2TmpFile($tempdir->dirname,$mailTemplateBase64,0);
+	my @attachmentFiles = ();
+	if(ref($p_attachmentsBase64) eq 'ARRAY') {
+		my $counter = 0;
+		foreach my $attachmentBase64 (@{$p_attachmentsBase64}) {
+			$counter++;
+			my $filename = dataUrl2TmpFile($tempdir->dirname,$attachmentBase64,$counter);
+			push(@attachmentFiles,$filename)  if(defined($filename));
+		}
+	}
+	
+	my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
+	
+	my $mail1;
+	# Mail configuration parameters
+	$mail1 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance($mailTemplate,%keyval1,@attachmentFiles);
+	$mail1->setSubject($subject);
+	
+	# LDAP configuration
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my @errlist = ();
+	
+	# Read the users
+	my @users = ();
+	my $doAll = 1;
+	if(ref($p_users) eq 'ARRAY' && scalar(@{$p_users}) > 0) {
+		$doAll = undef;
+		
+		foreach my $username (@{$p_users}) {
+			my($success,$payload) = $uMgmt->getUser($username);
+			if($success) {
+				push(@users,$payload);
+			} else {
+				push(@errlist,"Unable to find user $username. Does it exist?");
+			}
+		}
+	}
+	
+	if(ref($p_groups) eq 'ARRAY' && scalar(@{$p_groups}) > 0) {
+		$doAll = undef;
+		
+		foreach my $groupName (@{$p_groups}) {
+			my($success,$payload) = $uMgmt->getGroupMembers($groupName);
+			if($success) {
+				push(@users,@{$payload});
+			} else {
+				push(@errlist,"Unable to find group / role $groupName. Does it exist?");
+			}
+		}
+	}
+	
+	if(ref($p_organizationalUnits) eq 'ARRAY' && scalar(@{$p_organizationalUnits}) > 0) {
+		$doAll = undef;
+		
+		foreach my $ouName (@{$p_organizationalUnits}) {
+			my($success,$payload) = $uMgmt->listPeopleOUUsers($ouName);
+			if($success) {
+				push(@users,@{$payload});
+			} else {
+				push(@errlist,"Unable to find organizational unit $ouName. Does it exist?");
+			}
+		}
+	}
+	
+	if($doAll) {
+		my($success,$payload) = $uMgmt->listUsers();
+		if($success) {
+			@users = @{$payload};
+		} else {
+			push(@errlist,"Internal error: unable to fetch all the users");
+		}
+	}
+	
+	my @filteredUsers = ();
+	foreach my $user (@users) {
+		# Don't send the e-mail to disabled accounts
+		next  if($user->get_value('disabledAccount') eq 'TRUE');
+		
+		push(@filteredUsers,$user);
+	}
+	
+	# TODO: do this in background
+	foreach my $user (@filteredUsers) {
+		# Don't send the e-mail to disabled accounts
+		next  if($user->get_value('disabledAccount') eq 'TRUE');
+		
+		my $username = $user->get_value('uid');
+		my $fullname = $user->get_value('cn');
+		my $email = $user->get_value('mail');
+		# Re-defining the object
+		my $to = Email::Address->new($fullname => $email);
+		
+		$keyval1{'username'} = $username;
+		$keyval1{'fullname'} = $fullname;
+		eval {
+			$mail1->sendMessage($to,\%keyval1);
+		};
+		
+		if($@) {
+			Carp::carp("Error while sending e-mail to $username ($email): ",$@);
+		}
+	}
+	
+	return \@errlist;
+}
+
+get 'mail' => sub {
+	if(exists(query_parameters->{'schema'})) {
+		return send_file(RDConnect::UserManagement::FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE, system_path => 1);
+	}
+	
+	pass;
+};
+
+post 'mail' => auth_cas login => rdconnect_auth admin => sub {
+	my %newMail = params;
+	
+	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},$newMail{'users'},$newMail{'groups'},$newMail{'organizationalUnits'});
+	
+	return $retval;
+};
+
 #########
 # Users #
 #########
@@ -468,6 +626,15 @@ sub remove_user_document {
 	return [];
 }
 
+sub mail_user {
+	my %newMail = params;
+	
+	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},[$newMail{'user_id'}]);
+	
+	return $retval;
+}
+
+
 # Routing for /users prefix
 prefix '/users' => sub {
 	get '' => \&get_users;
@@ -483,6 +650,8 @@ prefix '/users' => sub {
 	post '/:user_id/enable' => auth_cas login => rdconnect_auth user => \&enable_user;
 	post '/:user_id/groups' => auth_cas login => rdconnect_auth admin => \&add_user_to_groups;
 	del '/:user_id/groups' => auth_cas login => rdconnect_auth admin => \&remove_user_from_groups;
+	
+	post '/:user_id/_mail' => auth_cas login => rdconnect_auth admin => \&mail_user;
 	
 	# Legal documents related to the user
 	prefix '/:user_id/documents' => sub {
@@ -615,6 +784,14 @@ sub put_OU_photo {
 	return [];
 }
 
+sub mail_organizationalUnit {
+	my %newMail = params;
+	
+	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},undef,undef,[$newMail{'ou_id'}]);
+	
+	return $retval;
+}
+
 prefix '/organizationalUnits' => sub {
 	get '' => \&get_OUs;
 	get '/:ou_id' => \&get_OU;
@@ -625,6 +802,8 @@ prefix '/organizationalUnits' => sub {
 	put '' => auth_cas login => rdconnect_auth admin => \&create_OU;
 	post '/:ou_id' => auth_cas login => rdconnect_auth admin => \&modify_OU;
 	put '/:ou_id/picture' => auth_cas login => rdconnect_auth admin => \&put_OU_photo;
+	
+	post '/:ou_id/users/_mail' => auth_cas login => rdconnect_auth admin => \&mail_organizationalUnit;
 };
 
 ##################
@@ -880,6 +1059,14 @@ sub remove_group_document {
 	return [];
 }
 
+sub mail_group {
+	my %newMail = params;
+	
+	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},undef,[$newMail{'group_id'}]);
+	
+	return $retval;
+}
+
 
 prefix '/groups' => sub {
 	get '' => \&get_groups;
@@ -891,6 +1078,9 @@ prefix '/groups' => sub {
 	post '/:group_id' => auth_cas login => rdconnect_auth owner => \&modify_group;
 	post '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&add_group_members;
 	del '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&remove_group_members;
+	
+	post '/:group_id/members/_mail' => auth_cas login => rdconnect_auth owner => \&mail_group;
+	
 	post '/:group_id/owners' => auth_cas login => rdconnect_auth owner => \&add_group_owners;
 	del '/:group_id/owners' => auth_cas login => rdconnect_auth owner => \&remove_group_owners;
 	

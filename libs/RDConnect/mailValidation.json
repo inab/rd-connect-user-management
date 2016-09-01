@@ -4,8 +4,8 @@
 	"title": "RD-Connect user management mail messages",
 	"type": "object",
 	"properties": {
-		"title": {
-			"title": "The mail title",
+		"subject": {
+			"title": "The mail subject",
 			"type": "string",
 			"minLength": 1
 		},
