@@ -86,6 +86,27 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_FIL
 		# Mail configuration parameters
 		return RDConnect::MailManagement->new(getRDConnectConfig(),$mailTemplate,$p_keyvals,$p_attachmentFiles);
 	}
+	
+	use constant APGSECTION	=>	'apg';
+	
+	sub getRandomPassword() {
+		my $cfg = getRDConnectConfig();
+		
+		my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
+		my $apgMin = $cfg->val(APGSECTION,'min-length',12);
+		my $apgMax = $cfg->val(APGSECTION,'max-length',16);
+		
+		my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
+		
+		my $pass;
+		if(open(my $APG,'-|',@apgParams)) {
+			$pass = <$APG>;
+			chomp($pass);
+			close($APG);
+		}
+		
+		return $pass;
+	}
 }
 
 our $jserr = JSON->new->convert_blessed();
@@ -217,27 +238,13 @@ sub dataUrl2TmpFile {
 }
 
 sub send_email {
-	my($subject,$mailTemplateBase64,$p_attachmentsBase64,$p_users,$p_groups,$p_organizationalUnits) = @_;
-	
-	# First, let's save the file contents in real files (in a temporal directory)
-	my $tempdir = File::Temp->newdir(TMPDIR => 1);
-	
-	my $mailTemplate = dataUrl2TmpFile($tempdir->dirname,$mailTemplateBase64,0);
-	my @attachmentFiles = ();
-	if(ref($p_attachmentsBase64) eq 'ARRAY') {
-		my $counter = 0;
-		foreach my $attachmentBase64 (@{$p_attachmentsBase64}) {
-			$counter++;
-			my $filename = dataUrl2TmpFile($tempdir->dirname,$attachmentBase64,$counter);
-			push(@attachmentFiles,$filename)  if(defined($filename));
-		}
-	}
+	my($subject,$mailTemplate,$p_attachmentFiles,$p_users,$p_groups,$p_organizationalUnits) = @_;
 	
 	my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
 	
 	my $mail1;
 	# Mail configuration parameters
-	$mail1 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance($mailTemplate,%keyval1,@attachmentFiles);
+	$mail1 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance($mailTemplate,%keyval1,@{$p_attachmentFiles});
 	$mail1->setSubject($subject);
 	
 	# LDAP configuration
@@ -329,20 +336,168 @@ sub send_email {
 	return \@errlist;
 }
 
-get 'mail' => sub {
+sub send_email_base64 {
+	my($subject,$mailTemplateBase64,$p_attachmentsBase64,$p_users,$p_groups,$p_organizationalUnits) = @_;
+	
+	# First, let's save the file contents in real files (in a temporal directory)
+	my $tempdir = File::Temp->newdir(TMPDIR => 1);
+	
+	my $mailTemplate = dataUrl2TmpFile($tempdir->dirname,$mailTemplateBase64,0);
+	my @attachmentFiles = ();
+	if(ref($p_attachmentsBase64) eq 'ARRAY') {
+		my $counter = 0;
+		foreach my $attachmentBase64 (@{$p_attachmentsBase64}) {
+			$counter++;
+			my $filename = dataUrl2TmpFile($tempdir->dirname,$attachmentBase64,$counter);
+			push(@attachmentFiles,$filename)  if(defined($filename));
+		}
+	}
+	
+	return send_email($subject,$mailTemplate,\@attachmentFiles,$p_users,$p_groups,$p_organizationalUnits);
+}
+
+# Now, the methods
+sub get_mail_json_schema {
 	if(exists(query_parameters->{'schema'})) {
 		return send_file(RDConnect::UserManagement::FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE, system_path => 1);
 	}
 	
 	pass;
-};
+}
 
-post 'mail' => auth_cas login => rdconnect_auth admin => sub {
+sub list_newUser_documents {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONDocumentsFromDomain(RDConnect::UserManagement::NewUserDomain);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates for new users not found','trace' => $payload}),404);
+	}
+	
+	# Here the payload
+	return $payload;
+}
+
+sub get_newUser_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,params->{document_name});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+	} elsif(!defined($payload)) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates do not have document '.params->{document_name}}),404);
+	}
+	
+	# Here the payload is the document
+	my $data = $payload->get_value('content');
+	send_file(\$data, content_type => $payload->get_value('mimeType'));
+}
+
+sub get_newUser_document_metadata {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONDocumentMetadataFromDomain(RDConnect::UserManagement::NewUserDomain,params->{document_name});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+	} elsif(!defined($payload)) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates do not have document '.params->{document_name}}),404);
+	}
+	
+	return $payload;
+}
+
+
+sub modify_newUser_document_metadata {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $p_newMetadata = request->data;
+	
+	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromDomain(RDConnect::UserManagement::NewUserDomain,params->{document_name},$p_newMetadata);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from mail templates','trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub modify_newUser_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	# We are getting the raw entry, as we want just the photo
+	my $data = request->body;
+	
+	my($success,$payload) = $uMgmt->modifyDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,params->{'document_name'},$data);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub attach_newUser_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %documentMetadata = (
+		'cn'	=> params->{'cn'},
+	);
+	$documentMetadata{'description'} = params->{'description'}  if(exists(params->{'description'}));
+	$documentMetadata{'documentClass'} = params->{'documentClass'}  if(exists(params->{'documentClass'}));
+	
+	my($success,$payload) = $uMgmt->attachDocumentForDomain(RDConnect::UserManagement::NewUserDomain,\%documentMetadata,upload('content')->content);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub remove_newUser_document {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->removeDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,params->{'document_name'});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
+sub broadcast_email {
 	my %newMail = params;
 	
-	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},$newMail{'users'},$newMail{'groups'},$newMail{'organizationalUnits'});
+	my $retval = send_email_base64($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},$newMail{'users'},$newMail{'groups'},$newMail{'organizationalUnits'});
 	
 	return $retval;
+}
+
+
+
+
+prefix '/mail' => sub {
+	get '' => \&get_mail_json_schema;
+	
+	post '' => auth_cas login => rdconnect_auth admin => \&broadcast_email;
+	
+	# Mail templates
+	prefix '/newUser/documents' => sub {
+		get '' => auth_cas login => \&list_newUser_documents;
+		post '' => auth_cas login => rdconnect_auth admin => \&attach_newUser_document;
+		get '/:document_name' => auth_cas login => rdconnect_auth admin => \&get_newUser_document;
+		put '/:document_name' => auth_cas login => rdconnect_auth admin => \&modify_newUser_document;
+		del '/:document_name' => auth_cas login => rdconnect_auth admin => \&remove_newUser_document;
+		get '/:document_name/metadata' => auth_cas login => rdconnect_auth admin => \&get_newUser_document_metadata;
+		post '/:document_name/metadata' => auth_cas login => rdconnect_auth admin => \&modify_newUser_document_metadata;
+	};
 };
 
 #########
@@ -461,16 +616,101 @@ sub get_user_document_metadata {
 sub create_user {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	my %newUser = params;
-	
-	my($success,$payload) = $uMgmt->createExtUser(\%newUser);
-	
-	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating user','trace' => $payload}),500);
+	# Before any task
+	# Getting the mailTemplate and the attachments for new user creation
+	my($successMail,$payloadMail) = $uMgmt->listJSONDocumentsFromDomain(RDConnect::UserManagement::NewUserDomain);
+	if($successMail) {
+		# Now, let's fetch
+		my $mailTemplate;
+		my @attachmentFiles = ();
+		if(ref($payloadMail) eq 'ARRAY') {
+			foreach my $mailTemplateMetadata (@{$payloadMail}) {
+				if(exists($mailTemplateMetadata->{'documentClass'}) && ($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate' || $mailTemplateMetadata->{'documentClass'} eq 'mailAttachment')) {
+					# Fetching the document
+					my($successT,$payloadT) = $uMgmt->getDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,$mailTemplateMetadata->{'cn'});
+					
+					unless($successT) {
+						send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payloadT}),404);
+					} elsif(!defined($payloadT)) {
+						send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates do not have document '.$mailTemplateMetadata->{'cn'}}),404);
+					}
+					
+					# Here the payload is the document
+					my $data = $payloadT->get_value('content');
+					if($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate') {
+						$mailTemplate = \$data;
+					} else {
+						push(@attachmentFiles,\$data);
+					}
+				}
+			}
+		}
+		
+		unless(defined($mailTemplate)) {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while fetching mail templates in order to create user','trace' => $payloadMail}),500);
+		}
+		
+		my %newUser = params;
+		
+		my $userPassword;
+		if(exists($newUser{'userPassword'})) {
+			$userPassword = $newUser{'userPassword'};
+		} else {
+			$userPassword = RDConnect::UserManagement::DancerCommon::getRandomPassword();
+			$newUser{'userPassword'} = $userPassword;
+		}
+		
+		my($success,$payload) = $uMgmt->createExtUser(\%newUser);
+		
+		if($success) {
+			my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
+			my %keyval2 = ( 'password' => '(undefined)' );
+			
+			# Mail configuration parameters
+			my $mail1 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance($mailTemplate,%keyval1,@attachmentFiles);
+			$mail1->setSubject($mail1->getSubject().' (I)');
+			
+			my $passMailTemplate = <<'EOF' ;
+The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
+
+You should change this password by a different one as soon as possible.
+
+Kind Regards,
+	RD-Connect team
+EOF
+			my $mail2 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance(\$passMailTemplate,%keyval2);
+			$mail2->setSubject($mail2->getSubject().' (II)');
+			
+			my $fullname = $payload->[0]{'cn'};
+			my $email = $payload->[0]{'email'}[0];
+			my $to = Email::Address->new($fullname => $email);
+			
+			$keyval1{'username'} = $payload->[0]{'username'};
+			$keyval1{'fullname'} = $fullname;
+			eval {
+				$mail1->sendMessage($to,\%keyval1);
+				
+				$keyval2{'password'} = $userPassword;
+				eval {
+					$mail2->sendMessage($to,\%keyval2);
+				};
+				if($@) {
+					send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while sending password e-mail','trace' => $@}),500);
+				}
+			};
+			
+			if($@) {
+				send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while sending user e-mail','trace' => $@}),500);
+			}
+		} else {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating user','trace' => $payload}),500);
+		}
+		
+		#send_file(\$data, content_type => 'image/jpeg');
+		return [];
+	} else {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while fetching mail templates in order to create user','trace' => $payloadMail}),500);
 	}
-	
-	#send_file(\$data, content_type => 'image/jpeg');
-	return [];
 }
 
 sub modify_user {
@@ -616,7 +856,7 @@ sub attach_user_document {
 sub remove_user_document {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->modifyDocumentFromUser(params->{'user_id'},params->{'document_name'});
+	my($success,$payload) = $uMgmt->removeDocumentFromUser(params->{'user_id'},params->{'document_name'});
 	
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
@@ -629,7 +869,7 @@ sub remove_user_document {
 sub mail_user {
 	my %newMail = params;
 	
-	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},[$newMail{'user_id'}]);
+	my $retval = send_email_base64($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},[$newMail{'user_id'}]);
 	
 	return $retval;
 }
@@ -787,7 +1027,7 @@ sub put_OU_photo {
 sub mail_organizationalUnit {
 	my %newMail = params;
 	
-	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},undef,undef,[$newMail{'ou_id'}]);
+	my $retval = send_email_base64($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},undef,undef,[$newMail{'ou_id'}]);
 	
 	return $retval;
 }
@@ -1062,7 +1302,7 @@ sub remove_group_document {
 sub mail_group {
 	my %newMail = params;
 	
-	my $retval = send_email($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},undef,[$newMail{'group_id'}]);
+	my $retval = send_email_base64($newMail{'subject'},$newMail{'mailTemplate'},$newMail{'attachments'},undef,[$newMail{'group_id'}]);
 	
 	return $retval;
 }

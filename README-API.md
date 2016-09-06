@@ -16,8 +16,22 @@ And these are the services under the endpoint. All of them, but the ones labelle
 
 * `GET /mail/?schema` (*): It returns the JSON Schema which validates a mail submission (i.e. [mailValidation.json](libs/RDConnect/mailValidation.json)).
 
-* `POST /mail`: An administrator uses this endpoint to send an e-mail to everybody, or a subset of users, organizational units or groups. The input must be a JSON document following [mailValidation.json](libs/RDConnect/mailValidation.json) JSON schema (but not enforcing the existence of all the keys).
+	* `POST /mail`: An administrator uses this endpoint to send an e-mail to everybody, or a subset of users, organizational units or groups. The input must be a JSON document following [mailValidation.json](libs/RDConnect/mailValidation.json) JSON schema (but not enforcing the existence of all the keys).
 	
+	* `GET /mail/newUser/documents`: It lists the documents for new user creation, which are the mail template and the attachments (like user agreements and so). It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+
+	* `POST /mail/newUser/documents`: It attaches the described document in the multipart/form-data transferred field to this user. The valid parameters are 'cn' (the name), 'description', 'documentClass' and 'content' (this last is the uploaded document).
+
+	* `GET /mail/newUser/documents/:document_name`: It gets the contents of an specific document for this user.
+
+	* `PUT /mail/newUser/documents/:document_name`: It replaces the contents of an specific document for this user.
+
+	* `DELETE /mail/newUser/documents/:document_name`: It removes an specific document for this user.
+
+	* `GET /mail/newUser/documents/:document_name/metadata`: It gets the metadata of an specific document for this user. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+
+	* `POST /mail/newUser/documents/:document_name/metadata`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to modify the metadata of the document.
+
 * `GET /users` (*): It returns the list of registered users (both enabled and disabled).
 	
 	* `GET /users?schema` (*): It returns the JSON Schema which validates a user entry (i.e. [userValidation.json](libs/RDConnect/userValidation.json)).

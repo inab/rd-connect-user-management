@@ -72,6 +72,10 @@ sub new($) {
 	my $groupDN = $cfg->val(LDAP_SECTION,'groupDN');
 	Carp::croak("groupDN parameter was not defined in $configFile")  unless(defined($groupDN));
 	
+	my $firstComma = index($userDN,',');
+	Carp::croak("unable to infer parentDN parameter from userDN parameter in $configFile")  if($firstComma==-1);
+	my $parentDN = substr($userDN,$firstComma + 1);
+	
 	my $defaultGroupOU = $cfg->val(LDAP_SECTION,'defaultGroupOU','default');
 	
 	
@@ -90,6 +94,7 @@ sub new($) {
 	$self->{'ldap'} = $ldap;
 	$self->{'userDN'} = $userDN;
 	$self->{'groupDN'} = $groupDN;
+	$self->{'parentDN'} = $parentDN;
 	$self->{'e_userDN'} = Net::LDAP::Util::ldap_explode_dn($userDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
 	$self->{'e_groupDN'} = Net::LDAP::Util::ldap_explode_dn($groupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
 	$self->{'defaultGroupOU'} = $defaultGroupOU;
@@ -2749,7 +2754,7 @@ sub attachDocumentForUser($\%$;$) {
 			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
 		} else {
 			$success = undef;
-			$payload = ['User not found'];
+			$payload = ['User '.$username.' not found'];
 		}
 	}
 	
@@ -2774,7 +2779,7 @@ sub listJSONDocumentsFromUser($;$) {
 			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
 		} else {
 			$success = undef;
-			$payload = ['User not found'];
+			$payload = ['User '.$username.' not found'];
 		}
 	}
 	
@@ -2800,7 +2805,7 @@ sub getDocumentFromUser($$;$) {
 			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['User not found'];
+			$payload = ['User '.$username.' not found'];
 		}
 	}
 	
@@ -2827,7 +2832,7 @@ sub getJSONDocumentMetadataFromUser($$;$) {
 			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['User not found'];
+			$payload = ['User '.$username.' not found'];
 		}
 	}
 	
@@ -2857,7 +2862,7 @@ sub modifyJSONDocumentMetadataFromUser($$\%;\@$) {
 			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
 		} else {
 			$success = undef;
-			$payload = ['User not found'];
+			$payload = ['User '.$username.' not found'];
 		}
 	}
 	
@@ -2885,7 +2890,7 @@ sub modifyDocumentFromUser($$$;$) {
 			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
 		} else {
 			$success = undef;
-			$payload = ['User not found'];
+			$payload = ['User '.$username.' not found'];
 		}
 	}
 	
@@ -2912,7 +2917,7 @@ sub removeDocumentFromUser($$;$) {
 			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['User not found'];
+			$payload = ['User '.$username.' not found'];
 		}
 	}
 	
@@ -2940,7 +2945,7 @@ sub attachDocumentForGroup($\%$;$) {
 			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
 		} else {
 			$success = undef;
-			$payload = ['Group not found'];
+			$payload = ['Group '.$groupCN.' not found'];
 		}
 	}
 	
@@ -2965,7 +2970,7 @@ sub listJSONDocumentsFromGroup($;$) {
 			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
 		} else {
 			$success = undef;
-			$payload = ['Group not found'];
+			$payload = ['Group '.$groupCN.' not found'];
 		}
 	}
 	
@@ -2991,7 +2996,7 @@ sub getDocumentFromGroup($$;$) {
 			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Group not found'];
+			$payload = ['Group '.$groupCN.' not found'];
 		}
 	}
 	
@@ -3018,7 +3023,7 @@ sub getJSONDocumentMetadataFromGroup($$;$) {
 			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Group not found'];
+			$payload = ['Group '.$groupCN.' not found'];
 		}
 	}
 	
@@ -3028,8 +3033,8 @@ sub getJSONDocumentMetadataFromGroup($$;$) {
 # Parameters:
 #	groupCN: the RD-Connect group
 #	documentName: the name of the document to look for
-#	p_metadataHash: a reference to a hash with the modified organizational unit information
-#	p_removedKeys: a reference to an array with the removed keys
+#	p_metadataHash: a reference to a hash with the modified metadata information
+#	p_removedKeys: (OPTIONAL) a reference to an array with the removed keys
 #	groupDN: (OPTIONAL) The DN used as ancestor of this group.
 #		 If not set, it uses the one read from the configuration file.
 # It returns the LDAP entry on success
@@ -3048,7 +3053,7 @@ sub modifyJSONDocumentMetadataFromGroup($$\%;\@$) {
 			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
 		} else {
 			$success = undef;
-			$payload = ['Group not found'];
+			$payload = ['Group '.$groupCN.' not found'];
 		}
 	}
 	
@@ -3076,7 +3081,7 @@ sub modifyDocumenFromGroup($$$;$) {
 			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
 		} else {
 			$success = undef;
-			$payload = ['Group not found'];
+			$payload = ['Group '.$groupCN.' not found'];
 		}
 	}
 	
@@ -3103,7 +3108,271 @@ sub removeDocumenFromGroup($$;$) {
 			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Group not found'];
+			$payload = ['Group '.$groupCN.' not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+
+############
+# Domains #
+##########
+# All the domains hang from the organization
+# and all of them are organizationRole
+use constant DomainEntryRole	=>	'organizationalRole';
+my @LDAP_DOMAIN_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 [ DomainEntryRole ],
+);
+
+use constant NewUserDomain	=>	'newUserTemplates';
+
+# Parameters:
+#	domainCN: The short, domain name, which will hang on parentDN
+sub createDomain($) {
+	my $self = shift;
+	
+	my($domainCN) = @_;
+	
+	my $entry = Net::LDAP::Entry->new();
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($domainCN),$self->{'parentDN'});
+	$entry->dn($dn);
+	$entry->add(
+		'cn'	=>	$domainCN,
+		@LDAP_DOMAIN_DEFAULT_ATTRIBUTES
+	);
+	
+	my $updMesg = $entry->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $entry->ldif();
+		
+		Carp::carp("Unable to create domain $dn (does the domain already exist?)\n".Dumper($updMesg));
+	}
+	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	createWhenMissing: if it is true, the domain is created when it is not found
+# It returns the LDAP entry of the domain on success
+sub getDomain($;$) {
+	my $self = shift;
+	
+	my($domainCN,$createWhenMissing) = @_;
+	
+	# First, each owner must be found
+	my $escaped_domainCN = Net::LDAP::Util::escape_filter_value($domainCN);
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $self->{'parentDN'},
+		'filter' => "(&(objectClass=".DomainEntryRole.")(cn=$escaped_domainCN))",
+		'sizelimit' => 1,
+		'scope' => 'children'
+	);
+	
+	my $success = undef;
+	my $payload = [];
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		if($searchMesg->count>0) {
+			$success = 1;
+			# The user entry
+			$payload = $searchMesg->entry(0);
+		} else {
+			if($createWhenMissing && $self->createDomain($domainCN)) {
+				return $self->getDomain($domainCN);
+			} else {
+				push(@{$payload},"No matching domain found for $domainCN");
+			}
+		}
+	} else {
+		push(@{$payload},"Error while finding domain $domainCN\n".Dumper($searchMesg));
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+sub listJSONDocumentsFromDomain($) {
+	my $self = shift;
+	
+	my($domainCN) = @_;
+	
+	my($success,$payload) = $self->getDomain($domainCN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
+		} else {
+			$success = undef;
+			$payload = ['Domain '.$domainCN.' not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	documentName: the name of the document to look for
+sub getDocumentFromDomain($$) {
+	my $self = shift;
+	
+	my($domainCN,$documentName) = @_;
+	
+	my($success,$payload) = $self->getDomain($domainCN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['Domain '.$domainCN.' not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	documentName: the name of the document to look for
+sub getJSONDocumentMetadataFromDomain($$) {
+	my $self = shift;
+	
+	my($domainCN,$documentName) = @_;
+	
+	my($success,$payload) = $self->getDomain($domainCN);
+	my $documentMetadataEntry = undef;
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['Domain '.$domainCN.' not found'];
+		}
+	}
+	
+	return ($success,$payload,$documentMetadataEntry);
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	documentName: the name of the document to look for
+#	p_metadataHash: a reference to a hash with the modified metadata information
+#	p_removedKeys: (OPTIONAL) a reference to an array with the removed keys
+# It returns the LDAP entry on success
+sub modifyJSONDocumentMetadataFromDomain($$\%;\@) {
+	my $self = shift;
+	
+	my($domainCN,$documentName,$p_metadataHash,$p_removedKeys) = @_;
+	
+	my($success,$payload) = $self->getDomain($domainCN);
+	my $documentMetadataEntry = undef;
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
+		} else {
+			$success = undef;
+			$payload = ['Domain '.$domainCN.' not found'];
+		}
+	}
+	
+	return ($success,$payload,$documentMetadataEntry);
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	documentName: the name of the document to look for
+#	data: The raw document data
+# It returns the LDAP entry on success
+sub modifyDocumentFromDomain($$$) {
+	my $self = shift;
+	
+	my($domainCN,$documentName,$data) = @_;
+	
+	my($success,$payload) = $self->getDomain($domainCN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
+		} else {
+			$success = undef;
+			$payload = ['Domain '.$domainCN.' not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	p_documentMetadata: a reference to a hash with the required keys needed to create new document
+#	data: The document itself as raw data
+sub attachDocumentForDomain($\%$) {
+	my $self = shift;
+	
+	my($domainCN,$p_documentMetadata,$data) = @_;
+	
+	my($success,$payload) = $self->getDomain($domainCN,1);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
+		} else {
+			$success = undef;
+			$payload = ['Domain '.$domainCN.' not found'];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	documentName: the name of the document to look for
+# It returns the LDAP entry on success
+sub removeDocumentFromDomain($$) {
+	my $self = shift;
+	
+	my($domainCN,$documentName) = @_;
+	
+	my($success,$payload) = $self->getDomain($domainCN);
+	
+	if($success) {
+		if(defined($payload)) {
+			# The payload is the found group
+			my $dn = $payload->dn();
+			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
+		} else {
+			$success = undef;
+			$payload = ['Domain '.$domainCN.' not found'];
 		}
 	}
 	
