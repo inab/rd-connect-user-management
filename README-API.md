@@ -14,7 +14,7 @@ And these are the services under the endpoint. All of them, but the ones labelle
 
 * `GET /logout`: The user associated to the given session is logged out.
 
-* `GET /mail/?schema` (*): It returns the JSON Schema which validates a mail submission (i.e. [mailValidation.json](libs/RDConnect/mailValidation.json)).
+* `GET /mail?schema` (*): It returns the JSON Schema which validates a mail submission (i.e. [mailValidation.json](libs/RDConnect/mailValidation.json)).
 
 	* `POST /mail`: An administrator uses this endpoint to send an e-mail to everybody, or a subset of users, organizational units or groups. The input must be a JSON document following [mailValidation.json](libs/RDConnect/mailValidation.json) JSON schema (but not enforcing the existence of all the keys).
 	
