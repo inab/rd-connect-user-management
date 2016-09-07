@@ -112,8 +112,8 @@ sub _auth_admin {
 
 		}
 		my $message = "Access denied admin role: user $username";
-		$app->log( error => );
-		$app->send_error($message);
+		$app->log( error => $message);
+		$app->send_error($message, 403);
 	};
 }
 
@@ -161,7 +161,7 @@ sub _auth_user {
 		}
 		my $message = "Access denied admin or user role: user $username";
 		$app->log( error => $message);
-		$app->send_error($message);
+		$app->send_error($message,403);
 	};
 }
 
@@ -209,7 +209,7 @@ sub _auth_pi {
 		}
 		my $message = "Access denied admin or group creator role: user $username";
 		$app->log( error => $message);
-		$app->send_error($message);
+		$app->send_error($message,403);
 	};
 }
 
@@ -273,7 +273,7 @@ sub _auth_owner {
 		}
 		my $message = "Access denied admin or group owner role: user $username";
 		$app->log( error => $message);
-		$app->send_error($message);
+		$app->send_error($message,403);
 	};
 }
 

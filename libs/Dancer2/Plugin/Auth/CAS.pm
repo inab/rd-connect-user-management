@@ -140,11 +140,11 @@ sub _auth_cas {
 			unless(defined($session)) {
 				# Raise hard error, backend has errors
 				$app->log( error => "Unable to authenticate: expired session");
-				$app->send_error(ExpiredSession);
+				$app->send_error(ExpiredSession,401);
 			}
 		} else {
 			$app->log( error => "Unable to authenticate: no session");
-			$app->send_error(NoSession);
+			$app->send_error(NoSession,401);
 		}
 		
 		# Do we have the credentials?
@@ -155,7 +155,7 @@ sub _auth_cas {
 		unless(defined($cas_user) && defined($cas_pass) && defined($cas_service)) {
 			$sessionFactory->destroy($sessionId);
 			$app->log( error => "Unable to authenticate: ".CorruptedSession);
-			$app->send_error(CorruptedSession);
+			$app->send_error(CorruptedSession,401);
 		}
 	
 		# Let's authenticate!
@@ -204,7 +204,7 @@ sub _auth_cas {
 			} elsif( $r->is_failure ) {
 				# Redirect to denied
 				$app->log( debug => "Failed to authenticate: ".$r->code." / ".$r->message );
-				$app->send_error(CasError);
+				$app->send_error(CasError,401);
 			} else {
 				# Raise hard error, backend has errors
 				$app->log( error => "Unable to authenticate: ".$r->error);
@@ -213,7 +213,7 @@ sub _auth_cas {
 		} else {
 			$sessionFactory->destroy($sessionId);
 			$app->log( error => FailedToAuthenticate);
-			$app->send_error(FailedToAuthenticate);
+			$app->send_error(FailedToAuthenticate,401);
 		}
 	};
 
@@ -249,7 +249,7 @@ sub _pre_auth_cas {
 		# Do we have the credentials?
 		unless(exists($params->{'username'}) && exists($params->{'password'}) && exists($params->{'service'})) {
 			$app->log( error => "Unable to authenticate: ".CorruptedSession);
-			$app->send_error(CorruptedSession);
+			$app->send_error(CorruptedSession,401);
 		}
 		
 		my $cas_user = $params->{'username'};
@@ -313,7 +313,7 @@ sub _pre_auth_cas {
 			} elsif( $r->is_failure ) {
 				# Redirect to denied
 				$app->log( debug => "Failed to authenticate: ".$r->code." / ".$r->message );
-				$app->send_error(CasError);
+				$app->send_error(CasError,401);
 			} else {
 				# Raise hard error, backend has errors
 				$app->log( error => "Unable to authenticate: ".$r->error);
@@ -321,7 +321,7 @@ sub _pre_auth_cas {
 			}
 		} else {
 			$app->log( error => FailedToAuthenticate);
-			$app->send_error(FailedToAuthenticate);
+			$app->send_error(FailedToAuthenticate,401);
 		}
 	};
 
