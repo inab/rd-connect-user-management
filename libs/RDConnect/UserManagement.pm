@@ -2440,12 +2440,13 @@ my @LDAP_RDDOCUMENT_DEFAULT_ATTRIBUTES = (
 );
 
 # Parameters:
-#	dn: The owner of the document.
+#	dn: The parent of the document.
+#	ownerDN: The owner of the document.
 #	p_documentMetadata: a reference to a hash with the required keys needed to create new document
 #	data: The document itself as raw data
-sub attachDocumentForEntry($\%$) {
+sub attachDocumentForEntry($$\%$) {
 	my $self = shift;
-	my($dn,$p_documentMetadata,$data) = @_;
+	my($dn,$ownerDN,$p_documentMetadata,$data) = @_;
 	
 	# $p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace
 	my $mimeType = 'application/octet-stream';
@@ -2751,7 +2752,7 @@ sub attachDocumentForUser($\%$;$) {
 		if(defined($payload)) {
 			# The payload is the found user
 			my $dn = $payload->dn();
-			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
+			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data);
 		} else {
 			$success = undef;
 			$payload = ['User '.$username.' not found'];
@@ -2942,7 +2943,7 @@ sub attachDocumentForGroup($\%$;$) {
 		if(defined($payload)) {
 			# The payload is the found group
 			my $dn = $payload->dn();
-			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
+			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data);
 		} else {
 			$success = undef;
 			$payload = ['Group '.$groupCN.' not found'];
@@ -3344,7 +3345,7 @@ sub attachDocumentForDomain($\%$) {
 		if(defined($payload)) {
 			# The payload is the found group
 			my $dn = $payload->dn();
-			($success,$payload) = $self->attachDocumentForEntry($dn,$p_documentMetadata,$data);
+			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data);
 		} else {
 			$success = undef;
 			$payload = ['Domain '.$domainCN.' not found'];
