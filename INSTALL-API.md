@@ -90,6 +90,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	setsebool -P httpd_enable_cgi=1
 	setsebool -P httpd_read_user_content=1
 	setsebool -P httpd_can_network_connect=1
+	setsebool -P httpd_enable_homedirs=1
 	cd /home/rdconnect-rest/rd-connect-user-management/selinux
 	checkmodule -M -m -o rdconnect-user-management.mod rdconnect-user-management.te
 	semodule_package -o rdconnect-user-management.pp -m rdconnect-user-management.mod
@@ -104,10 +105,24 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 
 3. Inside `/etc/httpd/conf.d/ssl.conf` you have to setup:
 
-	* The document root, adding next line inside VirtualHost block:
+	* The document root, adding next lines inside VirtualHost block:
 	
 		```
 		DocumentRoot /home/rdconnect-rest/DOCUMENT_ROOT
+		
+		<Directory /home/rdconnect-rest/DOCUMENT_ROOT>
+			AllowOverride None
+			# These sentences are for Apache 2.2 and Apache 2.4 with mod_access_compat enabled
+			<IfModule !mod_authz_core.c>
+				Order allow,deny
+				Allow from all
+			</IfModule>
+			
+			# This sentence is for Apache 2.4 without mod_access_compat
+			<IfModule mod_authz_core.c>
+				Require all granted
+			</IfModule>
+		</Directory>
 		```
 	
 	* The setup for mpm-itk, adding next line inside VirtualHost block:
