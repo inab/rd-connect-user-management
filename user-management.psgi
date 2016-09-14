@@ -140,7 +140,7 @@ set engines => {
 				'cookie_duration'	=>	'1 hour',
 				'session_duration'	=>	'1 hour'
 			},
-			'session_dir' => '/tmp/.RDConnect-UserManagement-API-sessions'
+			'session_dir' => '/tmp/.RDConnect-UserManagement-API-sessions_'.$<
 		}
 	}
 };
