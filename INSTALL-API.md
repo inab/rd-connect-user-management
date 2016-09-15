@@ -7,6 +7,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 * Authen::CAS::Client
 * Authen::CAS::External
 * Dancer2
+* LWP
 * LWP::Protocol::https
 * Plack::Middleware::CrossOrigin
 * Plack::Middleware::Deflater
@@ -41,7 +42,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	export PATH="${HOME}/perl5/bin:$PATH";
 	export NO_NETWORK_TESTING=n
 	
-	cpan -i Test::More boolean experimental Config::IniFiles Net::LDAP MIME::Base64 Digest::MD5 Digest::SHA1 JSON::Validator Email::Address Email::MIME Email::Sender::Transport::SMTPS Env File::MimeInfo Text::Unidecode
+	cpan -i LWP LWP::Protocol::https Test::More boolean experimental Config::IniFiles Net::LDAP MIME::Base64 Digest::MD5 Digest::SHA1 JSON::Validator Email::Address Email::MIME Email::Sender::Transport::SMTPS Env File::MimeInfo Text::Unidecode
 	(echo y; echo y) | cpan -i Template
 	cpan -i Authen::CAS::Client Authen::CAS::External Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI
 	```
@@ -139,11 +140,13 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	* You have to put next Apache configuration block inside de VirtualHost definition, in order to enable the API handler at `/RDConnect-UserManagement-API`:
 	
 		```
-		# This line is needed if you locally installed the Perl modules needed
-		SetEnv PERL5LIB /home/rdconnect-rest/perl5/lib/perl5
-		
 		ScriptAlias "/RDConnect-UserManagement-API" "/home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.cgi"
 		<Directory /home/rdconnect-rest/RDConnect-UserManagement-REST-API>
+			# This line is needed if you locally installed the Perl modules needed
+			SetEnv PERL5LIB /home/rdconnect-rest/perl5/lib/perl5
+			# This one is needed to remove a Perl warning
+			SetEnv HOME /home/rdconnect-rest
+			
 			AllowOverride None
 			SetHandler cgi-script
 			Options ExecCGI SymLinksIfOwnerMatch
