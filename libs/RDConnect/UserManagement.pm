@@ -156,7 +156,7 @@ sub encodePassword($) {
 }
 
 my @LDAP_USER_DEFAULT_ATTRIBUTES = (
-	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top'],
+	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top','extensibleObject'],
 );
 
 
