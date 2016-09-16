@@ -195,7 +195,7 @@ sub _auth_cas {
 					$request->var($cas_user_map => $r->user);
 				} else {
 					my $attrs = _map_attributes( $r->doc, $mapping , $asArray);
-					$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
+					#$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
 					$request->var($cas_user_map => $attrs);
 				}
 				$sessionFactory->flush('session' => $session);
@@ -292,7 +292,7 @@ sub _pre_auth_cas {
 					$request->var($cas_user_map => $r->user);
 				} else {
 					my $attrs = _map_attributes( $r->doc, $mapping , $asArray);
-					$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
+					#$app->log( debug => "Mapped attributes: ".$dsl->to_dumper( $attrs ) );
 					$request->var($cas_user_map => $attrs);
 				}
 				
