@@ -10,10 +10,17 @@ use Email::Sender::Simple qw(sendmail);
 use Email::Sender::Transport::SMTPS qw();
 use File::Basename qw();
 use File::MimeInfo::Magic qw();
+use IO::Scalar;
 
 use constant MAILSECTION	=>	'mail';
 
 my %DEFAULT_keyval = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
+
+
+use File::Spec;
+
+use constant MAIL_VALIDATION_SCHEMA_FILE	=>	'mailValidation.json';
+use constant FULL_MAIL_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),MAIL_VALIDATION_SCHEMA_FILE);
 
 # Parameters:
 #	cfg: A Config::IniFiles instance
@@ -52,15 +59,16 @@ sub new($$\%;\@) {
 	# Read the mail body
 	my $templateMailBodyMime;
 	my $templateMailBody;
+	
+	my $mailTemplateH = (ref($mailTemplate) eq 'SCALAR') ? IO::Scalar->new($mailTemplate) : $mailTemplate;
+	eval {
+		$templateMailBodyMime = File::MimeInfo::Magic::mimetype($mailTemplateH);
+	};
+	Carp::croak("ERROR: Unable to pre-process mail template $mailTemplate")  if($@ || !defined($templateMailBodyMime));
+		
 	if(ref($mailTemplate) eq 'SCALAR') {
-		$templateMailBodyMime = 'text/plain';
 		$templateMailBody = ${$mailTemplate};
 	} else {
-		eval {
-			$templateMailBodyMime = File::MimeInfo::Magic::mimetype($mailTemplate);
-		};
-		Carp::croak("ERROR: Unable to pre-process mail template $mailTemplate")  if($@ || !defined($templateMailBodyMime));
-		
 		if(open(my $TT,'<:utf8',$mailTemplate)) {
 			local $/;
 			$templateMailBody = <$TT>;

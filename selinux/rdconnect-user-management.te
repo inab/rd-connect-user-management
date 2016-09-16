@@ -1,0 +1,16 @@
+
+module rdconnect-user-management 1.0;
+
+require {
+	type httpd_sys_script_t;
+	type user_home_t;
+	type user_home_dir_t;
+	class dir search;
+	class file execute;
+}
+
+#============= httpd_sys_script_t ==============
+
+#!!!! This avc is allowed in the current policy
+allow httpd_sys_script_t user_home_dir_t:dir search;
+allow httpd_sys_script_t user_home_t:file execute;

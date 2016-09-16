@@ -16,7 +16,7 @@
 		"documentClass": {
 			"title": "Document category",
 			"type": "string",
-			"enum": ["userAgreement","genericAgreement","otherAgreement","miscelaneous"]
+			"enum": ["userAgreement","genericAgreement","otherAgreement","miscelaneous","mailTemplate","mailAttachment"]
 		},
 		"creationTimestamp": {
 			"title": "Creation timestamp",
