@@ -156,7 +156,7 @@ sub encodePassword($) {
 }
 
 my @LDAP_USER_DEFAULT_ATTRIBUTES = (
-	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top','extensibleObject'],
+	'objectClass'	=>	 ['basicRDproperties','inetOrgPerson','top','extensibleObject','pwmUser'],
 );
 
 
@@ -647,7 +647,7 @@ sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 			
 			my $dn = $m_getDN->($self,$p_entryHash);
 			
-			push(@{$p_err},"Validation errors for not created entry $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
+			push(@{$p_err},"Validation errors for not created entry $dn\n".join("\n",map { "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
 		} else {
 			# cn normalization
 			$m_normalizePKJSON->($p_entryHash)  if(ref($m_normalizePKJSON) eq 'CODE');
@@ -710,7 +710,8 @@ sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 			if(exists($p_entryHash->{$jsonKey})) {
 				my $p_jsonDesc = $p_json2ldap->{$jsonKey};
 				unless($p_jsonDesc->[1]) {
-					$p_entryHash->{$jsonKey} = undef;
+					#$p_entryHash->{$jsonKey} = undef;
+					delete($p_entryHash->{$jsonKey});
 				}
 			}
 		}
@@ -805,8 +806,8 @@ sub genJSONFromLDAP(\@\%;$$) {
 					}
 					
 					$jsonEntry->{$ldapDesc->[0]} = $theVal;
-				} else {
-					$jsonEntry->{$ldapDesc->[0]} = undef;
+				#} else {
+				#	$jsonEntry->{$ldapDesc->[0]} = undef;
 				}
 			} elsif(exists($jsonEntry->{$ldapDesc->[0]})) {
 				# Removing spureous key not any valid
@@ -832,7 +833,7 @@ sub postFixupDocument($$) {
 	my($uMgmt,$entry,$jsonEntry) = @_;
 	my $payload;
 	($jsonEntry->{'owner'},$payload) = $uMgmt->getUIDFromDN(_getParentDNFromDN($entry->dn()));
-	print STDERR Dumper($payload),"\n";
+	#print STDERR Dumper($payload),"\n";
 }
 
 sub genJSONUsersFromLDAPUsers(\@) {
@@ -903,10 +904,17 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 			# Skipping modifications on banned keys or read-only ones
 			next  if(exists($p_json2ldap->{$jsonKey}) && (!$p_json2ldap->{$jsonKey}[1] || $p_json2ldap->{$jsonKey}[5]));
 			
+			# Small fix for JSON::Validator, which does not expect boolean values
+			if(Scalar::Util::blessed($jsonEntry->{$jsonKey}) && $jsonEntry->{$jsonKey}->isa('boolean')) {
+				use JSON::PP;
+				
+				$jsonEntry->{$jsonKey} = $jsonEntry->{$jsonKey} ? $JSON::PP::true : $JSON::PP::false;
+			}
+			
 			my $doModify = undef;
 			if(!exists($jsonEntry->{$jsonKey}) || !defined($p_entryHash->{$jsonKey})) {
 				$doModify = 1;
-			} elsif((Scalar::Util::blessed($jsonEntry->{$jsonKey}) && $jsonEntry->{$jsonKey}->isa('boolean')) || (Scalar::Util::blessed($p_entryHash->{$jsonKey}) && $p_entryHash->{$jsonKey}->isa('JSON::PP::Boolean'))) {
+			} elsif((Scalar::Util::blessed($jsonEntry->{$jsonKey}) && $jsonEntry->{$jsonKey}->isa('JSON::PP::Boolean')) || (Scalar::Util::blessed($p_entryHash->{$jsonKey}) && $p_entryHash->{$jsonKey}->isa('JSON::PP::Boolean'))) {
 				$doModify = ($jsonEntry->{$jsonKey} && !$p_entryHash->{$jsonKey}) || (!$jsonEntry->{$jsonKey} && $p_entryHash->{$jsonKey});
 			} else {
 				$doModify = !($jsonEntry->{$jsonKey} ~~ $p_entryHash->{$jsonKey});
@@ -960,7 +968,7 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 					
 					my $dn = $entry->dn();
 					
-					$payload = [ "Validation errors for modifications on entry $dn\n".join("\n",map { return "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors) ];
+					$payload = [ "Validation errors for modifications on entry $dn\n".join("\n",map { "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors) ];
 				} else {
 					# cn normalization (disabled)
 					#unless(exists($p_userHash->{'cn'}) && length($p_userHash->{'cn'}) > 0) {
@@ -976,7 +984,8 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 						if(exists($jsonEntry->{$jsonKey})) {
 							my $p_jsonDesc = $p_json2ldap->{$jsonKey};
 							unless($p_jsonDesc->[1]) {
-								$jsonEntry->{$jsonKey} = undef;
+								#$jsonEntry->{$jsonKey} = undef;
+								delete($jsonEntry->{$jsonKey});
 							}
 						}
 					}
@@ -987,21 +996,31 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 					}
 					
 					# These are needed to upgrade the entry
-					push(@modifiedLDAPAttributes, @{$p_ldap_default_attributes});
+					#push(@modifiedLDAPAttributes, @{$p_ldap_default_attributes});
 					
 					# Now, let's modify the LDAP entry
 					my $dn = $entry->dn();
 					$entry->changetype('modify');
+					$entry->replace(@{$p_ldap_default_attributes});
 					
-					# The batch of modifications
-					$entry->add(@addedLDAPAttributes)  if(scalar(@addedLDAPAttributes) > 0);
-					$entry->replace(@modifiedLDAPAttributes)  if(scalar(@modifiedLDAPAttributes) > 0);
-					$entry->delete(map { $_ => undef; } @removedLDAPAttributes)  if(scalar(@removedLDAPAttributes) > 0);
-
 					my $updMesg = $entry->update($self->{'ldap'});
 					if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-						$payload = $jsonEntry;
-						$payload2 = $entry;
+						# The batch of modifications
+						$entry->changetype('modify');
+						$entry->add(@addedLDAPAttributes)  if(scalar(@addedLDAPAttributes) > 0);
+						$entry->replace(@modifiedLDAPAttributes)  if(scalar(@modifiedLDAPAttributes) > 0);
+						$entry->delete(map { $_ => undef; } @removedLDAPAttributes)  if(scalar(@removedLDAPAttributes) > 0);
+						
+						$updMesg = $entry->update($self->{'ldap'});
+						if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+							$payload = $jsonEntry;
+							$payload2 = $entry;
+						} else {
+							$success = undef;
+							print STDERR $entry->ldif()  unless(wantarray);
+							
+							$payload = [ "Could not modify entry $dn\n".Dumper($updMesg) ];
+						}
 					} else {
 						$success = undef;
 						print STDERR $entry->ldif()  unless(wantarray);
