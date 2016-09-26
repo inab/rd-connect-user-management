@@ -765,6 +765,54 @@ sub enable_user {
 	return set_user_enabled_state(boolean::true);
 }
 
+sub reset_user_password {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my %newUser = params;
+	
+	my $userPassword;
+	if(exists($newUser{'userPassword'})) {
+		$userPassword = $newUser{'userPassword'};
+	} else {
+		$userPassword = RDConnect::UserManagement::DancerCommon::getRandomPassword();
+	}
+	
+	my($success,$payload) = $uMgmt->resetUserPassword(params->{'user_id'},$userPassword);
+	
+	if($success) {
+		my %keyval2 = ( 'password' => '(undefined)' );
+		
+		# Mail configuration parameters
+		my $passMailTemplate = <<'EOF' ;
+The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
+
+You should change this password by a different one as soon as possible.
+
+Kind Regards,
+	RD-Connect team
+EOF
+		my $mail2 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance(\$passMailTemplate,%keyval2);
+		$mail2->setSubject('RD-Connect password reset');
+		
+		my $fullname = $payload->[0]{'cn'};
+		my $email = $payload->[0]{'email'}[0];
+		my $to = Email::Address->new($fullname => $email);
+		
+		$keyval2{'password'} = $userPassword;
+		eval {
+			$mail2->sendMessage($to,\%keyval2);
+		};
+		if($@) {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while sending reset password e-mail','trace' => $@}),500);
+		}
+	} else {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while resetting user password','trace' => $payload}),500);
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return [];
+}
+
 sub add_user_to_groups {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
@@ -887,11 +935,12 @@ prefix '/users' => sub {
 	post '/:user_id' => auth_cas login => rdconnect_auth user => \&modify_user;
 	put '/:user_id/picture' => auth_cas login => rdconnect_auth user => \&put_user_photo;
 	post '/:user_id/disable' => auth_cas login => rdconnect_auth user => \&disable_user;
-	post '/:user_id/enable' => auth_cas login => rdconnect_auth user => \&enable_user;
+	post '/:user_id/enable' => auth_cas login => rdconnect_auth admin => \&enable_user;
+	post '/:user_id/resetPassword' => auth_cas login => rdconnect_auth user => \&reset_user_password;
 	post '/:user_id/groups' => auth_cas login => rdconnect_auth admin => \&add_user_to_groups;
-	del '/:user_id/groups' => auth_cas login => rdconnect_auth admin => \&remove_user_from_groups;
+	del '/:user_id/groups' => auth_cas login => rdconnect_auth user => \&remove_user_from_groups;
 	
-	post '/:user_id/_mail' => auth_cas login => rdconnect_auth admin => \&mail_user;
+	post '/:user_id/_mail' => auth_cas login => rdconnect_auth user => \&mail_user;
 	
 	# Legal documents related to the user
 	prefix '/:user_id/documents' => sub {
@@ -1043,7 +1092,7 @@ prefix '/organizationalUnits' => sub {
 	post '/:ou_id' => auth_cas login => rdconnect_auth admin => \&modify_OU;
 	put '/:ou_id/picture' => auth_cas login => rdconnect_auth admin => \&put_OU_photo;
 	
-	post '/:ou_id/users/_mail' => auth_cas login => rdconnect_auth admin => \&mail_organizationalUnit;
+	post '/:ou_id/users/_mail' => auth_cas login => rdconnect_auth PI => \&mail_organizationalUnit;
 };
 
 ##################
