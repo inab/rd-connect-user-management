@@ -2195,9 +2195,16 @@ sub addUserToGroup($$$;$$) {
 			}
 			
 			# Is the user already in the group?
+			my $isMember = 1;
 			my $p_members = $group->get_value('member', 'asref' => 1);
 			foreach my $member (@{$p_members}) {
-				next ADD_USER_GROUPCN  if($member eq $user->dn());
+				if($member eq $user->dn()) {
+					if($isOwner) {
+						$isMember = undef;
+					} else {
+						next ADD_USER_GROUPCN;
+					}
+				}
 			}
 			
 			if($isOwner) {
@@ -2207,15 +2214,16 @@ sub addUserToGroup($$$;$$) {
 				}
 			}
 			
-			push(@newGroups,$group);
+			push(@newGroups,[$group,$isMember,$isOwner]);
 		}
 		
 		if($success && scalar(@newGroups) > 0) {
 			my @newGroupDNs = ();
-			foreach my $group (@newGroups) {
+			foreach my $p_gDesc (@newGroups) {
+				my($group,$isMember,$isOwner) = @{$p_gDesc};
 				# Now, add the user dn to the group's member list
 				$group->changetype('modify');
-				$group->add('member' => $user->dn());
+				$group->add('member' => $user->dn())  if($isMember);
 				$group->add('owner' => $user->dn())  if($isOwner);
 				
 				my $updMesg = $group->update($self->{'ldap'});
@@ -2227,10 +2235,12 @@ sub addUserToGroup($$$;$$) {
 					push(@{$payload},"Unable to add ".($isOwner?"owner":"member")." ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
 					last;
 				}
-				push(@newGroupDNs,$group->dn());
+				
+				# Add only in case of new membership of a group
+				push(@newGroupDNs,$group->dn())  if($isMember);
 			}
 			
-			if($success) {
+			if($success && scalar(@newGroupDNs) > 0) {
 				@newGroups = ();
 				
 				# And, at last, add the group dn to the user's memberOf list
