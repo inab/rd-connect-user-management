@@ -1814,13 +1814,13 @@ sub createExtGroup($$$;$$) {
 		
 		# Curating the entry
 		if(exists($p_groupEntry->{'owner'})) {
-			if(!exists($p_groupEntry->{'member'})) {
-				$p_groupEntry->{'member'} = $p_groupEntry->{'owner'};
+			if(!exists($p_groupEntry->{'members'})) {
+				$p_groupEntry->{'members'} = $p_groupEntry->{'owner'};
 			} else {
 				# Find the owners in the members list, and initially add them
-				my %memberHash = map { $_ => undef } @{$p_groupEntry->{'member'}};
+				my %memberHash = map { $_ => undef } @{$p_groupEntry->{'members'}};
 				foreach my $owner (@{$p_groupEntry->{'owner'}}) {
-					push(@{$p_groupEntry->{'member'}},$owner)  unless(exists($memberHash{$owner}));
+					push(@{$p_groupEntry->{'members'}},$owner)  unless(exists($memberHash{$owner}));
 				}
 			}
 		}
