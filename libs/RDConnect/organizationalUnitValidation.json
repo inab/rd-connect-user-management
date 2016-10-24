@@ -24,7 +24,7 @@
 			}
 		},
 		"links": {
-			"title": "Optional links related to the user",
+			"title": "Optional links related to the Organizational Unit",
 			"type": "array",
 			"items": {
 				"type": "object",
