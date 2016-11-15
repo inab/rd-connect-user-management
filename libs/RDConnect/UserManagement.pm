@@ -1845,7 +1845,7 @@ sub createExtGroup($$$;$$) {
 		my $dn = _getGroupDNFromJSON($self,%{$jsonGroupEntry});
 		
 		# Gathering the members
-		foreach my $memberUID (@{$jsonGroupEntry->{'member'}}) {
+		foreach my $memberUID (@{$jsonGroupEntry->{'members'}}) {
 			# The member entry
 			my($partialSuccess,$member) = $self->getUser($memberUID);
 			
