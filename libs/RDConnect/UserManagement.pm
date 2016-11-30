@@ -593,19 +593,37 @@ sub _LDAP_ISO8601_RFC3339($$) {
 	return $timestamp;
 }
 
+
+sub newUserConsistency($) {
+	my $self = shift;
+	
+	my($p_entryHash) = @_;
+	
+	my @reterr = ();
+	
+	foreach my $userToken ($p_entryHash->{'username'},@{$p_entryHash->{'email'}}) {
+		my($success,$partialPayload) = $self->getUser($userToken);
+		
+		push(@reterr,"User token $userToken is already in use")  if($success);
+	}
+	
+	return @reterr;
+}
+
 # Parameters:
 #	p_entryArray: a reference to a hash or an array of hashes with the required keys needed to create new users
 #	m_getDN: a method which computes the DN of the new entries
 #	m_normalizePKJSON: a method which normalizes the primary key, which is part of the DN
 #	validator: an instance of JSON::Validator for this type of entries
+#	consistencyValidator: name of a consistency validation method, in order to check against the whole LDAP directory
 #	p_json2ldap: a reference to the correspondence from JSON to LDAP for this type of entry
 #	hotchpotchAttribute: The name of the hotchpotch attribute (if any)
 #	p_ldap_default_attributes: The default attributes to always set
 #	doReplace: if true, the entry is an update
-sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
+sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 	my $self = shift;
 	
-	my($p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace) = @_;
+	my($p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$consistencyValidator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace) = @_;
 	#my($username,$hashedPasswd64,$groupOU,$cn,$givenName,$sn,$email,$active,$doReplace) = @_;
 	
 	if(ref($p_entryArray) ne 'ARRAY') {
@@ -663,11 +681,26 @@ sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 			my $dn = $m_getDN->($self,$p_entryHash);
 			
 			push(@{$p_err},"Validation errors for not created entry $dn\n".join("\n",map { "\tPath: ".$_->{'path'}.' . Message: '.$_->{'message'}} @valErrors));
-		} else {
+		}
+		
+		unless($failed) {
 			# cn normalization
 			$m_normalizePKJSON->($p_entryHash)  if(ref($m_normalizePKJSON) eq 'CODE');
 			
 			push(@{$p_err},'');
+			
+			# Consistency validator
+			if(defined($consistencyValidator) && $self->can($consistencyValidator)) {
+				my @reterr = $self->$consistencyValidator($p_entryHash);
+				
+				if(scalar(@reterr) > 0) {
+					$failed = 1;
+					
+					my $dn = $m_getDN->($self,$p_entryHash);
+					
+					push(@{$p_err},"Consistency errors for not created entry $dn\n".join("\n",@reterr));
+				}
+			}
 		}
 	}
 	if($failed) {
@@ -767,6 +800,7 @@ sub createExtUser(\[%@];$) {
 				\&_getUserDNFromJSON,
 				\&_normalizeUserCNFromJSON,
 				getCASUserValidator(),
+				'newUserConsistency',
 				\%JSON_LDAP_USER_ATTRIBUTES,
 				USER_HOTCHPOTCH_ATTRIBUTE,
 				\@LDAP_USER_DEFAULT_ATTRIBUTES,
@@ -1446,6 +1480,7 @@ sub createExtPeopleOU(\[%@];$) {
 				\&_getPeopleOUDNFromJSON,
 				undef,
 				getCASouValidator(),
+				undef,
 				\%JSON_LDAP_OU_ATTRIBUTES,
 				undef,
 				\@LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES,
@@ -1846,6 +1881,7 @@ sub createExtGroup($$$;$$) {
 					\&_getGroupDNFromJSON,
 					undef,
 					getCASGroupValidator(),
+					undef,
 					\%JSON_LDAP_GROUP_ATTRIBUTES,
 					undef,
 					\@LDAP_GROUP_DEFAULT_ATTRIBUTES,
@@ -2514,6 +2550,7 @@ sub attachDocumentForEntry($$\%$) {
 				},
 				\&_normalizeUserCNFromJSON,
 				getCASRDDocumentValidator(),
+				undef,
 				\%JSON_LDAP_RDDOCUMENT_ATTRIBUTES,
 				undef,
 				[
