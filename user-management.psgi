@@ -86,10 +86,6 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_FIL
 		# Mail configuration parameters
 		return RDConnect::MetaUserManagement::GetMailManagementInstance(getRDConnectConfig(),$mailTemplate,$p_keyvals,$p_attachmentFiles);
 	}
-	
-	sub getRandomPassword() {
-		return RDConnect::MetaUserManagement::GetRandomPassword(getRDConnectConfig());
-	}
 }
 
 our $jserr = JSON->new->convert_blessed();
@@ -599,101 +595,12 @@ sub get_user_document_metadata {
 sub create_user {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	# Before any task
-	# Getting the mailTemplate and the attachments for new user creation
-	my($successMail,$payloadMail) = $uMgmt->listJSONDocumentsFromDomain(RDConnect::UserManagement::NewUserDomain);
-	if($successMail) {
-		# Now, let's fetch
-		my $mailTemplate;
-		my @attachmentFiles = ();
-		if(ref($payloadMail) eq 'ARRAY') {
-			foreach my $mailTemplateMetadata (@{$payloadMail}) {
-				if(exists($mailTemplateMetadata->{'documentClass'}) && ($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate' || $mailTemplateMetadata->{'documentClass'} eq 'mailAttachment')) {
-					# Fetching the document
-					my($successT,$payloadT) = $uMgmt->getDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,$mailTemplateMetadata->{'cn'});
-					
-					unless($successT) {
-						send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payloadT}),404);
-					} elsif(!defined($payloadT)) {
-						send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates do not have document '.$mailTemplateMetadata->{'cn'}}),404);
-					}
-					
-					# Here the payload is the document
-					my $data = $payloadT->get_value('content');
-					if($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate') {
-						$mailTemplate = \$data;
-					} else {
-						push(@attachmentFiles,\$data);
-					}
-				}
-			}
-		}
-		
-		unless(defined($mailTemplate)) {
-			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while fetching mail templates in order to create user','trace' => $payloadMail}),500);
-		}
-		
-		my %newUser = params;
-		
-		my $userPassword;
-		if(exists($newUser{'userPassword'})) {
-			$userPassword = $newUser{'userPassword'};
-		} else {
-			$userPassword = RDConnect::UserManagement::DancerCommon::getRandomPassword();
-			$newUser{'userPassword'} = $userPassword;
-		}
-		
-		my($success,$payload) = $uMgmt->createExtUser(\%newUser);
-		
-		if($success) {
-			my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
-			my %keyval2 = ( 'password' => '(undefined)' );
-			
-			# Mail configuration parameters
-			my $mail1 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance($mailTemplate,%keyval1,@attachmentFiles);
-			$mail1->setSubject($mail1->getSubject().' (I)');
-			
-			my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-			my $mail2 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance(\$passMailTemplate,%keyval2);
-			$mail2->setSubject($mail2->getSubject().' (II)');
-			
-			my $fullname = $payload->[0]{'cn'};
-			my $email = $payload->[0]{'email'}[0];
-			my $to = Email::Address->new($fullname => $email);
-			
-			$keyval1{'username'} = $payload->[0]{'username'};
-			$keyval1{'fullname'} = $fullname;
-			eval {
-				$mail1->sendMessage($to,\%keyval1);
-				
-				$keyval2{'password'} = $userPassword;
-				eval {
-					$mail2->sendMessage($to,\%keyval2);
-				};
-				if($@) {
-					send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while sending password e-mail','trace' => $@}),500);
-				}
-			};
-			
-			if($@) {
-				send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while sending user e-mail','trace' => $@}),500);
-			}
-		} else {
-			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating user','trace' => $payload}),500);
-		}
-		
-		#send_file(\$data, content_type => 'image/jpeg');
-		return [];
-	} else {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while fetching mail templates in order to create user','trace' => $payloadMail}),500);
-	}
+	my %newUser = params;
+	my $retval = RDConnect::MetaUserManagement::CreateUser($uMgmt,%newUser);
+	
+	send_error($RDConnect::UserManagement::DancerCommon::jserr->encode($retval),exists($retval->{'code'}) ? $retval->{'code'}:500)  if(defined($retval));
+	
+	return [];
 }
 
 sub modify_user {
@@ -755,9 +662,8 @@ sub reset_user_password {
 	
 	my $retval = RDConnect::MetaUserManagement::ResetUserPassword($uMgmt,params->{'user_id'},exists($newUser{'userPassword'})?$newUser{'userPassword'}:undef);
 	
-	send_error($RDConnect::UserManagement::DancerCommon::jserr->encode($retval),500)  if(defined($retval));
+	send_error($RDConnect::UserManagement::DancerCommon::jserr->encode($retval),exists($retval->{'code'}) ? $retval->{'code'}:500)  if(defined($retval));
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -776,7 +682,6 @@ sub add_user_to_groups {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while adding user '.params->{user_id}.' to groups','trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 

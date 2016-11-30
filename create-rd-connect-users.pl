@@ -3,6 +3,7 @@
 use warnings "all";
 use strict;
 
+use boolean qw();
 use Carp;
 use Config::IniFiles;
 use Email::Address;
@@ -11,10 +12,9 @@ use Text::Unidecode qw();
 use FindBin;
 use lib $FindBin::Bin . '/libs';
 use RDConnect::UserManagement;
-use RDConnect::MailManagement;
+use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
-use constant APGSECTION	=>	'apg';
 
 my $doReplace;
 if(scalar(@ARGV)>0 && $ARGV[0] eq '-r') {
@@ -36,47 +36,19 @@ if(scalar(@ARGV)>=3) {
 	
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
+	# LDAP configuration
+	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	
 	# Now, let's read all the parameters
-	
-	# apg path
-	my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
-	my $apgMin = $cfg->val(APGSECTION,'min-length',12);
-	my $apgMax = $cfg->val(APGSECTION,'max-length',16);
-	
-	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
-	
-	# These are the recognized replacements
-	my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
-	my %keyval2 = ( 'password' => '(undefined)' );
-	
-	my $mail1;
-	my $mail2;
 	my $NOEMAIL;
 	
 	if($noEmail) {
 		open($NOEMAIL,'>:encoding(UTF-8)',$mailTemplate) || Carp::croak("Unable to create file $mailTemplate");;
-	} else {
-		# Mail configuration parameters
-		$mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
-		$mail1->setSubject($mail1->getSubject().' (I)');
-		
-		my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-		$mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
-		$mail2->setSubject($mail2->getSubject().' (II)');
 	}
-	
-	# LDAP configuration
-	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
 	# Read the users
 	if(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
+		my @newUsers = ();
 		while(my $line=<$U>) {
 			# Skipping comments
 			next  if(substr($line,0,1) eq '#');
@@ -84,10 +56,12 @@ EOF
 			chomp($line);
 			my($email,$fullname,$username,$ouGroups,$givenName,$sn,$junk) = split(/\t/,$line,7);
 			my($ou,$groups) = split(/,/,$ouGroups,2);
+			
 			my @addresses = Email::Address->parse($email);
 			
 			if(scalar(@addresses)==0) {
 				Carp::carp("Unable to parse e-mail $email from user $fullname. Skipping");
+				next;
 			} else {
 				# The destination user
 				my $to = $addresses[0];
@@ -124,51 +98,32 @@ EOF
 					$givenName = substr($fullname,0,$snPoint)  unless(defined($givenName) && length($givenName)>0);
 					$sn = substr($fullname,$snPoint+1)  unless(defined($sn) && length($sn)>0);
 				}
-				
-				# Re-defining the object
-				$to = Email::Address->new($fullname => $email);
-				
-				# Now, let's read the generated password
-				if(open(my $APG,'-|',@apgParams)) {
-					my $pass = <$APG>;
-					chomp($pass);
-					
-					if($uMgmt->createUser($username,$pass,$ou,$fullname,$givenName,$sn,$email,1,$doReplace)) {
-						if($NOEMAIL) {
-							print $NOEMAIL "$username\t$pass\n";
-						} else {
-							$keyval1{'username'} = $username;
-							$keyval1{'fullname'} = $fullname;
-							eval {
-								$mail1->sendMessage($to,\%keyval1);
-								
-								$keyval2{'password'} = $pass;
-								eval {
-									$mail2->sendMessage($to,\%keyval2);
-								};
-								if($@) {
-									Carp::croak("Error while sending password e-mail: ",$@);
-								}
-							};
-							
-							if($@) {
-								Carp::croak("Error while sending e-mail: ",$@);
-							}
-						}
-					} else {
-						# Reverting state
-						Carp::carp("Unable to add user $username (fullname $fullname, e-mail $email). Does it already exist, maybe?");
-					}
-				} else {
-					Carp::croak("Unable to generate a password using apg\n");
-				}
 			}
+			
+			my %newUser = (
+				'cn'	=>	$fullname,
+				'givenName'	=>	[ $givenName ],
+				'surname'	=>	[ $sn ],
+				'username'	=>	$username,
+				'organizationalUnit'	=>	$ou,
+				'email'	=>	[ $email ],
+				'enabled'	=>	boolean::true,
+			);
+			
+			push(@newUsers,\%newUser);
 		}
 		close($U);
+		
+		my $retval = RDConnect::MetaUserManagement::CreateUser($uMgmt,@newUsers,$NOEMAIL);
+		
+		close($NOEMAIL)  if($NOEMAIL);
+		
+		if(defined($retval)) {
+			Carp::croak($retval->{'reason'}.'. Trace: '.(ref($retval->{'trace'})?join("\n",@{$retval->{'trace'}}):$retval->{'trace'}));
+		}
 	} else {
 		Carp::croak("Unable to read file $usersFile");
 	}
-	close($NOEMAIL)  if($NOEMAIL);
 	
 } else {
 	die <<EOF ;
