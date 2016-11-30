@@ -14,7 +14,6 @@ use RDConnect::UserManagement;
 use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
-use constant APGSECTION	=>	'apg';
 
 my $paramPassword;
 if(scalar(@ARGV)>0 && $ARGV[0] eq '-p') {
@@ -49,7 +48,7 @@ if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) &&
 		my $retval = RDConnect::MetaUserManagement::ResetUserPassword($uMgmt,$username,$pass);
 		
 		if(defined($retval)) {
-			Carp::carp($retval->{'reason'}.'. Trace: '.$retval->{'trace'});
+			Carp::carp($retval->{'reason'}.'. Trace: '.(ref($retval->{'trace'})?join("\n",@{$retval->{'trace'}}):$retval->{'trace'}));
 		} else {
 			print "User $username password was reset\n";
 		}
