@@ -647,6 +647,14 @@ sub createLDAPFromJSON(\[%@]$$$\%$\@;$) {
 			$p_entryHash->{'organizationalUnit'} = $groupOU;
 		}
 		
+		foreach my $entryKey (keys(%{$p_entryHash})) {
+			if(Scalar::Util::blessed($p_entryHash->{$entryKey}) && $p_entryHash->{$entryKey}->isa('boolean')) {
+				use JSON::PP;
+				
+				$p_entryHash->{$entryKey} = $p_entryHash->{$entryKey} ? $JSON::PP::true : $JSON::PP::false;
+			}
+		}
+		
 		# Now, the validation of each input
 		my @valErrors = $validator->validate($p_entryHash);
 		if(scalar(@valErrors) > 0) {
@@ -1220,9 +1228,9 @@ sub resetUserPassword($$;$) {
 	$hashedPasswd64 = $self->encodePassword($hashedPasswd64)  unless(IsEncodedPassword($hashedPasswd64));
 
 	# First, get the entry
-	my($success,$payload) = $self->getUser($username,$userDN);
+	my($success,$payload,$payloadLDAP) = $self->getJSONUser($username,$userDN);
 	if($success) {
-		my $user = $payload;
+		my $user = $payloadLDAP;
 		my $dn = $user->dn();
 		$user->changetype('modify');
 		$user->replace(
