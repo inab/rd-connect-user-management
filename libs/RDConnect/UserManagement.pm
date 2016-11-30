@@ -91,6 +91,7 @@ sub new($) {
 	}
 	
 	# Saving the parameters
+	$self->{'cfg'} = $cfg;
 	$self->{'ldap'} = $ldap;
 	$self->{'userDN'} = $userDN;
 	$self->{'groupDN'} = $groupDN;
@@ -104,6 +105,12 @@ sub new($) {
 
 	
 	return bless($self,$class);
+}
+
+sub getCfg() {
+	my $self = shift;
+	
+	return $self->{'cfg'};
 }
 
 my %HASH_MAPPING = (
