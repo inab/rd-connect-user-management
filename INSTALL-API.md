@@ -21,7 +21,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	yum install -y gcc automake flex bison make patch perl perl-devel perl-CPAN perl-Net-IDN-Encode perl-IO-Compress perl-Net-SSLeay perl-Crypt-SSLeay perl-XML-LibXML
 	# Next ones are needed only if you don't have them already
 	yum install -y epel-release git
-	yum install -y apg
+	yum --enablerepo=epel install -y apg
 	```
 	
 2. Create a separate user (for instance, `rdconnect-rest` with group `rdconnect-rest`), with a separate group
@@ -87,7 +87,10 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 1. As root, you have to install Apache, [https://httpd.apache.org/docs/current/mod/mod_ssl.html](mod_ssl) and [http://mpm-itk.sesse.net/](MPM ITK), and enable CGI execution policies on SELinux:
 	
 	```bash
-	yum install -y httpd mod_ssl httpd-itk
+	yum install -y httpd mod_ssl
+	yum --enablerepo=epel install -y httpd-itk
+	# Next steps are needed for SELinux
+	yum install -y checkpolicy policycoreutils-python
 	setsebool -P httpd_enable_cgi=1
 	setsebool -P httpd_read_user_content=1
 	setsebool -P httpd_can_network_connect=1
@@ -164,7 +167,13 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 		</Directory>
 		```
 	
-5. If you are going to use `user-management.fcgi` you have to install [https://httpd.apache.org/mod_fcgid/mod/mod_fcgid.html](mod_fcgid):
+	* At last, as `root` restart the service
+	
+		```bash
+		service httpd restart
+		```
+	
+4. If you are going to use `user-management.fcgi` you have to install [https://httpd.apache.org/mod_fcgid/mod/mod_fcgid.html](mod_fcgid):
 
 	
 	```bash
@@ -217,3 +226,10 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 		</IfModule>
 	</Directory>
 	```
+	
+	* At last, as `root` restart the service
+	
+		```bash
+		service httpd restart
+		```
+	
