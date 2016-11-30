@@ -11,7 +11,7 @@ use Text::Unidecode qw();
 use FindBin;
 use lib $FindBin::Bin . '/libs';
 use RDConnect::UserManagement;
-use RDConnect::MailManagement;
+use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
 use constant APGSECTION	=>	'apg';
@@ -36,31 +36,6 @@ if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) &&
 		@usernames = @ARGV;
 	}
 	
-	# Now, let's read all the parameters
-	
-	# apg path
-	my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
-	my $apgMin = $cfg->val(APGSECTION,'min-length',12);
-	my $apgMax = $cfg->val(APGSECTION,'max-length',16);
-	
-	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
-	
-	# These are the recognized replacements
-	my %keyval2 = ( 'password' => '(undefined)' );
-	
-	# Mail configuration parameters
-	
-	my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-	my $mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
-	$mail2->setSubject($mail2->getSubject().' (II)');
-	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
@@ -69,39 +44,14 @@ EOF
 		my $pass;
 		if(defined($password)) {
 			$pass = $password;
-		} elsif(open(my $APG,'-|',@apgParams)) {
-			# Now, let's read the generated password
-			my $pass = <$APG>;
-			chomp($pass);
-			close($APG);
-		} else {
-			Carp::croak("Unable to generate a password using apg\n");
 		}
 		
-		my($success,$user) = $uMgmt->resetUserPassword($username,$pass);
-		if($success) {
-			unless(defined($password)) {
-				my $fullname = $user->get_value('cn');
-				my $email = $user->get_value('mail');
-				# Re-defining the object
-				my $to = Email::Address->new($fullname => $email);
-				
-				$keyval2{'password'} = $pass;
-				eval {
-					$mail2->sendMessage($to,\%keyval2);
-				};
-				if($@) {
-					Carp::carp("Error while sending password e-mail: ",$@);
-				}
-			}
-			print "User $username password was reset\n";
+		my $retval = RDConnect::MetaUserManagement::ResetUserPassword($uMgmt,$username,$pass);
+		
+		if(defined($retval)) {
+			Carp::carp($retval->{'reason'}.'. Trace: '.$retval->{'trace'});
 		} else {
-			my $payload = $user;
-			foreach my $err (@{$payload}) {
-				Carp::carp($err);
-			}
-			# Reverting state
-			Carp::carp("Unable to reset password for user $username. Does it exist?");
+			print "User $username password was reset\n";
 		}
 	}
 } else {

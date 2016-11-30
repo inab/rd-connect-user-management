@@ -78,34 +78,17 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_FIL
 		return $uMgmt;
 	}
 	
-	use RDConnect::MailManagement;
+	use RDConnect::MetaUserManagement;
 	
 	sub getMailManagementInstance($\%;\@) {
 		my($mailTemplate,$p_keyvals,$p_attachmentFiles) = @_;
 		
 		# Mail configuration parameters
-		return RDConnect::MailManagement->new(getRDConnectConfig(),$mailTemplate,$p_keyvals,$p_attachmentFiles);
+		return RDConnect::MetaUserManagement::GetMailManagementInstance(getRDConnectConfig(),$mailTemplate,$p_keyvals,$p_attachmentFiles);
 	}
 	
-	use constant APGSECTION	=>	'apg';
-	
 	sub getRandomPassword() {
-		my $cfg = getRDConnectConfig();
-		
-		my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
-		my $apgMin = $cfg->val(APGSECTION,'min-length',12);
-		my $apgMax = $cfg->val(APGSECTION,'max-length',16);
-		
-		my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
-		
-		my $pass;
-		if(open(my $APG,'-|',@apgParams)) {
-			$pass = <$APG>;
-			chomp($pass);
-			close($APG);
-		}
-		
-		return $pass;
+		return RDConnect::MetaUserManagement::GetRandomPassword(getRDConnectConfig());
 	}
 }
 
@@ -770,44 +753,9 @@ sub reset_user_password {
 	
 	my %newUser = params;
 	
-	my $userPassword;
-	if(exists($newUser{'userPassword'})) {
-		$userPassword = $newUser{'userPassword'};
-	} else {
-		$userPassword = RDConnect::UserManagement::DancerCommon::getRandomPassword();
-	}
+	my $retval = RDConnect::MetaUserManagement::ResetUserPassword($uMgmt,params->{'user_id'},exists($newUser{'userPassword'})?$newUser{'userPassword'}:undef);
 	
-	my($success,$payload) = $uMgmt->resetUserPassword(params->{'user_id'},$userPassword);
-	
-	if($success) {
-		my %keyval2 = ( 'password' => '(undefined)' );
-		
-		# Mail configuration parameters
-		my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-		my $mail2 = RDConnect::UserManagement::DancerCommon::getMailManagementInstance(\$passMailTemplate,%keyval2);
-		$mail2->setSubject('RD-Connect password reset');
-		
-		my $fullname = $payload->[0]{'cn'};
-		my $email = $payload->[0]{'email'}[0];
-		my $to = Email::Address->new($fullname => $email);
-		
-		$keyval2{'password'} = $userPassword;
-		eval {
-			$mail2->sendMessage($to,\%keyval2);
-		};
-		if($@) {
-			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while sending reset password e-mail','trace' => $@}),500);
-		}
-	} else {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while resetting user password','trace' => $payload}),500);
-	}
+	send_error($RDConnect::UserManagement::DancerCommon::jserr->encode($retval),500)  if(defined($retval));
 	
 	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
