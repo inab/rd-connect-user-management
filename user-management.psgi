@@ -83,8 +83,10 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_FIL
 	sub getMailManagementInstance($\%;\@) {
 		my($mailTemplate,$p_keyvals,$p_attachmentFiles) = @_;
 		
+		$p_attachmentFiles = []  unless(defined($p_attachmentFiles));
+		
 		# Mail configuration parameters
-		return RDConnect::MetaUserManagement::GetMailManagementInstance(getRDConnectConfig(),$mailTemplate,$p_keyvals,$p_attachmentFiles);
+		return RDConnect::MetaUserManagement::GetMailManagementInstance(getRDConnectConfig(),$mailTemplate,%{$p_keyvals},@{$p_attachmentFiles});
 	}
 }
 
