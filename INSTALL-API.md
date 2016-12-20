@@ -47,6 +47,8 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	cpan -i Authen::CAS::Client Authen::CAS::External Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI
 	```
 
+	This can be done running `install-deps.sh` script
+
 4. Clone this code, in order to install the API:
 
 	```bash
