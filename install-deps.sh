@@ -9,12 +9,12 @@ export PERL5LIB="${HOME}/perl5/lib/perl5:$PERL5LIB"
 export PATH="${HOME}/perl5/bin:$PATH"
 ( echo ; echo ) | cpan
 (echo o conf prerequisites_policy follow;echo o conf commit) | cpan
+
 # It has a failing test
-cpan -i CPAN
 cpan -f ExtUtils::MakeMaker
 cpan -i local::lib
-
-
+# It needs local::lib
+cpan -i CPAN
 
 export NO_NETWORK_TESTING=n
 for PACKA in LWP LWP::Protocol::https Test::More boolean experimental \
