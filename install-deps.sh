@@ -10,7 +10,8 @@ export PATH="${HOME}/perl5/bin:$PATH"
 ( echo ; echo ) | cpan
 (echo o conf prerequisites_policy follow;echo o conf commit) | cpan
 # It has a failing test
-cpan -T ExtUtils::MakeMaker
+cpan -i CPAN
+cpan -f ExtUtils::MakeMaker
 cpan -i local::lib
 
 
@@ -25,7 +26,7 @@ done
 
 (echo ; echo ) | cpan -i Template
 # It has several failing tests
-cpan -T Moose
+cpan -f Moose
 for PACKA in Authen::CAS::Client Authen::CAS::External Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI ; do
 	cpan -i "$PACKA"
 done
