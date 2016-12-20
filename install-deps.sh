@@ -12,4 +12,4 @@ Config::IniFiles Net::LDAP MIME::Base64 Digest::MD5 Digest::SHA1 \
 JSON::Validator Email::Address Email::MIME \
 Email::Sender::Transport::SMTPS Env File::MimeInfo Text::Unidecode && \
 (echo y; echo y) | cpan -i Template && \
-cpan -i Authen::CAS::Client Authen::CAS::External Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI
+cpan -i Authen::CAS::Client Authen::CAS::External Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI && exit 0
