@@ -57,13 +57,13 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	cd rd-connect-user-management
 	```
 
-5. Create a file called `user-management.ini`, based on [template-config.ini](template-config.ini), with the connection and authentication parameters to use the LDAP server, as well as the mail server, and the proper parameter setup in `rdconnect-usermanagement-api` section.
+5. Create a file called `user-management.ini` on the directory `configs`, based on [template-config.ini](template-config.ini), with the connection and authentication parameters to use the LDAP server, as well as the mail server, and the proper parameter setup in `rdconnect-usermanagement-api` section.
 
 6. Create an installation directory (for instance, `/home/rdconnect-rest/RDConnect-UserManagement-REST-API`), and copy at least next content there:
 
 	```bash
 	mkdir -p "${HOME}"/RDConnect-UserManagement-REST-API
-	cp -dpr user-management.ini user-management.cgi user-management.fcgi user-management.psgi libs "${HOME}"/RDConnect-UserManagement-REST-API
+	cp -dpr configs user-management.cgi user-management.fcgi user-management.psgi libs "${HOME}"/RDConnect-UserManagement-REST-API
 	```
 
   or, alternatively, create a symbolic link:

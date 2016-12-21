@@ -15,8 +15,9 @@ use lib File::Spec->catfile($FindBin::Bin,"libs");
 
 package RDConnect::UserManagement::DancerCommon;
 
+use constant API_CONFIG_DIRNAME	=>	'configs';
 use constant API_CONFIG_FILENAME	=>	'user-management.ini';
-use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_FILENAME);
+use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_DIRNAME,API_CONFIG_FILENAME);
 
 {
 	use Config::IniFiles;
