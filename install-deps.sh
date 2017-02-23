@@ -1,5 +1,16 @@
 #!/bin/sh
 
+umdir="$(dirname "$0")"
+case "${umdir}" in
+	/*)
+		true
+		;;
+	*)
+		umdir="${PWD}"/"${umdir}"
+		;;
+esac
+
+
 set -e
 
 export PERL_LOCAL_LIB_ROOT="$PERL_LOCAL_LIB_ROOT:${HOME}/perl5"
@@ -17,4 +28,5 @@ cpan -i local::lib
 # CPAN needs local::lib
 cpan -i CPAN App::cpanminus
 
-cpanm --installdeps .
+# It will work wherever the working dir points to
+cpanm --installdeps "${umdir}"
