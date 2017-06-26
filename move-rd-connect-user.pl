@@ -19,16 +19,16 @@ if(scalar(@ARGV)>=3) {
 	
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
-	my($oldGroupName,$newGroupName) = @ARGV;
+	my($username,$organizationalUnitName) = @ARGV;
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
 	# Change the group name
-	my($success,$payload) = $uMgmt->renameGroup($oldGroupName,$newGroupName);
+	my($success,$payload) = $uMgmt->moveUserToPeopleOU($username,$organizationalUnitName);
 	
 	if($success) {
-		print "Group $oldGroupName is now $newGroupName\n";
+		print "User $username is now on organizational unit $organizationalUnitName\n";
 	} else {
 		foreach my $retval (@{$payload}) {
 			Carp::carp($retval);
@@ -36,6 +36,6 @@ if(scalar(@ARGV)>=3) {
 	}
 } else {
 	die <<EOF ;
-Usage:	$0 {IniFile} {old group name} {new group name}
+Usage:	$0 {IniFile} {username or e-mail} {destination organizational unit}
 EOF
 }

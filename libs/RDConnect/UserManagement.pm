@@ -67,9 +67,11 @@ sub new($) {
 	Carp::croak("ldap_pass parameter was not defined in $configFile")  unless(defined($ldap_pass));
 	
 	# The base DNs
-	my $userDN = $cfg->val(LDAP_SECTION,'userDN');
+	my $baseDN = $cfg->val(LDAP_SECTION,'baseDN',"dc=rd-connect,dc=eu");
+	Carp::croak("baseDN parameter was not defined in $configFile")  unless(defined($baseDN));
+	my $userDN = $cfg->val(LDAP_SECTION,'userDN',"ou=people,dc=rd-connect,dc=eu");
 	Carp::croak("userDN parameter was not defined in $configFile")  unless(defined($userDN));
-	my $groupDN = $cfg->val(LDAP_SECTION,'groupDN');
+	my $groupDN = $cfg->val(LDAP_SECTION,'groupDN',"ou=groups,dc=rd-connect,dc=eu");
 	Carp::croak("groupDN parameter was not defined in $configFile")  unless(defined($groupDN));
 	
 	my $firstComma = index($userDN,',');
@@ -111,6 +113,26 @@ sub getCfg() {
 	my $self = shift;
 	
 	return $self->{'cfg'};
+}
+
+sub existsDN($) {
+	my $self = shift;
+	
+	my($dn) = @_;
+	my $retval;
+	
+	my $searchMesg = $self->{'ldap'}->search(
+		'base'	=>	$dn,
+		'filter'	=>	'(objectClass=*)',
+		'scope'	=>	'base',
+		'attrs'	=>	[ 'dn' ]
+	);
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		$retval = $searchMesg->count > 0;
+	}
+	
+	return $retval;
 }
 
 my %HASH_MAPPING = (
@@ -1744,6 +1766,149 @@ sub listJSONPeopleOUUsers($;$) {
 	return ($success,$payload);
 }
 
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	ou: The short, organizational unit name, which is the destination of the username
+#	baseUserDN: (OPTIONAL) The DN used as ancestor of the user and ou entries. If not set,
+#		it uses the one read from the configuration file.
+sub moveUserToPeopleOU($$;$) {
+	my $self = shift;
+	
+	my($username,$ou,$baseUserDN)=@_;
+	
+	$baseUserDN = $self->{'userDN'}  unless(defined($baseUserDN) && length($baseUserDN)>0);
+	
+	my $parentDN = $self->{'parentDN'};
+	
+	# Is the user found?
+	my($success,$payload) = $self->getUser($username,$baseUserDN);
+	
+	my $user;
+	my $oldUserDN;
+	if($success) {
+		$user = $payload;
+		$oldUserDN = $user->dn();
+		
+		# Don
+		if($user->exists('cn')) {
+			# Is the ou found?
+			($success,$payload) = $self->getPeopleOU($ou,$baseUserDN);
+		} else {
+			$success = undef;
+			$payload = [ "Missing cn attribute for user $oldUserDN" ];
+		}
+	}
+	my $ou;
+	my $newUserDN;
+	my @refEntries = ();
+	my $escaped_userCN;
+	if($success) {
+		$ou = $payload;
+		$payload = [];
+
+		my $e_ouDN = Net::LDAP::Util::ldap_explode_dn($ou->dn(),@LDAP_UTIL_SERIALIZATION_PARAMS);
+		my $userCN = $user->get_value('cn');
+		unshift(@{$e_ouDN},{'cn' => $userCN});
+		$newUserDN = Net::LDAP::Util::canonical_dn($e_ouDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
+	
+		# Is the new name in use?
+		$success = undef;
+		if($self->existsDN($newUserDN)) {
+			push(@{$payload},"$oldUserDN cannot be moved to $newUserDN, as it already exists");
+		} else {
+			# Generating the escaped userCN
+			$escaped_userCN = Net::LDAP::Util::escape_filter_value($userCN);
+			
+			# Fetching the entries referring to the user
+			my $escaped_oldUserDn = Net::LDAP::Util::escape_filter_value($oldUserDN);
+			my $refSearchMesg = $self->{'ldap'}->search(
+				'base'	=> $parentDN,
+				'filter' => "(:distinguishedNameMatch:=$escaped_oldUserDn)",
+				'scope' => 'sub',
+			);
+			
+			if($refSearchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+				@refEntries = $refSearchMesg->entries();
+				$success = 1;
+			} else {
+				push(@{$payload},"Error while finding members of $oldUserDN\n".Dumper($refSearchMesg));
+			}
+		}
+	}
+	
+	if($success) {
+		# Now, time to move the user (and change all the references to her/him)
+		$user->changetype("moddn");
+		# The old entry will be erased later, when all the updates are in place
+		$user->add(
+			"deleteoldrdn" => 1,
+			"newsuperior" => $ou->dn(),
+			"newrdn" => "cn=$escaped_userCN"
+		);
+		
+		# Now, batch updates!
+		my $updMesg = $user->update($self->{'ldap'});
+		if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+			foreach my $refEntry (@refEntries) {
+				my @replacements = ();
+				foreach my $attr ($refEntry->attributes()) {
+					my $p_members = $refEntry->get_value($attr,"asref" => 1);
+					my $didMatch = undef;
+					my @newValues = ();
+					foreach my $member (@{$p_members}) {
+						my $val;
+						if($member eq $oldUserDN) {
+							$val = $newUserDN;
+							$didMatch = 1;
+						} else {
+							$val = $member;
+						}
+						
+						push(@newValues,$val);
+						#print "ENTRY\n$oldDn\n$newDn\n$member\n$val\n";
+					}
+					
+					if($didMatch) {
+						push(@replacements, $attr => \@newValues);
+					}
+				}
+				
+				if(scalar(@replacements) > 0) {
+					$refEntry->changetype("modify");
+					$refEntry->replace(@replacements);
+					my $refUpdMesg = $refEntry->update($self->{'ldap'});
+					if($refUpdMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+						$success = undef;
+						print STDERR $refEntry->ldif()  unless(wantarray);
+						
+						my $refDn = $refEntry->dn();
+						push(@{$payload}, "Could not update entry $refDn\n".Dumper($refUpdMesg) );
+						last;
+					}
+				}
+			}
+		} else {
+			$success = undef;
+			print STDERR $user->ldif()  unless(wantarray);
+			
+			push(@{$payload}, "Could not move entry $oldUserDN\n".Dumper($updMesg) );
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+
 my @LDAP_GROUP_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	[ 'groupOfNames' ]
 );
@@ -2557,62 +2722,53 @@ sub removeGroup($;$) {
 # Parameters:
 #	oldGroupCN: The old cn of the groupOfNames to be renamed
 #	newGroupCN: The new cn of the groupOfNames to be renamed
-#	oldGroupDN: (OPTIONAL) The DN used as parent of this groupOfNames.
+#	oldBaseGroupDN: (OPTIONAL) The DN used as parent of this groupOfNames.
 #		If not set, it uses the one read from the configuration file.
-#	newGroupDN: (OPTIONAL) The DN used as parent of the renamed groupOfNames.
+#	newBaseGroupDN: (OPTIONAL) The DN used as parent of the renamed groupOfNames.
 #		If not set, it uses the one read from the configuration file.
 sub renameGroup($$;$$) {
 	my $self = shift;
 	
-	my($oldGroupCN,$newGroupCN,$oldGroupDN,$newGroupDN)=@_;
+	my($oldGroupCN,$newGroupCN,$oldBaseGroupDN,$newBaseGroupDN)=@_;
 	
-	$oldGroupDN = $self->{'groupDN'}  unless(defined($oldGroupDN) && length($oldGroupDN)>0);
-	$newGroupDN = $self->{'groupDN'}  unless(defined($newGroupDN) && length($newGroupDN)>0);
-	my $userDN = $self->{'userDN'};
+	$oldBaseGroupDN = $self->{'groupDN'}  unless(defined($oldBaseGroupDN) && length($oldBaseGroupDN)>0);
+	$newBaseGroupDN = $self->{'groupDN'}  unless(defined($newBaseGroupDN) && length($newBaseGroupDN)>0);
+	my $parentDN = $self->{'parentDN'};
 	
 	# Is the group found?
-	my($success,$payload) = $self->getGroup($oldGroupCN,$oldGroupDN);
+	my($success,$payload) = $self->getGroup($oldGroupCN,$oldBaseGroupDN);
 	
 	my $escaped_newGroupCN;
 	my $group;
+	my $oldDn;
+	my $newDn;
 	if($success) {
 		$group = $payload;
-		
-		$escaped_newGroupCN = Net::LDAP::Util::escape_filter_value($newGroupCN);
-		
-		# Is the new name in use?
-		my $searchMesg = $self->{'ldap'}->search(
-			'base' => $newGroupDN,
-			'filter' => "(cn=$escaped_newGroupCN)",
-			'sizelimit' => 1,
-			'scope' => 'sub'
-		);
+		$oldDn = $group->dn();
 		
 		$success = undef;
 		$payload = [];
 		
-		if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-			if($searchMesg->count > 0) {
-				push(@{$payload},"Error, $newGroupCN already exists under $newGroupDN");
-			} else {
-				$success = 1;
-			}
+		$escaped_newGroupCN = Net::LDAP::Util::escape_filter_value($newGroupCN);
+		my $e_newGroupDN = Net::LDAP::Util::ldap_explode_dn($newBaseGroupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
+		unshift(@{$e_newGroupDN},{'cn' => $newGroupCN});
+		$newDn = Net::LDAP::Util::canonical_dn($e_newGroupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
+		
+		# Is the new name in use?
+		if($self->existsDN($newDn)) {
+			push(@{$payload},"Error, $newGroupCN already exists under $newBaseGroupDN");
 		} else {
-			push(@{$payload},"Error while finding $newGroupCN on $newGroupDN\n".Dumper($searchMesg));
+			$success = 1;
 		}
 	}
 	
-	my $oldDn = $group->dn();
-	my $e_newGroupDN = Net::LDAP::Util::ldap_explode_dn($newGroupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
-	unshift(@{$e_newGroupDN},{'cn' => $newGroupCN});
-	my $newDn = Net::LDAP::Util::canonical_dn($e_newGroupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
 	my @refEntries = ();
 	# Fetching the entries referring to the group
 	if($success) {
 		my $escaped_oldDn = Net::LDAP::Util::escape_filter_value($oldDn);
 		my $refSearchMesg = $self->{'ldap'}->search(
-			'base'	=> $userDN,
-			'filter' => "(memberOf=$escaped_oldDn)",
+			'base'	=> $parentDN,
+			'filter' => "(:distinguishedNameMatch:=$escaped_oldDn)",
 			'scope' => 'sub',
 		);
 		
@@ -2628,7 +2784,7 @@ sub renameGroup($$;$$) {
 	
 	if($success) {
 		# Now, time to rename the group (and all the references to it)
-		my $isMove = $oldGroupDN ne $newGroupDN;
+		my $isMove = $oldBaseGroupDN ne $newBaseGroupDN;
 		$group->changetype($isMove ? "moddn" : "modrdn");
 		# The old entry will be erased later, when all the updates are in place
 		$group->add(
@@ -2637,7 +2793,7 @@ sub renameGroup($$;$$) {
 		);
 		if($isMove) {
 			$group->add(
-				"newsuperior" => $newGroupDN
+				"newsuperior" => $newBaseGroupDN
 			);
 		}
 		
@@ -2645,25 +2801,43 @@ sub renameGroup($$;$$) {
 		my $updMesg = $group->update($self->{'ldap'});
 		if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
 			foreach my $refEntry (@refEntries) {
-				my $p_memberOf = $refEntry->get_value('memberOf',"asref" => 1);
-				my @newMemberOf = ();
-				foreach my $member (@{$p_memberOf}) {
-					my $val = ($member eq $oldDn)?$newDn:$member;
-					push(@newMemberOf,($member eq $oldDn)?$newDn:$member);
-					print "ENTRY\n$oldDn\n$newDn\n$member\n$val\n";
+				my @replacements = ();
+				foreach my $attr ($refEntry->attributes()) {
+					my $p_members = $refEntry->get_value($attr,"asref" => 1);
+					my $didMatch = undef;
+					my @newValues = ();
+					foreach my $member (@{$p_members}) {
+						my $val;
+						if($member eq $oldDn) {
+							$val = $newDn;
+							$didMatch = 1;
+						} else {
+							$val = $member;
+						}
+						
+						push(@newValues,$val);
+						#print "ENTRY\n$oldDn\n$newDn\n$member\n$val\n";
+					}
+					
+					if($didMatch) {
+						push(@replacements, $attr => \@newValues);
+					}
 				}
 				
-				$refEntry->changetype("modify");
-				$refEntry->replace('memberOf' => \@newMemberOf);
-				my $refUpdMesg = $refEntry->update($self->{'ldap'});
-				if($refUpdMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-					$success = undef;
-					print STDERR $refEntry->ldif()  unless(wantarray);
-					
-					my $refDn = $refEntry->dn();
-					push(@{$payload}, "Could not update entry $refDn\n".Dumper($refUpdMesg) );
-					last;
+				if(scalar(@replacements) > 0) {
+					$refEntry->changetype("modify");
+					$refEntry->replace(@replacements);
+					my $refUpdMesg = $refEntry->update($self->{'ldap'});
+					if($refUpdMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+						$success = undef;
+						print STDERR $refEntry->ldif()  unless(wantarray);
+						
+						my $refDn = $refEntry->dn();
+						push(@{$payload}, "Could not update entry $refDn\n".Dumper($refUpdMesg) );
+						last;
+					}
 				}
+				
 			}
 		} else {
 			$success = undef;
