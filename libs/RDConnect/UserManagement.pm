@@ -262,6 +262,9 @@ use File::Spec;
 use constant USER_VALIDATION_SCHEMA_FILE	=>	'userValidation.json';
 use constant FULL_USER_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),USER_VALIDATION_SCHEMA_FILE);
 
+use constant ENABLED_USERS_SCHEMA_FILE	=>	'enabledUsers.json';
+use constant FULL_ENABLED_USERS_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),ENABLED_USERS_SCHEMA_FILE);
+
 use constant OU_VALIDATION_SCHEMA_FILE	=>	'organizationalUnitValidation.json';
 use constant FULL_OU_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),OU_VALIDATION_SCHEMA_FILE);
 
@@ -492,6 +495,20 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 # Inverse correspondence: LDAP attributes to JSON ones
 my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_USER_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_USER_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_USER_ATTRIBUTES);
 
+
+my %JSON_LDAP_ENABLED_USERS_ATTRIBUTES = (
+	'title'	=>	['title', boolean::true, boolean::false, undef, undef, boolean::true],
+	'fullname'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+	'username'	=>	['uid',boolean::true, boolean::false, undef, undef, boolean::true],
+	'organizationalUnit'	=>	[undef, boolean::true, boolean::false, undef, undef, boolean::true],
+	
+	'userCategory'	=>	['userClass', boolean::true, boolean::false, undef, undef, boolean::true],
+	
+	'email'	=>	['mail',boolean::true, boolean::true, undef, undef, boolean::true],
+);
+
+# Inverse correspondence: LDAP attributes to JSON ones
+my %LDAP_JSON_ENABLED_USERS_ATTRIBUTES = map { $JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_ENABLED_USERS_ATTRIBUTES);
 
 my %JSON_LDAP_OU_ATTRIBUTES = (
 	'organizationalUnit'	=>	['ou', boolean::true, boolean::false, undef, undef, boolean::true],
@@ -836,11 +853,13 @@ sub createExtUser(\[%@];$) {
 #	p_ldap2json: a hash describing the translation from LDAP to JSON
 #	m_postfixup: a post fixup method, which takes the whole LDAP entry
 #	hotchpotchAttribute: The name of the hotchpotch attribute, if any
+#	as_hash: Return a hash instead of an array reference, using the value
+#		of this parameter as the key
 # It returns an array of JSON user entries
-sub genJSONFromLDAP(\@\%;$$) {
+sub genJSONFromLDAP(\@\%;$$$) {
 	my $self = shift;
 	
-	my($p_entries,$p_ldap2json,$m_postFixup,$hotchpotchAttribute) = @_;
+	my($p_entries,$p_ldap2json,$m_postFixup,$hotchpotchAttribute,$as_hash) = @_;
 	
 	my @retval = ();
 	
@@ -892,7 +911,7 @@ sub genJSONFromLDAP(\@\%;$$) {
 		push(@retval,$jsonEntry);
 	}
 	
-	return \@retval;
+	return defined($as_hash) ? { $as_hash => \@retval } : \@retval;
 }
 
 sub postFixupUser($$) {
@@ -911,6 +930,12 @@ sub genJSONUsersFromLDAPUsers(\@) {
 	my $self = shift;
 	
 	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_USER_ATTRIBUTES, \&postFixupUser, USER_HOTCHPOTCH_ATTRIBUTE);
+}
+
+sub genJSONEnabledUsersFromLDAPUsers(\@) {
+	my $self = shift;
+	
+	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_ENABLED_USERS_ATTRIBUTES, \&postFixupEnabledUsers, undef, 'results');
 }
 
 sub genJSONouFromLDAPou(\@) {
@@ -1438,6 +1463,34 @@ sub listUsers(;$) {
 # Parameters:
 #	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
 #		it uses the one read from the configuration file.
+sub listEnabledUsers(;$) {
+	my $self = shift;
+	
+	my($userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	# First, the ou must be found
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $userDN,
+		'filter' => '(&(objectClass=inetOrgPerson)(disabledAccount=FALSE))',
+		'scope' => 'children'
+	);
+	
+	my $success = $searchMesg->code() == Net::LDAP::LDAP_SUCCESS;
+	my $payload;
+	if($success) {
+		$payload = [ $searchMesg->entries ];
+	} else {
+		$payload = [ "Error while finding users\n".Dumper($searchMesg) ];
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
+#		it uses the one read from the configuration file.
 sub listJSONUsers(;$) {
 	my $self = shift;
 	
@@ -1447,6 +1500,23 @@ sub listJSONUsers(;$) {
 	
 	if($success) {
 		$payload = $self->genJSONUsersFromLDAPUsers($payload);
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	userDN: (OPTIONAL) The DN used as parent of all the users. If not set,
+#		it uses the one read from the configuration file.
+sub listJSONEnabledUsers(;$) {
+	my $self = shift;
+	
+	my($userDN) = @_;
+	
+	my($success,$payload) = $self->listEnabledUsers($userDN);
+	
+	if($success) {
+		$payload = $self->genJSONEnabledUsersFromLDAPUsers($payload);
 	}
 	
 	return ($success,$payload);

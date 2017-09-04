@@ -810,6 +810,30 @@ prefix '/users' => sub {
 	};
 };
 
+#################
+# Enabled Users #
+#################
+
+sub get_enabled_users {
+	if(exists(query_parameters->{'schema'})) {
+		return send_file(RDConnect::UserManagement::FULL_ENABLED_USERS_SCHEMA_FILE, system_path => 1);
+	}
+	
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONEnabledUsers();
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Could not fulfill internal queries','trace' => $payload}),500);
+	}
+	
+	# Here the payload is the list of users
+	return $payload;
+}
+prefix '/enabledUsers' => sub {
+	get '' => \&get_enabled_users;
+};
+
 ########################
 # Organizational units #
 ########################

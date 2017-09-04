@@ -40,6 +40,10 @@ The services under the endpoint have several levels of authorization, which requ
 
 	* `POST /mail/newUser/documents/:document_name/metadata` `[adm]`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to modify the metadata of the document.
 
+* `GET /enabledUsers`: It returns the list of enabled registered users, along with their validated e-mails. ()
+
+	* `GET /enabledUsers?schema`: It returns the JSON Schema which validates the output of /enabledUsers
+
 * `GET /users`: It returns the list of registered users (both enabled and disabled).
 	
 	* `GET /users?schema`: It returns the JSON Schema which validates a user entry (i.e. [userValidation.json](libs/RDConnect/userValidation.json)).
