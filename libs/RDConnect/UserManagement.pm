@@ -935,7 +935,7 @@ sub genJSONUsersFromLDAPUsers(\@) {
 sub genJSONEnabledUsersFromLDAPUsers(\@) {
 	my $self = shift;
 	
-	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_ENABLED_USERS_ATTRIBUTES, \&postFixupEnabledUsers, undef, 'results');
+	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_ENABLED_USERS_ATTRIBUTES, \&postFixupUser, undef, 'results');
 }
 
 sub genJSONouFromLDAPou(\@) {
