@@ -56,7 +56,7 @@ if(scalar(@ARGV)==2) {
 		
 		close($UP);
 	} else {
-		Carp::croak("ERROR: Unable to open file $userPairsFile with old -> new usernamer correspondences. Reason: ".$!);
+		Carp::croak("ERROR: Unable to open file $userPairsFile with old -> new username correspondences. Reason: ".$!);
 	}
 } else {
 	print STDERR "Usage: $0 {IniFile} {Tabular file with pairs of original username -> new username (in UTF-8)}\n";
