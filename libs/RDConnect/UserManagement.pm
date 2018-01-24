@@ -1978,6 +1978,46 @@ sub moveUserToPeopleOU($$;$) {
 	} 
 }
 
+# Parameters:
+#	ou: the RD-Connect organizational unit
+#	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
+#		it uses the one read from the configuration file.
+sub removePeopleOU($;$) {
+	my $self = shift;
+	
+	my($ou,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+	
+	# Is the OU found?
+	my($success,$payload) = $self->getPeopleOU($ou,$userDN);
+	
+	if($success) {
+		my $ou = $payload;
+		$payload = [];
+		
+		# Now, erasing the OU (this operation CANNOT BE UNDONE!)
+		my $delMesg = $ou->delete()->update($self->{'ldap'});
+		if($delMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			$success = undef;
+			push(@{$payload},"Error while removing $ou from $userDN\n".Dumper($delMesg));
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+
 
 my @LDAP_GROUP_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	[ 'groupOfNames' ]
@@ -2768,7 +2808,7 @@ sub removeGroup($;$) {
 		$payload = [];
 		
 		# Now, erasing the group (this operation CANNOT BE UNDONE!)
-		my $delMesg = $group->delete()->update();
+		my $delMesg = $group->delete()->update($self->{'ldap'});
 		if($delMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 			$success = undef;
 			push(@{$payload},"Error while removing $groupCN from $groupDN\n".Dumper($delMesg));
