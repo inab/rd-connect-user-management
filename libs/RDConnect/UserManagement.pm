@@ -828,7 +828,7 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 
 # Parameters:
 #	p_userArray: a reference to a hash or an array of hashes with the required keys needed to create new users
-#	doReplace: if true, the entry is an update
+#	doReplace: (OPTIONAL) if true, the entry is an update
 sub createExtUser(\[%@];$) {
 	my $self = shift;
 	my($p_userArray,$doReplace) = @_;
@@ -2118,15 +2118,9 @@ sub createGroup($$$;$$) {
 }
 
 # Parameters:
-#	cn: The short, common name, which will hang on groupDN
-#	description: The description of the new groupOfNames
-#	p_ownerUIDs: The uid(s) of the owner and first member of this groupOfNames.
-#	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
-#		it uses the one read from the configuration file.
-#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
-#		If not set, it uses the one read from the configuration file.
-#	doReplace: (OPTIONAL) If true, the entry is an update
-sub createExtGroup($$$;$$) {
+#	p_groupArray: a reference to a hash or an array of hashes with the required keys needed to create new groups
+#	doReplace: (OPTIONAL) if true, the entry is an update
+sub createExtGroup(\[%@];$) {
 	my $self = shift;
 	my($p_groupArray,$doReplace) = @_;
 	
@@ -2479,7 +2473,7 @@ sub listJSONGroups(;$) {
 
 
 # Parameters:
-#	userUID: The uid of the user to be added to the groupOfNames.
+#	userUID: The uid of the user to be added to the groupOfNames, or an array of them.
 #	isOwner: Is this one becoming an owner?
 #	p_groupCN: The cn(s) of the groupOfNames where the user must be added
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
@@ -2490,98 +2484,114 @@ sub addUserToGroup($$$;$$) {
 	my $self = shift;
 	
 	my($userUID,$isOwner,$p_groupCN,$userDN,$groupDN)=@_;
+	my $p_userUIDs = (ref($userUID) eq 'ARRAY') ? $userUID : [ $userUID ];
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
 	
 	$p_groupCN = [ $p_groupCN ]  unless(ref($p_groupCN) eq 'ARRAY');
 	
-	# First, the user must be found
-	my($success, $payload) = $self->getUser($userUID,$userDN);
+	my $success = undef;
+	my $payload = undef;
+	my @users = ();
+	# First, all the user(s) must be found
+	foreach my $userUID (@{$p_userUIDs}) {
+		my 
+		($success, $payload) = $self->getUser($userUID,$userDN);
+		
+		last  unless($success);
+		
+		# Saving the LDAP user entries for further usage
+		push(@users,$payload);
+	}
 	#if($success && $payload->get_value('disabledAccount') eq 'TRUE') {
 	#	$success = undef;
 	#	$payload = [ 'Cannot modify a disabled user' ];
 	#}
 	
-	if($success) {
-		my $user = $payload;
-		$payload = [];
-		
-		my @newGroups = ();
-		
-		ADD_USER_GROUPCN:
-		foreach my $groupCN (@{$p_groupCN}) {
-			# Second, each group of names must be found
-			my($partialSuccess,$group) = $self->getGroup($groupCN,$groupDN);
+	# Then, let's add the users one by one
+	if($success && scalar(@users) > 0) {
+		foreach my $user (@users) {
+			$payload = [];
 			
-			unless($partialSuccess) {
-				$success = undef;
-				push(@{$payload},@{$group});
-				next;
+			my @newGroups = ();
+			
+			ADD_USER_GROUPCN:
+			foreach my $groupCN (@{$p_groupCN}) {
+				# Second, each group of names must be found
+				my($partialSuccess,$group) = $self->getGroup($groupCN,$groupDN);
+				
+				unless($partialSuccess) {
+					$success = undef;
+					push(@{$payload},@{$group});
+					next;
+				}
+				
+				# Is the user already in the group?
+				my $isMember = 1;
+				my $p_members = $group->get_value('member', 'asref' => 1);
+				foreach my $member (@{$p_members}) {
+					if($member eq $user->dn()) {
+						if($isOwner) {
+							$isMember = undef;
+						} else {
+							next ADD_USER_GROUPCN;
+						}
+					}
+				}
+				
+				if($isOwner) {
+					my $p_owners = $group->get_value('owner', 'asref' => 1);
+					foreach my $owner (@{$p_owners}) {
+						next ADD_USER_GROUPCN  if($owner eq $user->dn());
+					}
+				}
+				
+				push(@newGroups,[$group,$isMember,$isOwner]);
 			}
 			
-			# Is the user already in the group?
-			my $isMember = 1;
-			my $p_members = $group->get_value('member', 'asref' => 1);
-			foreach my $member (@{$p_members}) {
-				if($member eq $user->dn()) {
-					if($isOwner) {
-						$isMember = undef;
-					} else {
-						next ADD_USER_GROUPCN;
+			if($success && scalar(@newGroups) > 0) {
+				my @newGroupDNs = ();
+				foreach my $p_gDesc (@newGroups) {
+					my($group,$isMember,$isOwner) = @{$p_gDesc};
+					# Now, add the user dn to the group's member list
+					$group->changetype('modify');
+					$group->add('member' => $user->dn())  if($isMember);
+					$group->add('owner' => $user->dn())  if($isOwner);
+					
+					my $updMesg = $group->update($self->{'ldap'});
+					
+					if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+						$success = undef;
+						print STDERR $group->ldif()  unless(wantarray);
+						
+						push(@{$payload},"Unable to add ".($isOwner?"owner":"member")." ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
+						last;
+					}
+					
+					# Add only in case of new membership of a group
+					push(@newGroupDNs,$group->dn())  if($isMember);
+				}
+				
+				if($success && scalar(@newGroupDNs) > 0) {
+					@newGroups = ();
+					
+					# And, at last, add the group dn to the user's memberOf list
+					$user->changetype('modify');
+					$user->add(USER_MEMBEROF_ATTRIBUTE() => \@newGroupDNs);
+					
+					my $updMesg = $user->update($self->{'ldap'});
+					
+					if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+						$success = undef;
+						print STDERR $user->ldif()  unless(wantarray);
+						
+						push(@{$payload},"Unable to add memberOf ".join(',',@newGroupDNs)." to ".$user->dn()."\n".Dumper($updMesg));
 					}
 				}
 			}
 			
-			if($isOwner) {
-				my $p_owners = $group->get_value('owner', 'asref' => 1);
-				foreach my $owner (@{$p_owners}) {
-					next ADD_USER_GROUPCN  if($owner eq $user->dn());
-				}
-			}
-			
-			push(@newGroups,[$group,$isMember,$isOwner]);
-		}
-		
-		if($success && scalar(@newGroups) > 0) {
-			my @newGroupDNs = ();
-			foreach my $p_gDesc (@newGroups) {
-				my($group,$isMember,$isOwner) = @{$p_gDesc};
-				# Now, add the user dn to the group's member list
-				$group->changetype('modify');
-				$group->add('member' => $user->dn())  if($isMember);
-				$group->add('owner' => $user->dn())  if($isOwner);
-				
-				my $updMesg = $group->update($self->{'ldap'});
-				
-				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-					$success = undef;
-					print STDERR $group->ldif()  unless(wantarray);
-					
-					push(@{$payload},"Unable to add ".($isOwner?"owner":"member")." ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
-					last;
-				}
-				
-				# Add only in case of new membership of a group
-				push(@newGroupDNs,$group->dn())  if($isMember);
-			}
-			
-			if($success && scalar(@newGroupDNs) > 0) {
-				@newGroups = ();
-				
-				# And, at last, add the group dn to the user's memberOf list
-				$user->changetype('modify');
-				$user->add(USER_MEMBEROF_ATTRIBUTE() => \@newGroupDNs);
-				
-				my $updMesg = $user->update($self->{'ldap'});
-				
-				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-					$success = undef;
-					print STDERR $user->ldif()  unless(wantarray);
-					
-					push(@{$payload},"Unable to add memberOf ".join(',',@newGroupDNs)." to ".$user->dn()."\n".Dumper($updMesg));
-				}
-			}
+			last  unless($success);
 		}
 	}
 	
