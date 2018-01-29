@@ -2496,13 +2496,18 @@ sub addUserToGroup($$$;$$) {
 	my @users = ();
 	# First, all the user(s) must be found
 	foreach my $userUID (@{$p_userUIDs}) {
-		my 
-		($success, $payload) = $self->getUser($userUID,$userDN);
-		
-		last  unless($success);
-		
-		# Saving the LDAP user entries for further usage
-		push(@users,$payload);
+		# Is the user already a Net::LDAP::Entry????
+		if(Scalar::Util::blessed($userUID) && $userUID->isa('Net::LDAP::Entry')) {
+			$success = 1;
+			push(@users,$userUID);
+		} else {
+			($success, $payload) = $self->getUser($userUID,$userDN);
+			
+			last  unless($success);
+			
+			# Saving the LDAP user entries for further usage
+			push(@users,$payload);
+		}
 	}
 	#if($success && $payload->get_value('disabledAccount') eq 'TRUE') {
 	#	$success = undef;
