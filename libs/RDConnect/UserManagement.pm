@@ -601,13 +601,27 @@ sub _getPeopleOUDNFromJSON($\%) {
 	return $dn;
 }
 
+sub _getBaseGroupDNFromJSON($\%) {
+	my $uMgmt = shift;
+	
+	my($jsonGroup) = @_;
+	
+	my $intermediateOU = (exists($jsonGroup->{'groupPurpose'}) && $jsonGroup->{'groupPurpose'} ne 'sampleAccessControl') ? $jsonGroup->{'groupPurpose'} : undef;
+	
+	my $dnGroupDN = defined($intermediateOU) ? join(',','ou='.Net::LDAP::Util::escape_dn_value($intermediateOU),$uMgmt->{'groupDN'}) : $uMgmt->{'groupDN'};
+	
+	return wantarray ? ($dnGroupDN,$intermediateOU) : $dnGroupDN;
+}
+
 sub _getGroupDNFromJSON($\%) {
 	my $uMgmt = shift;
 	
 	my($jsonGroup) = @_;
 	my $cn = exists($jsonGroup->{'cn'}) ? $jsonGroup->{'cn'} : '';
 	
-	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$uMgmt->{'groupDN'});
+	my $groupDN = _getBaseGroupDNFromJSON($uMgmt,%{$jsonGroup});
+	
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$groupDN);
 	
 	return $dn;
 }
@@ -2117,6 +2131,44 @@ sub createGroup($$$;$$) {
 	} 
 }
 
+my @LDAP_GROUP_OU_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 ['extensibleObject','organizationalUnit'],
+);
+
+# Parameters:
+#	ou: The short, organizational unit name, which will hang on groupDN
+#	description: The description of the new organizational unit
+#	groupDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+#	doReplace: (OPTIONAL) If true, the entry is an update
+sub createGroupOU($$;$$) {
+	my $self = shift;
+	
+	my($ou,$description,$groupDN,$doReplace) = @_;
+	
+	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
+	
+	my $entry = Net::LDAP::Entry->new();
+	$entry->changetype('modify')  if($doReplace);
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$groupDN);
+	$entry->dn($dn);
+	$entry->add(
+		'ou'	=>	$ou,
+		'description'	=>	$description,
+		@LDAP_GROUP_OU_DEFAULT_ATTRIBUTES
+	);
+	
+	my $updMesg = $entry->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $entry->ldif();
+		
+		Carp::carp("Unable to create group organizational unit $dn (does the group organizational unit already exist?)\n".Dumper($updMesg));
+	}
+	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+
 # Parameters:
 #	p_groupArray: a reference to a hash or an array of hashes with the required keys needed to create new groups
 #	doReplace: (OPTIONAL) if true, the entry is an update
@@ -2142,6 +2194,13 @@ sub createExtGroup(\[%@];$) {
 					push(@{$p_groupEntry->{'members'}},$owner)  unless(exists($memberHash{$owner}));
 				}
 			}
+		}
+		
+		my($baseGroupDN,$intermediateOU) = _getBaseGroupDNFromJSON($self,%{$p_groupEntry});
+		
+		# Assuring the parent OU does exist
+		unless($self->existsDN($baseGroupDN)) {
+			$self->createGroupOU($intermediateOU,'Group category '.$intermediateOU);
 		}
 		
 		my $partialPayload = undef;
@@ -2439,7 +2498,7 @@ sub listGroups(;$) {
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $groupDN,
 		'filter' => '(objectClass=groupOfNames)',
-		'scope' => 'children'
+		'scope' => 'sub'
 	);
 	
 	my $success = $searchMesg->code() == Net::LDAP::LDAP_SUCCESS;
