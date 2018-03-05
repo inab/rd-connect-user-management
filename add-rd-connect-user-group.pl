@@ -78,7 +78,7 @@ sub processUserGroupsFile($$) {
 			# Skipping comments
 			next  if(substr($line,0,1) eq '#');
 			
-			chomp($line);
+			$line =~ s/[\n\r]+$//s;
 			my($userUID,$groupCN,$altUserUID,$altGroupCN,$junk) = split(/\t/,$line,5);
 			
 			if(defined($altGroupCN) && length($altGroupCN) > 0) {
