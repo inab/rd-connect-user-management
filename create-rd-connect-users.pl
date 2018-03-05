@@ -54,11 +54,17 @@ if(scalar(@ARGV)>=3) {
 			next  if(substr($line,0,1) eq '#');
 			
 			chomp($line);
-			my($email,$fullname,$username,$ouGroups,$givenName,$sn,$junk) = split(/\t/,$line,7);
+			$line =~ s/[\n\r]+$//s;
+			my($email,$fullname,$username,$ouGroups,$givenName,$sn,$userCategory,$junk) = split(/\t/,$line,8);
 			my($ou,$groups) = split(/,/,$ouGroups,2);
 			
+			$userCategory = 'Researcher'  unless(defined($userCategory) && length($userCategory) > 0);
+			
+			# The separator understood by Email::Address is the comma
+			$email =~ tr/;/,/;
 			my @addresses = Email::Address->parse($email);
 			
+			my @emails = ();
 			if(scalar(@addresses)==0) {
 				Carp::carp("Unable to parse e-mail $email from user $fullname. Skipping");
 				next;
@@ -66,7 +72,7 @@ if(scalar(@ARGV)>=3) {
 				# The destination user
 				my $to = $addresses[0];
 				# Re-defining the e-mail
-				$email = $to->address();
+				@emails = map { $_->address() } @addresses;
 				
 				$fullname = $to->phrase  unless(defined($fullname) && length($fullname)>0);
 				# Removing possible spaces before and after the fullname
@@ -106,8 +112,9 @@ if(scalar(@ARGV)>=3) {
 				'surname'	=>	[ $sn ],
 				'username'	=>	$username,
 				'organizationalUnit'	=>	$ou,
-				'email'	=>	[ $email ],
+				'email'	=>	\@emails,
 				'enabled'	=>	boolean::true,
+				'userCategory'	=>	$userCategory,
 			);
 			
 			push(@newUsers,\%newUser);
@@ -119,7 +126,10 @@ if(scalar(@ARGV)>=3) {
 		close($NOEMAIL)  if($NOEMAIL);
 		
 		if(defined($retval)) {
-			Carp::croak($retval->{'reason'}.'. Trace: '.(ref($retval->{'trace'})?join("\n",@{$retval->{'trace'}}):$retval->{'trace'}));
+			use Data::Dumper;
+			print STDERR Dumper(\@newUsers),"\n";
+			
+			Carp::croak($retval->{'reason'}.'. Trace: '.(ref($retval->{'trace'})?Dumper($retval->{'trace'}):$retval->{'trace'}));
 		}
 	} else {
 		Carp::croak("Unable to read file $usersFile");

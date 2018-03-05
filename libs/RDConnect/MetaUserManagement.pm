@@ -19,9 +19,12 @@ sub GetRandomPassword($) {
 	my $apgMin = $cfg->val(APGSECTION,'min-length',12);
 	my $apgMax = $cfg->val(APGSECTION,'max-length',16);
 	
-	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
-	
-	my $pass;
+	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-c','/dev/urandom','-n',1,'-q');
+
+	# my $apgCall = join(' ',@apgParams);
+	# 
+	# my $pass = `$apgCall`;
+	# 
 	if(open(my $APG,'-|',@apgParams)) {
 		$pass = <$APG>;
 		chomp($pass);
@@ -108,6 +111,7 @@ sub CreateUser($\[%@];$) {
 	
 	$p_newUsers = [ $p_newUsers]  if(ref($p_newUsers) eq 'HASH');
 	
+	my @errorStack = ();
 	foreach my $p_newUser (@{$p_newUsers}) {
 		my $userPassword;
 		if(exists($p_newUser->{'userPassword'})) {
@@ -156,21 +160,26 @@ EOF
 						$mail2->sendMessage($to,\%keyval2);
 					};
 					if($@) {
-						return {'reason' => 'Error while sending password e-mail','trace' => $@,'code' => 500};
+						push(@errorStack,{'reason' => 'Error while sending password e-mail','trace' => $@,'code' => 500});
 					}
 				};
 				
 				if($@) {
-					return {'reason' => 'Error while sending user e-mail','trace' => $@,'code' => 500};
+					push(@errorStack,{'reason' => 'Error while sending user e-mail','trace' => $@,'code' => 500});
 				}
 			} else {
 				print $NOEMAIL "$username\t$userPassword\n";
 			}
 		} else {
-			return {'reason' => 'Error while creating user','trace' => $payload,'code' => 500};
+			push(@errorStack,{'reason' => 'Error while creating user','trace' => $payload,'code' => 500});
 		}
 		
 		#send_file(\$data, content_type => 'image/jpeg');
+	}
+
+	if(scalar(@errorStack) > 0) {
+		return scalar(@errorStack) > 1 ? {'reason' => 'Multiple errors','trace' => \@errorStack,'code' => 500} : $errorStack[0];
+	} else {
 		return undef;
 	}
 }
