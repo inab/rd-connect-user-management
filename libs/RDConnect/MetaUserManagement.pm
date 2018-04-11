@@ -20,10 +20,11 @@ sub GetRandomPassword($) {
 	my $apgMax = $cfg->val(APGSECTION,'max-length',16);
 	
 	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-c','/dev/urandom','-n',1,'-q');
-
+	
+	my $pass = undef;
 	# my $apgCall = join(' ',@apgParams);
 	# 
-	# my $pass = `$apgCall`;
+	# $pass = `$apgCall`;
 	# 
 	if(open(my $APG,'-|',@apgParams)) {
 		$pass = <$APG>;
