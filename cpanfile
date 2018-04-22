@@ -23,3 +23,4 @@ requires 'Dancer2';
 requires 'Plack::Middleware::CrossOrigin';
 requires 'Plack::Middleware::Deflater';
 requires 'FCGI';
+requires 'URI';

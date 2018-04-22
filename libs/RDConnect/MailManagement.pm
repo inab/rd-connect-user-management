@@ -36,7 +36,7 @@ sub new($$\%;\@) {
 	my $cfg = shift;
 	my $configFile = $cfg->GetFileName;
 	
-	my $mailTemplate = shift;
+	my $mailTemplateParam = shift;
 	my %defaultKeyval = ();
 	my $p_keyval = shift;
 	@defaultKeyval{keys(%{$p_keyval})} = values(%{$p_keyval})  if(ref($p_keyval) eq 'HASH');
@@ -60,11 +60,22 @@ sub new($$\%;\@) {
 	my $templateMailBodyMime;
 	my $templateMailBody;
 	
+	my $mailTemplate;
+	if(ref($mailTemplateParam) eq 'HASH') {
+		$mailTemplate = $mailTemplateParam->{'template'};
+		$templateMailBodyMime = $mailTemplateParam->{'mime'};
+	} else {
+		$mailTemplate = $mailTemplateParam;
+	}
+	
+	# Is it a file or a reference to an scalar?
 	my $mailTemplateH = (ref($mailTemplate) eq 'SCALAR') ? IO::Scalar->new($mailTemplate) : $mailTemplate;
-	eval {
-		$templateMailBodyMime = File::MimeInfo::Magic::mimetype($mailTemplateH);
-	};
-	Carp::croak("ERROR: Unable to pre-process mail template $mailTemplate")  if($@ || !defined($templateMailBodyMime));
+	unless(defined($templateMailBodyMime)) {
+		eval {
+			$templateMailBodyMime = File::MimeInfo::Magic::mimetype($mailTemplateH);
+		};
+		Carp::croak("ERROR: Unable to pre-process mail template $mailTemplate . Reason: ".($@ ? $@ : '(undefined mail body mime)'))  if($@ || !defined($templateMailBodyMime));
+	}
 		
 	if(ref($mailTemplate) eq 'SCALAR') {
 		$templateMailBody = ${$mailTemplate};

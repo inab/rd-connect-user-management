@@ -10,6 +10,7 @@ use FindBin;
 use File::Spec;
 use File::Temp qw();
 use JSON -no_export;
+use URI;
 
 use lib File::Spec->catfile($FindBin::Bin,"libs");
 
@@ -197,9 +198,14 @@ get '/logout' => auth_cas logout => sub {
 sub dataUrl2TmpFile {
 	my($baseDir,$dataUrl,$num) = @_;
 	
+	my $datauri = URI->new($dataUrl);
+	
+	# Only data protocol
+	return undef  unless($datauri->scheme() eq 'data');
+	
 	my $filename;
 	
-	# Extracting the filename
+	# Extracting the filename (if possible)
 	if($dataUrl =~ /^data:(?:[^\/]+\/[^\/]+;)name=([^;]+);/) {
 		$filename = $1;
 	} else {
@@ -208,15 +214,15 @@ sub dataUrl2TmpFile {
 	
 	my $retval = File::Spec->catfile($baseDir,$filename);
 	
-	if(open(my $T,'<:raw',$retval)) {
-		print $T MIME::Base64::decode_base64url($dataUrl);
+	if(open(my $T,'>:raw',$retval)) {
+		print $T $datauri->data();
 		
 		close($T);
 	} else {
 		$retval = undef;
 	}
 	
-	return $retval;
+	return wantarray?($retval,$datauri->media_type()):$retval;
 }
 
 sub send_email {
@@ -324,7 +330,7 @@ sub send_email_base64 {
 	# First, let's save the file contents in real files (in a temporal directory)
 	my $tempdir = File::Temp->newdir(TMPDIR => 1);
 	
-	my $mailTemplate = dataUrl2TmpFile($tempdir->dirname,$mailTemplateBase64,0);
+	my($mailTemplate,$mailTemplateMime) = dataUrl2TmpFile($tempdir->dirname,$mailTemplateBase64,0);
 	my @attachmentFiles = ();
 	if(ref($p_attachmentsBase64) eq 'ARRAY') {
 		my $counter = 0;
@@ -335,7 +341,7 @@ sub send_email_base64 {
 		}
 	}
 	
-	return send_email($subject,$mailTemplate,\@attachmentFiles,$p_users,$p_groups,$p_organizationalUnits);
+	return send_email($subject,{'template'=>$mailTemplate,'mime'=>$mailTemplateMime},\@attachmentFiles,$p_users,$p_groups,$p_organizationalUnits);
 }
 
 # Now, the methods
