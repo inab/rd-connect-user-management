@@ -99,19 +99,27 @@ our $jserr = JSON->new->convert_blessed();
 package RDConnect::UserManagement::API;
 
 use Dancer2;
-use Dancer2::Serializer::JSON;
+##use Dancer2::Serializer::JSON;
+use Dancer2::Serializer::MaybeJSON;
 use Dancer2::Session::YAML;
 use Dancer2::Plugin::Auth::CAS;
 use Dancer2::Plugin::Auth::RDConnect;
 
 set engines => {
 	'serializer' => {
+		'MaybeJSON' => {
+			'convert_blessed' => 1,
+			'utf8'	=>	0
+		},
 		'JSON' => {
 			'convert_blessed' => 1,
 			'utf8'	=>	0
 		}
 	},
 	'deserializer' => {
+		'MaybeJSON' => {
+			'utf8'	=>	0
+		},
 		'JSON' => {
 			'utf8'	=>	0
 		}
@@ -165,7 +173,8 @@ set plugins => {
 
 # Order DOES matter!
 set session => 'YAML';
-set serializer => 'JSON';
+set serializer => 'MaybeJSON';
+#set serializer => 'JSON';
 set charset => 'UTF-8';
 
 # Basic information #
