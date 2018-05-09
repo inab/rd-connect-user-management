@@ -2216,7 +2216,10 @@ sub createExtGroup(\[%@];$) {
 					$doReplace
 				);
 		
-		last  unless($success);
+		unless($success) {
+			$payload = $partialPayload;
+			last;
+		}
 		
 		# The entry was created. Now, add all the members back!
 		# The dn of the entry
