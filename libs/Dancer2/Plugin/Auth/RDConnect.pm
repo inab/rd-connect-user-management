@@ -241,13 +241,15 @@ sub _auth_owner {
 					if($successUser) {
 						my($successGroup,$ldapGroup) = $uMgmt->getGroup($request->params->{group_id});
 						
-						if($successGroup && $ldapGroup->exists('owner')) {
-							my $p_owners = $ldapGroup->get_value('owner', asref => 1);
-							my $userDN = lc($ldapUser->dn());
-							
-							foreach my $owner (@{$p_owners}) {
-								# Jump to the code if the logged-in user is an owner
-								goto $coderef  if(lc($owner) eq $userDN);
+						if($successGroup) {
+							if($ldapGroup->exists('owner')) {
+								my $p_owners = $ldapGroup->get_value('owner', asref => 1);
+								my $userDN = lc($ldapUser->dn());
+								
+								foreach my $owner (@{$p_owners}) {
+									# Jump to the code if the logged-in user is an owner
+									goto $coderef  if(lc($owner) eq $userDN);
+								}
 							}
 							
 							# And its groups (if any)
