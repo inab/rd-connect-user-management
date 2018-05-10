@@ -2333,6 +2333,13 @@ sub getJSONGroup($;$) {
 		$payload2 = $payload;
 		# The original payload is an LDAP groupOfNames entry
 		$payload = $self->genJSONGroupsFromLDAPGroups([$payload2])->[0];
+		
+		# This is needed to fix inconsistent states and pass the validation
+		unless(exists($payload->{'owner'}) && scalar(@{$payload->{'owner'}})>0) {
+			$self->addOwnerToGroup('root',$groupCN,undef,$groupDN);
+			
+			return $self->getJSONGroup(@_);
+		}
 	}
 	
 	return wantarray ? ($success,$payload,$payload2) : $success;
@@ -2422,7 +2429,16 @@ sub getGroupOwners($;$) {
 	
 	my($groupCN,$groupDN)=@_;
 	
-	return $self->getGroupUsersFacet($groupCN,'owner',$groupDN);
+	my($success,$payload) = $self->getGroupUsersFacet($groupCN,'owner',$groupDN);
+	
+	if($success && scalar(@{$payload}) == 0) {
+		# This is needed to fix inconsistent states and pass the validation
+		$self->addOwnerToGroup('root',$groupCN,undef,$groupDN);
+		
+		($success,$payload) = $self->getGroupUsersFacet($groupCN,'owner',$groupDN);
+	}
+	
+	return ($success,$payload);
 }
 
 # Parameters:
@@ -2528,6 +2544,15 @@ sub listJSONGroups(;$) {
 	
 	if($success) {
 		$payload = $self->genJSONGroupsFromLDAPGroups($payload);
+		
+		foreach my $jsonGroup (@{$payload}) {
+			# This is needed to fix inconsistent states and pass the validation
+			unless(exists($jsonGroup->{'owner'}) && scalar(@{$jsonGroup->{'owner'}})>0) {
+				$self->addOwnerToGroup('root',$jsonGroup->{'cn'},undef,$groupDN);
+				
+				(undef,$jsonGroup,undef) = $self->getJSONGroup($jsonGroup->{'cn'},$groupDN);
+			}
+		}
 	}
 	
 	return ($success,$payload);
