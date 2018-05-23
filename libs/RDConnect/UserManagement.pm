@@ -5,6 +5,7 @@ use v5.10.1;
 use experimental 'smartmatch';
 
 use boolean qw();
+use POSIX ();
 
 package RDConnect::UserManagement;
 
@@ -182,6 +183,50 @@ sub encodePassword($) {
 	my $digestedPass = '{'.$HASH_MAPPING{$self->{'digestAlg'}}.'}'.encode_base64($hashedContent,'');
 	
 	return $digestedPass;
+}
+
+use constant TOKEN_SALT_SIZE	=> 16;
+# Parameters:
+#	token: The clear token, to be encoded and hashed
+sub encodeToken($;$) {
+	my $self = shift;
+	
+	# The token to encode
+	my($token,$salt) = @_;
+	
+	# The digest algorithm
+	unless(exists($self->{_digestToken})) {
+		$self->{_digestToken} = Digest->new('SHA-1');
+	}
+	
+	# Generate a different salt on each invocation (unless we are reproducing it)
+	$salt = __make_salt(TOKEN_SALT_SIZE)  unless(defined($salt));
+	
+	# Now, let's encode!
+	$self->{_digestToken}->reset();
+	$self->{_digestToken}->add($token);
+	$self->{_digestToken}->add($salt);
+	
+	my $hashedContent = $self->{_digestToken}->digest;
+	$hashedContent = $salt.$hashedContent;
+	my $digestedToken = MIME::Base64::encode_base64url($hashedContent);
+	
+	return $digestedToken;
+}
+
+# Parameters:
+#	plainToken: The clear token
+#	expectedToken: The digested token, to be validated
+sub validateToken($$) {
+	my $self = shift;
+	
+	# The token to check
+	my($token,$digestedToken) = @_;
+	
+	# Getting the salt in order to reproduce the digestedToken
+	my $undigestedToken = MIME::Base64::decode_base64url($digestedToken);
+	my $salt = substr($undigestedToken,0,TOKEN_SALT_SIZE);
+	return $digestedToken eq $self->encodeToken($token,$salt);
 }
 
 my @LDAP_USER_DEFAULT_ATTRIBUTES = (
@@ -1384,6 +1429,150 @@ sub enableUser($$;$) {
 			print STDERR $user->ldif()  unless(wantarray);
 			
 			$payload = [ "Unable to ".($doEnable ? 'enable' : 'disable')." user $dn\n".Dumper($updMesg) ];
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	user: an LDAP Result instance from the user entry
+# It returns the composed token
+sub generateGDPRTokenFromUser($) {
+	my $self = shift;
+	
+	my($user) = @_;
+	
+	my $token = join(';',$user->get_value('uid'),$user->get_value('mail'));
+	
+	return $token;
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the hash string 
+sub generateGDPRHash($;$) {
+	my $self = shift;
+	
+	my($username,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my($success,$payload) = $self->getUser($username,$userDN);
+	if($success) {
+		my $user = $payload;
+		
+		my $token = $self->generateGDPRTokenFromUser($user);
+		
+		my $encodedToken = $self->encodeToken($token);
+		
+		# Now, reset the user attribute
+		my $dn = $user->dn();
+		my $isAdded = $user->exists('acceptedGDPR');
+		
+		$user->changetype('modify');
+		if($isAdded) {
+			$user->replace(
+				'acceptedGDPR'	=>	'GDPR',
+			);
+		} else{
+			$user->add(
+				'acceptedGDPR'	=>	'GDPR',
+			);
+		}
+
+		my $updMesg = $user->update($self->{'ldap'});
+		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+			$success = undef;
+			print STDERR $user->ldif()  unless(wantarray);
+			
+			$payload = [ "Unable to set GDPR attribute on user $dn\n".Dumper($updMesg) ];
+		} else {
+			$payload = $encodedToken;
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	username: the RD-Connect username or user e-mail
+#	encodedToken: the hash to be validated
+#	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the user on success (user enabled or disabled)
+sub acceptGDPRHash($$;$) {
+	my $self = shift;
+	
+	my($username,$encodedToken,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my($success,$payload) = $self->getUser($username,$userDN);
+	if($success) {
+		my $user = $payload;
+		my $isAdded = $user->exists('acceptedGDPR');
+		if($isAdded) {
+			my $acceptedGDPR = $user->get_value('acceptedGDPR');
+			if($acceptedGDPR ne 'GDPR') {
+				$success = undef;
+				$payload = [ "GDPR already accepted" ];
+			}
+		}
+		
+		if($success) {
+			my $token = $self->generateGDPRTokenFromUser($user);
+			
+			if($self->validateToken($token,$encodedToken)) {
+				my $acceptedTimestamp = POSIX::strftime('%Y-%m-%dT%H:%M:%SZ', gmtime(time()));
+				my $dn = $user->dn();
+				
+				$user->changetype('modify');
+				if($isAdded) {
+					$user->replace(
+						'acceptedGDPR'	=>	$acceptedTimestamp,
+					);
+				} else{
+					$user->add(
+						'acceptedGDPR'	=>	$acceptedTimestamp,
+					);
+				}
+
+				my $updMesg = $user->update($self->{'ldap'});
+				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+					$success = undef;
+					print STDERR $user->ldif()  unless(wantarray);
+					
+					$payload = [ "Unable to set GDPR attribute on user $dn\n".Dumper($updMesg) ];
+				}
+			} else {
+				$success = undef;
+				$payload = [ "Invalid GDPR token" ];
+			}
 		}
 	}
 	
