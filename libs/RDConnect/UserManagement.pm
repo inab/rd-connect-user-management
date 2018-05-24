@@ -816,6 +816,7 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 	
 	# Second pass, user creation
 	my $j = getJSONHandler();
+	my @users = ();
 	foreach my $p_entryHash (@{$p_entryArray}) {
 		# Let's work!
 		my $entry = Net::LDAP::Entry->new();
@@ -881,9 +882,11 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 				return undef;
 			}
 		}
+		
+		push(@users,$entry);
 	}
 	
-	return wantarray ? (1,$p_entryArray) : 1;
+	return wantarray ? (1,$p_entryArray,\@users) : 1;
 }
 
 
@@ -3986,6 +3989,7 @@ my @LDAP_DOMAIN_DEFAULT_ATTRIBUTES = (
 );
 
 use constant NewUserDomain	=>	'newUserTemplates';
+use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
 
 # Parameters:
 #	domainCN: The short, domain name, which will hang on parentDN

@@ -47,7 +47,7 @@ sub GetMailManagementInstance($$\%;\@) {
 sub FetchEmailTemplate($$) {
 	my($uMgmt,$domainId) = @_;
 	
-	my($successMail,$payloadMail) = $uMgmt->listJSONDocumentsFromDomain(RDConnect::UserManagement::NewUserDomain);
+	my($successMail,$payloadMail) = $uMgmt->listJSONDocumentsFromDomain($domainId);
 	
 	if($successMail) {
 		# Now, let's fetch
@@ -78,12 +78,12 @@ sub FetchEmailTemplate($$) {
 		}
 		
 		unless(defined($mailTemplate)) {
-			return {'reason' => 'Error while fetching mail templates in order to create user','trace' => $payloadMail,'code' => 500};
+			return {'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500};
 		}
 		
 		return ($mailTemplate,@attachmentFiles);
 	} else {
-		return {'reason' => 'Error while fetching mail templates in order to create user','trace' => $payloadMail,'code' => 500};
+		return {'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500};
 	}
 }
 
@@ -92,6 +92,43 @@ sub NewUserEmailTemplate($) {
 	
 	return FetchEmailTemplate($uMgmt,RDConnect::UserManagement::NewUserDomain);
 }
+
+
+my $DEFAULT_passMailTemplate = <<'EOF' ;
+The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
+
+You should change this password by a different one as soon as possible.
+
+Kind Regards,
+	RD-Connect team
+EOF
+
+sub ChangedPasswordEmailTemplate($) {
+	my($uMgmt) = @_;
+	
+	my @retval = FetchEmailTemplate($uMgmt,RDConnect::UserManagement::ChangedPasswordDomain);
+	
+	if(ref($retval[0]) eq 'HASH') {
+		# Side effect, initialize changed password email template
+		# First, get/create the domain
+		$uMgmt->getDomain(RDConnect::UserManagement::ChangedPasswordDomain,1);
+		$uMgmt->attachDocumentForDomain(
+			RDConnect::UserManagement::ChangedPasswordDomain,
+			{
+				'cn' =>	'changedPassMailTemplate.html',
+				'description' => 'Changed password mail template',
+				'documentClass' => 'mailTemplate',
+			},
+			$DEFAULT_passMailTemplate
+		);
+		
+		# Last, set the return value
+		@retval = (\$DEFAULT_passMailTemplate);
+	}
+	
+	return @retval;
+}
+
 
 sub CreateUser($\[%@];$) {
 	my($uMgmt,$p_newUsers,$NOEMAIL) = @_;
@@ -103,11 +140,16 @@ sub CreateUser($\[%@];$) {
 	my $mailTemplate;
 	my @attachmentFiles = ();
 	
+	my $passMailTemplate;
+	my @passAttachmentFiles = ();
+	
 	unless($NOEMAIL) {
 		($mailTemplate,@attachmentFiles) = NewUserEmailTemplate($uMgmt);
 		
 		# Return if error condition
 		return $mailTemplate  if(ref($mailTemplate) eq 'HASH');
+		
+		($passMailTemplate,@passAttachmentFiles) = ChangedPasswordEmailTemplate($uMgmt);
 	}
 	
 	$p_newUsers = [ $p_newUsers]  if(ref($p_newUsers) eq 'HASH');
@@ -123,12 +165,13 @@ sub CreateUser($\[%@];$) {
 			$p_newUser->{'userPassword'} = $userPassword;
 		}
 		
-		my($success,$payload) = $uMgmt->createExtUser($p_newUser);
+		my($success,$payload,$p_users) = $uMgmt->createExtUser($p_newUser);
 		
 		if($success) {
+			my $user = $p_users->[0];
 			my $username = $payload->[0]{'username'};
 			unless($NOEMAIL) {
-				my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
+				my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)', 'gdprtoken' => '(undefined)' );
 				my %keyval2 = ( 'password' => '(undefined)' );
 				
 				# Mail configuration parameters
@@ -136,15 +179,7 @@ sub CreateUser($\[%@];$) {
 				my $mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
 				$mail1->setSubject($mail1->getSubject().' (I) ['.$unique.']');
 				
-				my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-				my $mail2 = GetMailManagementInstance($cfg,\$passMailTemplate,%keyval2);
+				my $mail2 = GetMailManagementInstance($cfg,$passMailTemplate,%keyval2,@passAttachmentFiles);
 				$mail2->setSubject($mail2->getSubject().' (II) ['.$unique.']');
 				
 				my $fullname = $payload->[0]{'cn'};
@@ -153,6 +188,7 @@ EOF
 				
 				$keyval1{'username'} = $username;
 				$keyval1{'fullname'} = $fullname;
+				$keyval1{'gdprtoken'} = $uMgmt->generateGDPRHashFromUser($user);
 				eval {
 					$mail1->sendMessage($to,\%keyval1);
 					
@@ -196,6 +232,8 @@ sub ResetUserPassword($$$) {
 		$userPassword = GetRandomPassword($cfg);
 		return $userPassword  if(ref($userPassword));
 	}
+
+	my($passMailTemplate,@passAttachmentFiles) = ChangedPasswordEmailTemplate($uMgmt);
 	
 	my($success,$payload) = $uMgmt->resetUserPassword($userId,$userPassword);
 	
@@ -210,15 +248,7 @@ sub ResetUserPassword($$$) {
 		my $mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
 		$mail1->setSubject($mail1->getSubject().' (resetted) ['.$unique.']');
 		
-		my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-		my $mail2 = GetMailManagementInstance($cfg,\$passMailTemplate,%keyval2);
+		my $mail2 = GetMailManagementInstance($cfg,$passMailTemplate,%keyval2,@passAttachmentFiles);
 		$mail2->setSubject('RD-Connect password reset for user '.$userId.' ['.$unique.']');
 		
 		my $username = $payload->{'username'};
