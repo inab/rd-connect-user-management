@@ -1,0 +1,9 @@
+Dear [% fullname %],
+	following the changes in the european GDPR, you must accept the code of conduct of RD-Connect. In the meanwhile, your account will be disabled.
+
+	Next link will mark your acceptance of RD-Connect code of conduct.
+
+https://rdconnectcas.rd-connect.eu/RDConnect-UserManagement-API/users/[% username %]/acceptGDPR/[% gdprtoken %]
+
+	Best,
+		The RD-Connect team
