@@ -80,7 +80,7 @@ sub new($$\%;\@) {
 	if(ref($mailTemplate) eq 'SCALAR') {
 		$templateMailBody = ${$mailTemplate};
 	} else {
-		if(open(my $TT,'<:utf8',$mailTemplate)) {
+		if(open(my $TT,'<:encoding(UTF-8)',$mailTemplate)) {
 			local $/;
 			$templateMailBody = <$TT>;
 			
@@ -150,7 +150,7 @@ sub setSubject($) {
 }
 
 # Parameters:
-#	to: A Email::Address instance
+#	to: A Email::Address instance, or an array of instances
 #	p_keyval: a reference to a hash
 sub sendMessage($\%) {
 	my $self = shift;
@@ -159,10 +159,13 @@ sub sendMessage($\%) {
 	
 	# Preparing and sending the e-mails
 	my $mailBody = $self->{'templateMailBody'};
+	my $subject = $self->{'subject'};
 	
 	foreach my $var (keys(%{$self->{'replacements'}})) {
 		my $val = exists($p_keyval->{$var}) ? $p_keyval->{$var} : (exists($self->{'defaultKeyval'}{$var}) ? $self->{'defaultKeyval'}{$var} : '(FIXME!)');
+		
 		$mailBody =~ s/\Q[% $var %]\E/$val/g;
+		$subject =~ s/\Q[% $var %]\E/$val/g;
 	}
 	
 	my $mailPart = Email::MIME->create(
@@ -178,7 +181,7 @@ sub sendMessage($\%) {
 	my $p_header_str = [
 		From	=>	$self->{'from'},
 		To	=>	$to,
-		Subject	=>	$self->{'subject'}
+		Subject	=>	$subject
 	];
 	#if(exists($self->{'attachments'})) {
 		my @parts = ( $mailPart );
