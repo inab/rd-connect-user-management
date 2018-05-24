@@ -45,7 +45,9 @@ sub new($) {
 	my $configFile = $cfg->GetFileName;
 	
 	# LDAP connection and configuration parameters
-	my @ldap_conn_params = ();
+	my @ldap_conn_params = (
+		'raw' => qr/(?i:^jpegPhoto|;binary)/
+	);
 	
 	my $ldap_host = $cfg->val(LDAP_SECTION,'ldap_host');
 	Carp::croak("ldap_host parameter was not defined in $configFile")  unless(defined($ldap_host));
@@ -1448,7 +1450,7 @@ sub enableUser($$;$) {
 # Parameters:
 #	user: an LDAP Result instance from the user entry
 # It returns the composed token
-sub generateGDPRTokenFromUser($) {
+sub computeGDPRTokenFromUser($) {
 	my $self = shift;
 	
 	my($user) = @_;
@@ -1456,6 +1458,63 @@ sub generateGDPRTokenFromUser($) {
 	my $token = join(';',$user->get_value('uid'),$user->get_value('mail'));
 	
 	return $token;
+}
+
+# Parameters:
+#	user: the LDAP user entry
+# It returns the hash string
+sub setAcceptedGDPRAttr($$) {
+	my $self = shift;
+	
+	my($user,$acceptedGDPR) = @_;
+	
+	# Now, reset the user attribute
+	my $dn = $user->dn();
+	my $isAdded = $user->exists('acceptedGDPR');
+	
+	$user->changetype('modify');
+	if($isAdded) {
+		$user->replace(
+			'acceptedGDPR'	=>	$acceptedGDPR,
+		);
+	} else{
+		$user->add(
+			'acceptedGDPR'	=>	$acceptedGDPR,
+		);
+	}
+	
+	my($success,$payload);
+	
+	my $updMesg = $user->update($self->{'ldap'});
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $user->ldif()  unless(wantarray);
+		
+		$payload = [ "Unable to set GDPR attribute on user $dn\n".Dumper($updMesg) ];
+	} else {
+		$success = 1;
+	}
+	
+	return ($success,$payload);
+}
+
+# Parameters:
+#	user: the LDAP user entry
+# It returns the hash string
+sub generateGDPRHashFromUser($) {
+	my $self = shift;
+	
+	my($user) = @_;
+	
+	my($success,$payload) = $self->setAcceptedGDPRAttr($user,'GDPR');
+	if($success) {
+		my $token = $self->computeGDPRTokenFromUser($user);
+		
+		my $encodedToken = $self->encodeToken($token);
+		
+		$payload = $encodedToken;
+	}
+	
+	return ($success,$payload);
 }
 
 # Parameters:
@@ -1475,34 +1534,7 @@ sub generateGDPRHash($;$) {
 	if($success) {
 		my $user = $payload;
 		
-		my $token = $self->generateGDPRTokenFromUser($user);
-		
-		my $encodedToken = $self->encodeToken($token);
-		
-		# Now, reset the user attribute
-		my $dn = $user->dn();
-		my $isAdded = $user->exists('acceptedGDPR');
-		
-		$user->changetype('modify');
-		if($isAdded) {
-			$user->replace(
-				'acceptedGDPR'	=>	'GDPR',
-			);
-		} else{
-			$user->add(
-				'acceptedGDPR'	=>	'GDPR',
-			);
-		}
-
-		my $updMesg = $user->update($self->{'ldap'});
-		if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-			$success = undef;
-			print STDERR $user->ldif()  unless(wantarray);
-			
-			$payload = [ "Unable to set GDPR attribute on user $dn\n".Dumper($updMesg) ];
-		} else {
-			$payload = $encodedToken;
-		}
+		($success, $payload) = $self->generateGDPRHashFromUser($user);
 	}
 	
 	if(wantarray) {
@@ -1545,30 +1577,12 @@ sub acceptGDPRHash($$;$) {
 		}
 		
 		if($success) {
-			my $token = $self->generateGDPRTokenFromUser($user);
+			my $token = $self->computeGDPRTokenFromUser($user);
 			
 			if($self->validateToken($token,$encodedToken)) {
 				my $acceptedTimestamp = POSIX::strftime('%Y-%m-%dT%H:%M:%SZ', gmtime(time()));
-				my $dn = $user->dn();
 				
-				$user->changetype('modify');
-				if($isAdded) {
-					$user->replace(
-						'acceptedGDPR'	=>	$acceptedTimestamp,
-					);
-				} else{
-					$user->add(
-						'acceptedGDPR'	=>	$acceptedTimestamp,
-					);
-				}
-
-				my $updMesg = $user->update($self->{'ldap'});
-				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-					$success = undef;
-					print STDERR $user->ldif()  unless(wantarray);
-					
-					$payload = [ "Unable to set GDPR attribute on user $dn\n".Dumper($updMesg) ];
-				}
+				($success,$payload) = $self->setAcceptedGDPRAttr($user,$acceptedTimestamp);
 			} else {
 				$success = undef;
 				$payload = [ "Invalid GDPR token" ];
