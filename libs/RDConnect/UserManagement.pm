@@ -3314,6 +3314,7 @@ sub attachDocumentForEntry($$\%$) {
 	# Trying to guess the type of file
 	eval {
 		$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$data));
+		$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $data =~ /<(p|div|br|span)>/);
 	};
 	
 	return $self->createLDAPFromJSON(
@@ -3535,6 +3536,8 @@ sub modifyDocumentFromEntry($$$) {
 		# Trying to guess the type of file
 		eval {
 			$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$data));
+			
+			$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $data =~ /<(p|div|br|span)>/);
 		};
 		
 		# Silent "magic" errors
