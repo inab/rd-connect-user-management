@@ -35,6 +35,7 @@ sub encode_json {
     my ( $entity ) = @_;
 
     JSON::MaybeXS::encode_json($entity);
+    #JSON::MaybeXS->new({'utf8'=> 1})->encode($entity);
 }
 
 # class definition
@@ -47,7 +48,7 @@ sub serialize {
         $options->{$_} = $config->{$_} unless exists $options->{$_};
     }
 
-    $options->{utf8} = 1 if !defined $options->{utf8};
+    $options->{utf8} = 1 if defined $options->{utf8};
     JSON::MaybeXS->new($options)->encode($entity);
 }
 
