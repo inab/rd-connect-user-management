@@ -793,6 +793,21 @@ sub mail_user {
 	return $retval;
 }
 
+sub accept_gdpr_user {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getUser(params->{user_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+	}
+	
+	my $user = $payload;
+	# Ignore whether it worked or failed
+	($success,$payload) = $uMgmt->acceptGDPRHashFromUser($user,params->{'token'});
+	
+	redirect 'https://platform.rd-connect.eu/', 303;
+}	
 
 # Routing for /users prefix
 prefix '/users' => sub {
@@ -812,6 +827,8 @@ prefix '/users' => sub {
 	del '/:user_id/groups' => auth_cas login => rdconnect_auth user => \&remove_user_from_groups;
 	
 	post '/:user_id/_mail' => auth_cas login => rdconnect_auth user => \&mail_user;
+	
+	get '/:user_id/acceptGDPR/:token' => \&accept_gdpr_user;
 	
 	# Legal documents related to the user
 	prefix '/:user_id/documents' => sub {

@@ -63,6 +63,8 @@ The services under the endpoint have several levels of authorization, which requ
 	* `POST /users/:user_id/enable` `[adm]`: It enables a disabled user (privileged operation)
 
 	* `POST /users/:user_id/disable` `[u]`: It disables an enabled user (privileged operation)
+
+	* `GET /users/:user_id/acceptGDPR/:token`: It validates a GDPR acceptation token (it produces a redirection).
 	
 	* `POST /users/:user_id/resetPassword` `[u]`: It resets the password, optionally to the given one in `userPassword` object key. If the user is disabled it enables it (privileged operation)
 

@@ -1551,11 +1551,47 @@ sub generateGDPRHash($;$) {
 }
 
 # Parameters:
+#	user: the LDAP entry of the user
+#	encodedToken: the hash to be validated
+# It returns true if success
+sub acceptGDPRHashFromUser($$) {
+	my $self = shift;
+	
+	my($user,$encodedToken) = @_;
+	
+	my($success,$payload);
+	$success = 1;
+	my $isAdded = $user->exists('acceptedGDPR');
+	if($isAdded) {
+		my $acceptedGDPR = $user->get_value('acceptedGDPR');
+		if($acceptedGDPR ne 'GDPR') {
+			$payload = [ "GDPR already accepted" ];
+		}
+	}
+	
+	if($success) {
+		my $token = $self->computeGDPRTokenFromUser($user);
+		
+		if($self->validateToken($token,$encodedToken)) {
+			my $acceptedTimestamp = POSIX::strftime('%Y-%m-%dT%H:%M:%SZ', gmtime(time()));
+			
+			($success,$payload) = $self->setAcceptedGDPRAttr($user,$acceptedTimestamp);
+		} else {
+			$success = undef;
+			$payload = [ "Invalid GDPR token" ];
+		}
+	}
+	
+	return ($success,$payload);
+}
+
+
+# Parameters:
 #	username: the RD-Connect username or user e-mail
 #	encodedToken: the hash to be validated
 #	userDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
 #		it uses the one read from the configuration file.
-# It returns the LDAP entry of the user on success (user enabled or disabled)
+# It returns true if success
 sub acceptGDPRHash($$;$) {
 	my $self = shift;
 	
@@ -1567,27 +1603,7 @@ sub acceptGDPRHash($$;$) {
 	my($success,$payload) = $self->getUser($username,$userDN);
 	if($success) {
 		my $user = $payload;
-		my $isAdded = $user->exists('acceptedGDPR');
-		if($isAdded) {
-			my $acceptedGDPR = $user->get_value('acceptedGDPR');
-			if($acceptedGDPR ne 'GDPR') {
-				$success = undef;
-				$payload = [ "GDPR already accepted" ];
-			}
-		}
-		
-		if($success) {
-			my $token = $self->computeGDPRTokenFromUser($user);
-			
-			if($self->validateToken($token,$encodedToken)) {
-				my $acceptedTimestamp = POSIX::strftime('%Y-%m-%dT%H:%M:%SZ', gmtime(time()));
-				
-				($success,$payload) = $self->setAcceptedGDPRAttr($user,$acceptedTimestamp);
-			} else {
-				$success = undef;
-				$payload = [ "Invalid GDPR token" ];
-			}
-		}
+		($success,$payload) = $self->acceptGDPRHashFromUser($user,$encodedToken);
 	}
 	
 	if(wantarray) {
