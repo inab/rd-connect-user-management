@@ -33,7 +33,7 @@ if(scalar(@ARGV)>=3) {
 	my $mail1;
 	# Mail configuration parameters
 	$mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
-	$mail1->setSubject('RD-Connect GDPR Acceptance');
+	$mail1->setSubject('IMPORTANT! RD-Connect GPAP: please renew your access in accordance with the EU GDPR');
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
