@@ -20,17 +20,51 @@ if(scalar(@ARGV)==2) {
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
-	my($success,$payload) = $uMgmt->generateGDPRHash($username);
-	
-	if($success) {
-		print "Token ===> $payload\n";
-		exit 0;
-	} else {
-		foreach my $err (@{$payload}) {
-			Carp::carp($err);
+	my @users = ();
+	if(substr($username,0,1) eq '@') {
+		my($success,$payload) = $uMgmt->getGroupMembers(substr($username,1));
+		if($success) {
+			push(@users,@{$payload});
+		} else {
+			# Reverting state
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+			Carp::carp("Unable to find group / role $username. Does it exist?");
 		}
-		exit 1;
+	} else {
+		my($success,$payload) = $uMgmt->getUser($username);
+		if($success) {
+			push(@users,$payload);
+		} else {
+			# Reverting state
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+			Carp::carp("Unable to find user $username. Does it exist?");
+		}
 	}
+	
+	my $exitval = 0;
+	foreach my $user (@users) {
+		# Don't send the e-mail to disabled accounts
+		next  if($user->get_value('disabledAccount') eq 'TRUE');
+		
+		my($success,$payload) = $uMgmt->generateGDPRHashFromUser($user);
+		my $username = $user->get_value('uid');
+		
+		if($success) {
+			print "$username ===> $payload\n";
+		} else {
+			print "$username XXXX\n";
+			$exitval = 1;
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+	}
+	
+	exit $exitval;
 } else {
-	die "Usage: $0 {IniFile} {username or user e-mail}\n";
+	die "Usage: $0 {IniFile} {username, user e-mail or \@group name}\n";
 }
