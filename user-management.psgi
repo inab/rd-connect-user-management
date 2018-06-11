@@ -345,12 +345,12 @@ sub send_email_base64 {
 		my $counter = 0;
 		foreach my $attachmentBase64 (@{$p_attachmentsBase64}) {
 			$counter++;
-			my $filename = dataUrl2TmpFile($tempdir->dirname,$attachmentBase64,$counter);
-			push(@attachmentFiles,$filename)  if(defined($filename));
+			my($filename,$mime) = dataUrl2TmpFile($tempdir->dirname,$attachmentBase64,$counter);
+			push(@attachmentFiles,{'content' => $filename,'mime'=>$mime})  if(defined($filename));
 		}
 	}
 	
-	return send_email($subject,{'template'=>$mailTemplate,'mime'=>$mailTemplateMime},\@attachmentFiles,$p_users,$p_groups,$p_organizationalUnits);
+	return send_email($subject,{'content'=>$mailTemplate,'mime'=>$mailTemplateMime},\@attachmentFiles,$p_users,$p_groups,$p_organizationalUnits);
 }
 
 # Now, the methods

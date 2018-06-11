@@ -68,10 +68,15 @@ sub FetchEmailTemplate($$) {
 					
 					# Here the payload is the document
 					my $data = $payloadT->get_value('content');
+					my $mime = $payloadT->get_value('mimeType');
+					my $preparedMime = {
+						'content' => \$data,
+						'mime' => $mime
+					};
 					if($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate') {
-						$mailTemplate = \$data;
+						$mailTemplate = $preparedMime;
 					} else {
-						push(@attachmentFiles,\$data);
+						push(@attachmentFiles,$preparedMime);
 					}
 				}
 			}

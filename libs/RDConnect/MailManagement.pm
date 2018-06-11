@@ -62,7 +62,7 @@ sub new($$\%;\@) {
 	
 	my $mailTemplate;
 	if(ref($mailTemplateParam) eq 'HASH') {
-		$mailTemplate = $mailTemplateParam->{'template'};
+		$mailTemplate = $mailTemplateParam->{'content'};
 		$templateMailBodyMime = $mailTemplateParam->{'mime'};
 	} else {
 		$mailTemplate = $mailTemplateParam;
@@ -73,6 +73,9 @@ sub new($$\%;\@) {
 	unless(defined($templateMailBodyMime)) {
 		eval {
 			$templateMailBodyMime = File::MimeInfo::Magic::mimetype($mailTemplateH);
+			if($templateMailBodyMime eq 'text/plain' && ref($mailTemplate) eq 'SCALAR' && $$mailTemplate =~ /<(p|div|br|span)>/) {
+				$templateMailBodyMime = 'text/html';
+			}
 		};
 		Carp::croak("ERROR: Unable to pre-process mail template $mailTemplate . Reason: ".($@ ? $@ : '(undefined mail body mime)'))  if($@ || !defined($templateMailBodyMime));
 	}
@@ -98,11 +101,21 @@ sub new($$\%;\@) {
 	
 	# Identify the attachments
 	my @attachments = ();
-	foreach my $attachmentFile (@attachmentFiles) {
+	foreach my $attachmentFileComponent (@attachmentFiles) {
+		my $attachmentFile;
 		my $mime;
-		eval {
-			$mime = File::MimeInfo::Magic::mimetype($attachmentFile);
-		};
+		if(ref($attachmentFileComponent) eq 'HASH') {
+			$attachmentFile = $attachmentFileComponent->{'content'};
+			$mime = $attachmentFileComponent->{'mime'};
+		} else {
+			my $attachmentFile = (ref($attachmentFileComponent) eq 'SCALAR') ? IO::Scalar->new($attachmentFileComponent) : $attachmentFileComponent;
+			eval {
+				$mime = File::MimeInfo::Magic::mimetype($attachmentFile);
+				if($mime eq 'text/plain' && ref($attachmentFileComponent) eq 'SCALAR' && $$attachmentFileComponent =~ /<(p|div|br|span)>/) {
+					$mime = 'text/html';
+				}
+			};
+		}
 		
 		Carp::croak("ERROR: Unable to pre-process attachment $attachmentFile")  if($@ || !defined($mime));
 		
