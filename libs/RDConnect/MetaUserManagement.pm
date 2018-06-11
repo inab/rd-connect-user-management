@@ -9,6 +9,7 @@ package RDConnect::MetaUserManagement;
 
 use RDConnect::UserManagement;
 use RDConnect::MailManagement;
+use Scalar::Util qw(blessed);
 
 use constant APGSECTION	=>	'apg';
 
@@ -31,7 +32,7 @@ sub GetRandomPassword($) {
 		chomp($pass);
 		close($APG);
 	} else {
-		return {'reason' => 'Unable to generate a random password','trace' => $!,'code' => 500};
+		return bless({'reason' => 'Unable to generate a random password','trace' => $!,'code' => 500},'RDConnect::MetaUserManagement::Error');
 	}
 	
 	return $pass;
@@ -61,9 +62,9 @@ sub FetchEmailTemplate($$) {
 					my($successT,$payloadT) = $uMgmt->getDocumentFromDomain($domainId,$mailTemplateMetadata->{'cn'});
 					
 					unless($successT) {
-						return {'reason' => 'Mail templates not found','trace' => $payloadT,'code' => 404};
+						return bless({'reason' => 'Mail templates not found','trace' => $payloadT,'code' => 404},'RDConnect::MetaUserManagement::Error');
 					} elsif(!defined($payloadT)) {
-						return {'reason' => 'Mail templates do not have document '.$mailTemplateMetadata->{'cn'},'code' => 404};
+						return bless({'reason' => 'Mail templates do not have document '.$mailTemplateMetadata->{'cn'},'code' => 404},'RDConnect::MetaUserManagement::Error');
 					}
 					
 					# Here the payload is the document
@@ -83,12 +84,12 @@ sub FetchEmailTemplate($$) {
 		}
 		
 		unless(defined($mailTemplate)) {
-			return {'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500};
+			return bless({'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500},'RDConnect::MetaUserManagement::Error');
 		}
 		
 		return ($mailTemplate,@attachmentFiles);
 	} else {
-		return {'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500};
+		return bless({'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500},'RDConnect::MetaUserManagement::Error');
 	}
 }
 
@@ -113,7 +114,7 @@ sub ChangedPasswordEmailTemplate($) {
 	
 	my @retval = FetchEmailTemplate($uMgmt,RDConnect::UserManagement::ChangedPasswordDomain);
 	
-	if(ref($retval[0]) eq 'HASH') {
+	if(blessed($retval[0])) {
 		# Side effect, initialize changed password email template
 		# First, get/create the domain
 		$uMgmt->getDomain(RDConnect::UserManagement::ChangedPasswordDomain,1);
@@ -152,9 +153,11 @@ sub CreateUser($\[%@];$) {
 		($mailTemplate,@attachmentFiles) = NewUserEmailTemplate($uMgmt);
 		
 		# Return if error condition
-		return $mailTemplate  if(ref($mailTemplate) eq 'HASH');
+		return $mailTemplate  if(blessed($mailTemplate));
 		
 		($passMailTemplate,@passAttachmentFiles) = ChangedPasswordEmailTemplate($uMgmt);
+		
+		return $passMailTemplate  if(blessed($passMailTemplate));
 	}
 	
 	$p_newUsers = [ $p_newUsers]  if(ref($p_newUsers) eq 'HASH');
@@ -166,7 +169,7 @@ sub CreateUser($\[%@];$) {
 			$userPassword = $p_newUser->{'userPassword'};
 		} else {
 			$userPassword = GetRandomPassword($cfg);
-			return $userPassword  if(ref($userPassword));
+			return $userPassword  if(blessed($userPassword));
 			$p_newUser->{'userPassword'} = $userPassword;
 		}
 		
@@ -220,7 +223,7 @@ sub CreateUser($\[%@];$) {
 	}
 
 	if(scalar(@errorStack) > 0) {
-		return scalar(@errorStack) > 1 ? {'reason' => 'Multiple errors','trace' => \@errorStack,'code' => 500} : $errorStack[0];
+		return scalar(@errorStack) > 1 ? bless({'reason' => 'Multiple errors','trace' => \@errorStack,'code' => 500},'RDConnect::MetaUserManagement::Error') : bless($errorStack[0],'RDConnect::MetaUserManagement::Error');
 	} else {
 		return undef;
 	}
@@ -233,12 +236,17 @@ sub ResetUserPassword($$$) {
 	
 	my($mailTemplate,@attachmentFiles) = NewUserEmailTemplate($uMgmt);
 	
+	# Error condition
+	return $mailTemplate  if(blessed($mailTemplate));
+	
 	unless(defined($userPassword)) {
 		$userPassword = GetRandomPassword($cfg);
-		return $userPassword  if(ref($userPassword));
+		return $userPassword  if(blessed($userPassword));
 	}
 
 	my($passMailTemplate,@passAttachmentFiles) = ChangedPasswordEmailTemplate($uMgmt);
+	
+	return $passMailTemplate  if(blessed($passMailTemplate));
 	
 	my($success,$payload) = $uMgmt->resetUserPassword($userId,$userPassword);
 	
@@ -271,15 +279,15 @@ sub ResetUserPassword($$$) {
 				$mail2->sendMessage($to,\%keyval2);
 			};
 			if($@) {
-				return {'reason' => 'Error while sending password e-mail','trace' => $@,'code' => 500};
+				return bless({'reason' => 'Error while sending password e-mail','trace' => $@,'code' => 500},'RDConnect::MetaUserManagement::Error');
 			}
 		};
 		
 		if($@) {
-			return {'reason' => 'Error while sending user e-mail','trace' => $@,'code' => 500};
+			return bless({'reason' => 'Error while sending user e-mail','trace' => $@,'code' => 500},'RDConnect::MetaUserManagement::Error');
 		}
 	} else {
-		$retval = {'reason' => 'Error while resetting user password for user '.$userId,'trace' => $payload,'code' => 500};
+		$retval = bless({'reason' => 'Error while resetting user password for user '.$userId,'trace' => $payload,'code' => 500},'RDConnect::MetaUserManagement::Error');
 	}
 	
 	#send_file(\$data, content_type => 'image/jpeg');

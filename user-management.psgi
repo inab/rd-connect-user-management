@@ -616,6 +616,9 @@ sub create_user {
 	my %newUser = params;
 	my $retval = RDConnect::MetaUserManagement::CreateUser($uMgmt,%newUser);
 	
+	use Data::Dumper;
+	print STDERR "DEBUG ",Dumper($retval),"\n";
+	
 	send_error($RDConnect::UserManagement::DancerCommon::jserr->encode($retval),exists($retval->{'code'}) ? $retval->{'code'}:500)  if(defined($retval));
 	
 	return [];
