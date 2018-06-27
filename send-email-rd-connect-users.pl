@@ -17,9 +17,10 @@ use RDConnect::MailManagement;
 
 use constant SECTION	=>	'main';
 
-if(scalar(@ARGV)>=3) {
+if(scalar(@ARGV)>=4) {
 	my $configFile = shift(@ARGV);
 	my $usersFile = shift(@ARGV);
+	my $templateSubject = shift(@ARGV);
 	my $mailTemplate = shift(@ARGV);
 	my @attachmentFiles = @ARGV;
 	
@@ -33,7 +34,7 @@ if(scalar(@ARGV)>=3) {
 	my $mail1;
 	# Mail configuration parameters
 	$mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
-	$mail1->setSubject($mail1->getSubject().' (I)');
+	$mail1->setSubject($templateSubject);
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
@@ -109,6 +110,6 @@ if(scalar(@ARGV)>=3) {
 	}
 } else {
 	die <<EOF ;
-Usage:	$0 [-r] {IniFile} {File with usernames (in UTF-8, one per line)} {Message Template} {Attachments}*
+Usage:	$0 [-r] {IniFile} {File with usernames/groups (in UTF-8, one per line)} {Title Template} {Message Template} {Attachments}*
 EOF
 }
