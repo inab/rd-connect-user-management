@@ -103,9 +103,9 @@ The services under the endpoint have several levels of authorization, which requ
 
 	* `POST /organizationalUnits/:ou_id` `[adm]`: It modifies an existing organizational unit. The input must be a JSON document following [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 
-	* `GET /organizationalUnits/:ou_id/renamesTo/:new_ou_id`: It moves all the members of the organizational unit to a new one
+	* `GET /organizationalUnits/:ou_id/renamesTo/:new_ou_id` `[adm]`: It moves all the members of the organizational unit to a new one
 
-	* `GET /organizationalUnits/:ou_id/movesTo/:new_ou_id`: It moves all the members of the organizational unit to a new or existing one
+	* `GET /organizationalUnits/:ou_id/movesTo/:new_ou_id` `[adm]`: It moves all the members of the organizational unit to a new or existing one
 
 	* `GET /organizationalUnits/:ou_id/picture`: It returns the photo associated to the organizational unit which matches the record, or 404 if not found, or the organizational unit does not have an associated photo.
 
@@ -124,6 +124,8 @@ The services under the endpoint have several levels of authorization, which requ
 	* `GET /groups/:group_id`: It returns the group which matches the record, or 404 if not found. It follows [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema.
 
 	* `POST /groups/:group_id` `[own]`: It modifies an existing group features, but not its members or owners. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
+	
+	* `GET /groups/:group_id/renamesTo/:new_group_id` `[own]`: It returns the list of users which are members of this group, or 404 if not found.
 	
 	* `GET /groups/:group_id/members`: It returns the list of users which are members of this group, or 404 if not found.
 	

@@ -895,8 +895,8 @@ prefix '/users' => sub {
 	get '' => \&get_users;
 	get '/:user_id' => => \&get_user;
 	get '/:user_id/picture' => \&get_user_photo;
-	get '/:user_id/migratesTo/:ou_id' => rdconnect_auth admin => \&migrate_user;
-	get '/:user_id/renamesTo/:new_user_id' => rdconnect_auth admin => \&rename_user;
+	get '/:user_id/migratesTo/:ou_id' => auth_cas login => rdconnect_auth admin => \&migrate_user;
+	get '/:user_id/renamesTo/:new_user_id' => auth_cas login => rdconnect_auth admin => \&rename_user;
 	get '/:user_id/groups' => \&get_user_groups;
 	get '/:user_id/groups/:group_id' => \&get_user_group;
 	# next operations should be allowed only to privileged users
@@ -1134,8 +1134,8 @@ sub move_organizationalUnit() {
 prefix '/organizationalUnits' => sub {
 	get '' => \&get_OUs;
 	get '/:ou_id' => \&get_OU;
-	get '/:ou_id/renamesTo/:new_ou_id' => \&rename_organizationalUnit;
-	get '/:ou_id/movesTo/:new_ou_id' => \&move_organizationalUnit;
+	get '/:ou_id/renamesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&rename_organizationalUnit;
+	get '/:ou_id/movesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&move_organizationalUnit;
 	get '/:ou_id/picture' => \&get_OU_photo;
 	get '/:ou_id/users' => \&get_OU_users;
 	get '/:ou_id/users/:user_id' => \&get_OU_user;
@@ -1409,6 +1409,19 @@ sub mail_group {
 }
 
 
+sub rename_group {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->renameGroup(params->{'group_id'},params->{'new_group_id'});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Renaming group '.params->{'group_id'}.' to '.params->{'new_group_id'}.' failed','trace' => $payload}),400);
+	}
+	
+	# Here the payload is the group
+	return [],201;
+}
+
 prefix '/groups' => sub {
 	get '' => \&get_groups;
 	get '/:group_id' => \&get_group;
@@ -1417,6 +1430,7 @@ prefix '/groups' => sub {
 	# next operations should be allowed only to allowed / privileged users
 	put '' => auth_cas login => rdconnect_auth PI => \&create_group;
 	post '/:group_id' => auth_cas login => rdconnect_auth owner => \&modify_group;
+	get '/:group_id/renamesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&rename_group;
 	post '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&add_group_members;
 	del '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&remove_group_members;
 	
