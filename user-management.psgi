@@ -1076,9 +1076,66 @@ sub mail_organizationalUnit {
 	return $retval;
 }
 
+sub rename_organizationalUnit(;$) {
+	my($allowMove) = @_;
+	
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my $oldOUname = params->{'ou_id'};
+	my $newOUname = params->{'new_ou_id'};
+
+	my($existsOldOU,$p_OU) = $uMgmt->getJSONPeopleOU($oldOUname);
+		
+	unless($existsOldOU) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.$oldOUname.' does not exist'}),404);
+	}
+	
+	my($success,$payload) = $uMgmt->getPeopleOU($newOUname);
+	
+	if($success && !$allowMove) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.$oldOUname.' cannot be renamed to '.$newOUname.' because it already exists'}),400);
+	}
+	
+	# Create a new OU with the same attributes as the old one
+	unless($success) {
+		$p_OU->{'organizationalUnit'} = $newOUname;
+		my($createdNewOU,$cPayload) = $uMgmt->createExtPeopleOU($p_OU);
+		
+		unless($createdNewOU) {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.$oldOUname.' cannot be moved to '.$newOUname, 'trace' => $cPayload}),400);
+		}
+	}
+	
+	# Now, let's get the full list of users in the OU, so we move them one by one
+	my($lSuccess,$p_jsonUsers) = $uMgmt->listJSONPeopleOUUsers($oldOUname);
+	unless($lSuccess) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Members of organizational unit '.$oldOUname.' could not be obtained','trace' => $p_jsonUsers}),400);
+	}
+	
+	foreach my $p_jsonUser ( @{$p_jsonUsers} ) {
+		my($umSuccess,$umPayload) = $uMgmt->moveUserToPeopleOU($p_jsonUser->{'username'},$newOUname);
+		unless($umSuccess) {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.$oldOUname.' could not be moved to '.$newOUname, 'trace' => $umPayload}),400);
+		}
+	}
+	
+	# Last, remove the empty OU
+	my($oldRemoved) = $uMgmt->removePeopleOU($oldOUname);
+	my $httpCode = $oldRemoved ? 201 : 206;
+	
+	# It can be improved, returning the new location or the modified entry
+	return [],$httpCode;
+}
+
+sub move_organizationalUnit() {
+	return rename_organizationalUnit(1);
+}
+
 prefix '/organizationalUnits' => sub {
 	get '' => \&get_OUs;
 	get '/:ou_id' => \&get_OU;
+	get '/:ou_id/renamesTo/:new_ou_id' => \&rename_organizationalUnit;
+	get '/:ou_id/movesTo/:new_ou_id' => \&move_organizationalUnit;
 	get '/:ou_id/picture' => \&get_OU_photo;
 	get '/:ou_id/users' => \&get_OU_users;
 	get '/:ou_id/users/:user_id' => \&get_OU_user;

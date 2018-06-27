@@ -103,6 +103,10 @@ The services under the endpoint have several levels of authorization, which requ
 
 	* `POST /organizationalUnits/:ou_id` `[adm]`: It modifies an existing organizational unit. The input must be a JSON document following [organizationalUnitValidation.json](libs/RDConnect/organizationalUnitValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 
+	* `GET /organizationalUnits/:ou_id/renamesTo/:new_ou_id`: It moves all the members of the organizational unit to a new one
+
+	* `GET /organizationalUnits/:ou_id/movesTo/:new_ou_id`: It moves all the members of the organizational unit to a new or existing one
+
 	* `GET /organizationalUnits/:ou_id/picture`: It returns the photo associated to the organizational unit which matches the record, or 404 if not found, or the organizational unit does not have an associated photo.
 
 	* `PUT /organizationalUnits/:ou_id/picture` `[adm]`: It sets up the photo associated to the organizational unit which matches the record, or 404 if not found. It should be a JPEG photo.
