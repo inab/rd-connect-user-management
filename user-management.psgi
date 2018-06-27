@@ -852,11 +852,51 @@ sub accept_gdpr_user {
 	redirect 'https://platform.rd-connect.eu/', 303;
 }	
 
+sub migrate_user {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->moveUserToPeopleOU(params->{'user_id'},params->{'ou_id'});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{'user_id'}.' or organizational unit '.params->{'ou_id'}.' not found','trace' => $payload}),404);
+	}
+	
+	return get_user(), 201
+}
+
+sub rename_user {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->getJSONUser(params->{'user_id'});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
+	}
+	
+	my $p_jsonUser = $payload;
+	my $newUsername = params->{'new_user_id'};
+	my($uRepeated) = $uMgmt->getUser($newUsername);
+			
+	if($uRepeated) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{'user_id'}.' cannot be renamed to '.$newUsername.' because it exists'}),400);
+	}
+	
+	$p_jsonUser->{'username'} = $newUsername;
+	($success,$payload) = $uMgmt->modifyJSONUser(params->{'user_id'},$p_jsonUser);
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Unable to rename user '.params->{'user_id'}.' to '.$newUsername,'trace' => $payload}),400);
+	}
+	
+	return $p_jsonUser, 201
+}
+
 # Routing for /users prefix
 prefix '/users' => sub {
 	get '' => \&get_users;
 	get '/:user_id' => => \&get_user;
 	get '/:user_id/picture' => \&get_user_photo;
+	get '/:user_id/migratesTo/:ou_id' => rdconnect_auth admin => \&migrate_user;
+	get '/:user_id/renamesTo/:new_user_id' => rdconnect_auth admin => \&rename_user;
 	get '/:user_id/groups' => \&get_user_groups;
 	get '/:user_id/groups/:group_id' => \&get_user_group;
 	# next operations should be allowed only to privileged users

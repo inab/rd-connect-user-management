@@ -64,6 +64,10 @@ The services under the endpoint have several levels of authorization, which requ
 	* `POST /users/:user_id/enable` `[adm]`: It enables a disabled user (privileged operation)
 
 	* `POST /users/:user_id/disable` `[u]`: It disables an enabled user (privileged operation)
+	
+	* `GET /users/:user_id/migratesTo/:ou_id` `[adm]`: It moves a user to a different organizational unit
+
+	* `GET /users/:user_id/renamesTo/:new_user_id` `[adm]`: It renames a user
 
 	* `GET /users/:user_id/acceptGDPR/:token`: It validates a GDPR acceptation token (it produces a redirection).
 	
