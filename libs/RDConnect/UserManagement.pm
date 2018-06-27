@@ -3304,18 +3304,23 @@ my @LDAP_RDDOCUMENT_DEFAULT_ATTRIBUTES = (
 #	ownerDN: The owner of the document.
 #	p_documentMetadata: a reference to a hash with the required keys needed to create new document
 #	data: The document itself as raw data
-sub attachDocumentForEntry($$\%$) {
+#	mimeType: (OPTIONAL) The mime type. If it is not defined, it is guessed
+sub attachDocumentForEntry($$\%$;$) {
 	my $self = shift;
-	my($dn,$ownerDN,$p_documentMetadata,$data) = @_;
+	my($dn,$ownerDN,$p_documentMetadata,$data,$mimeType) = @_;
 	
 	# $p_entryArray,$m_getDN,$m_normalizePKJSON,$validator,$p_json2ldap,$hotchpotchAttribute,$p_ldap_default_attributes,$doReplace
-	my $mimeType = 'application/octet-stream';
+	# The worst case
+	$mimeType = 'application/octet-stream'  unless(defined($mimeType));
 	
-	# Trying to guess the type of file
-	eval {
-		$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$data));
-		$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $data =~ /<(p|div|br|span)>/);
-	};
+	# The worst case
+	if($mimeType eq 'application/octet-stream') {
+		# Trying to guess the type of file
+		eval {
+			$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$data));
+			$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $data =~ /<(p|div|br|span)>/);
+		};
+	}
 	
 	return $self->createLDAPFromJSON(
 				$p_documentMetadata,
@@ -3603,12 +3608,13 @@ sub removeDocumentFromEntry($$) {
 #	username: the RD-Connect username or user e-mail
 #	p_documentMetadata: a reference to a hash with the required keys needed to create new document
 #	data: The document itself as raw data
+#	mimeType: (OPTIONAL) The MIME type of the document
 #	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
 #		it uses the one read from the configuration file.
-sub attachDocumentForUser($\%$;$) {
+sub attachDocumentForUser($\%$;$$) {
 	my $self = shift;
 	
-	my($username,$p_documentMetadata,$data,$userDN) = @_;
+	my($username,$p_documentMetadata,$data,$mimeType,$userDN) = @_;
 	
 	my($success,$payload) = $self->getUser($username,$userDN);
 	
@@ -3616,7 +3622,7 @@ sub attachDocumentForUser($\%$;$) {
 		if(defined($payload)) {
 			# The payload is the found user
 			my $dn = $payload->dn();
-			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data);
+			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data,$mimeType);
 		} else {
 			$success = undef;
 			$payload = ['User '.$username.' not found'];
@@ -3794,12 +3800,13 @@ sub removeDocumentFromUser($$;$) {
 #	groupCN: the RD-Connect group
 #	p_documentMetadata: a reference to a hash with the required keys needed to create new document
 #	data: The document itself as raw data
+#	mimeType: (OPTIONAL) The MIME type of the document
 #	groupDN: (OPTIONAL) The DN used as ancestor of this group.
 #		 If not set, it uses the one read from the configuration file.
-sub attachDocumentForGroup($\%$;$) {
+sub attachDocumentForGroup($\%$;$$) {
 	my $self = shift;
 	
-	my($groupCN,$p_documentMetadata,$data,$groupDN) = @_;
+	my($groupCN,$p_documentMetadata,$data,$mimeType,$groupDN) = @_;
 	
 	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
 	
@@ -3807,7 +3814,7 @@ sub attachDocumentForGroup($\%$;$) {
 		if(defined($payload)) {
 			# The payload is the found group
 			my $dn = $payload->dn();
-			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data);
+			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data,$mimeType);
 		} else {
 			$success = undef;
 			$payload = ['Group '.$groupCN.' not found'];
@@ -3990,9 +3997,6 @@ use constant DomainEntryRole	=>	'organizationalRole';
 my @LDAP_DOMAIN_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	 [ DomainEntryRole ],
 );
-
-use constant NewUserDomain	=>	'newUserTemplates';
-use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
 
 # Parameters:
 #	domainCN: The short, domain name, which will hang on parentDN
@@ -4199,10 +4203,11 @@ sub modifyDocumentFromDomain($$$) {
 #	domainCN: the RD-Connect domain
 #	p_documentMetadata: a reference to a hash with the required keys needed to create new document
 #	data: The document itself as raw data
-sub attachDocumentForDomain($\%$) {
+#	mimeType: (OPTIONAL) MIME type of the document
+sub attachDocumentForDomain($\%$;$) {
 	my $self = shift;
 	
-	my($domainCN,$p_documentMetadata,$data) = @_;
+	my($domainCN,$p_documentMetadata,$data,$mimeType) = @_;
 	
 	my($success,$payload) = $self->getDomain($domainCN,1);
 	
@@ -4210,7 +4215,7 @@ sub attachDocumentForDomain($\%$) {
 		if(defined($payload)) {
 			# The payload is the found group
 			my $dn = $payload->dn();
-			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data);
+			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data,$mimeType);
 		} else {
 			$success = undef;
 			$payload = ['Domain '.$domainCN.' not found'];

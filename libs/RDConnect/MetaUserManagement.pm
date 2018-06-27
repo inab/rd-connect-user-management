@@ -12,6 +12,55 @@ use RDConnect::MailManagement;
 
 use constant APGSECTION	=>	'apg';
 
+
+use constant NewUserDomain	=>	'newUserTemplates';
+my $DEFAULT_newUserTemplate = <<'EOF' ;
+Dear [% fullname %],
+        your RD-Connect username is [% username %]. Following the changes in the european GDPR, you must accept
+        the code of conduct of RD-Connect. In the meanwhile, your account will be disabled.
+
+        Next link will mark your acceptance of RD-Connect code of conduct.
+
+https://rdconnectcas.rd-connect.eu/RDConnect-UserManagement-API/users/[% username %]/acceptGDPR/[% gdprtoken %]
+
+        Best,
+                The RD-Connect team
+EOF
+
+use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
+my $DEFAULT_passMailTemplate = <<'EOF' ;
+The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
+
+You should change this password by a different one as soon as possible.
+
+Kind Regards,
+	RD-Connect team
+EOF
+
+our @MailTemplatesDomains = (
+	{
+		'apiKey' => 'newUser',
+		'desc' => 'New user creation templates',
+		'tokens' => [ 'username', 'fullname', 'gdprtoken' ],
+		'ldapDomain' => NewUserDomain(),
+		'cn' =>	'mailTemplate.html',
+		'ldapDesc' => 'New User Mail Template',
+		'default' => $DEFAULT_newUserTemplate
+	},
+	{
+		'apiKey' => 'passTemplate',
+		'desc' => 'New or resetted password templates',
+		'tokens' => [ 'password' ],
+		'ldapDomain' => ChangedPasswordDomain(),
+		'cn' =>	'changedPassMailTemplate.html',
+		'ldapDesc' => 'Changed password mail template',
+		'default' => $DEFAULT_passMailTemplate
+	}
+);
+
+our %MTByApiKey = map { $_->{'apiKey'} => $_ } @MailTemplatesDomains;
+my %MTByDomain = map { $_->{'ldapDomain'} => $_ } @MailTemplatesDomains;
+
 sub GetRandomPassword($) {
 	my($cfg) = @_;
 	
@@ -44,16 +93,29 @@ sub GetMailManagementInstance($$\%;\@) {
 	return RDConnect::MailManagement->new($cfg,$mailTemplate,$p_keyvals,$p_attachmentFiles);
 }
 
+
+
 sub FetchEmailTemplate($$) {
 	my($uMgmt,$domainId) = @_;
 	
 	my($successMail,$payloadMail) = $uMgmt->listJSONDocumentsFromDomain($domainId);
+	
+	unless($successMail) {
+		# Side effect, initialize email template
+		# First, get/create the domain
+		my($successD,$payloadD) = $uMgmt->getDomain($domainId,1);
+		if($successD) {
+			$successMail = 1;
+			$payloadMail = undef;
+		}
+	}
 	
 	if($successMail) {
 		# Now, let's fetch
 		my $mailTemplate;
 		my @attachmentFiles = ();
 		
+		# Does the domain contain documents?
 		if(ref($payloadMail) eq 'ARRAY') {
 			foreach my $mailTemplateMetadata (@{$payloadMail}) {
 				if(exists($mailTemplateMetadata->{'documentClass'}) && ($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate' || $mailTemplateMetadata->{'documentClass'} eq 'mailAttachment')) {
@@ -80,6 +142,22 @@ sub FetchEmailTemplate($$) {
 					}
 				}
 			}
+		} elsif(exists($MTByDomain{$domainId})) {
+			my $p_domain = $MTByDomain{$domainId};
+			
+			my $defaultTemplate = $p_domain->{'default'};
+			my($successA,$payloadA) = $uMgmt->attachDocumentForDomain(
+				$domainId,
+				{
+					'cn' =>	$p_domain->{'cn'},
+					'description' => $p_domain->{'ldapDesc'},
+					'documentClass' => 'mailTemplate',
+				},
+				$defaultTemplate
+			);
+			
+			# Last, set the return value
+			$mailTemplate = $defaultTemplate  if($successA);
 		}
 		
 		unless(defined($mailTemplate)) {
@@ -95,43 +173,14 @@ sub FetchEmailTemplate($$) {
 sub NewUserEmailTemplate($) {
 	my($uMgmt) = @_;
 	
-	return FetchEmailTemplate($uMgmt,RDConnect::UserManagement::NewUserDomain);
+	return FetchEmailTemplate($uMgmt,NewUserDomain());
 }
 
-
-my $DEFAULT_passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
 
 sub ChangedPasswordEmailTemplate($) {
 	my($uMgmt) = @_;
 	
-	my @retval = FetchEmailTemplate($uMgmt,RDConnect::UserManagement::ChangedPasswordDomain);
-	
-	if(ref($retval[0]) eq 'HASH') {
-		# Side effect, initialize changed password email template
-		# First, get/create the domain
-		$uMgmt->getDomain(RDConnect::UserManagement::ChangedPasswordDomain,1);
-		$uMgmt->attachDocumentForDomain(
-			RDConnect::UserManagement::ChangedPasswordDomain,
-			{
-				'cn' =>	'changedPassMailTemplate.html',
-				'description' => 'Changed password mail template',
-				'documentClass' => 'mailTemplate',
-			},
-			$DEFAULT_passMailTemplate
-		);
-		
-		# Last, set the return value
-		@retval = (\$DEFAULT_passMailTemplate);
-	}
-	
-	return @retval;
+	return FetchEmailTemplate($uMgmt,ChangedPasswordDomain());
 }
 
 

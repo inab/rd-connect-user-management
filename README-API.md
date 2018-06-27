@@ -22,23 +22,24 @@ The services under the endpoint have several levels of authorization, which requ
 
 * `GET /logout` `[any]`: The user associated to the given session is logged out.
 
-* `GET /mail?schema`: It returns the JSON Schema which validates a mail submission (i.e. [mailValidation.json](libs/RDConnect/mailValidation.json)).
+* `GET /mail`: It returns the different available mail templates domains
+    * `GET /mail?schema`: It returns the JSON Schema which validates a mail submission (i.e. [mailValidation.json](libs/RDConnect/mailValidation.json)).
 
 	* `POST /mail` `[adm]`: An administrator uses this endpoint to send an e-mail to everybody, or a subset of users, organizational units or groups. The input must be a JSON document following [mailValidation.json](libs/RDConnect/mailValidation.json) JSON schema (but not enforcing the existence of all the keys).
 	
-	* `GET /mail/newUser/documents` `[adm]`: It lists the documents for new user creation, which are the mail template and the attachments (like user agreements and so). It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+	* `GET /mail/:api_key/documents` `[adm]`: It lists the documents for new user creation, which are the mail template and the attachments (like user agreements and so). It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
 
-	* `POST /mail/newUser/documents` `[adm]`: It attaches the described document in the multipart/form-data transferred field to this user. The valid parameters are 'cn' (the name), 'description', 'documentClass' and 'content' (this last is the uploaded document).
+	* `POST /mail/:api_key/documents` `[adm]`: It attaches the described document in the multipart/form-data transferred field to this user. The valid parameters are 'cn' (the name), 'description', 'documentClass' and 'content' (this last is the uploaded document).
 
-	* `GET /mail/newUser/documents/:document_name` `[adm]`: It gets the contents of an specific document.
+	* `GET /mail/:api_key/documents/:document_name` `[adm]`: It gets the contents of an specific document.
 
-	* `PUT /mail/newUser/documents/:document_name` `[adm]`: It replaces the contents of an specific document.
+	* `PUT /mail/:api_key/documents/:document_name` `[adm]`: It replaces the contents of an specific document.
 
-	* `DELETE /mail/newUser/documents/:document_name` `[adm]`: It removes an specific document.
+	* `DELETE /mail/:api_key/documents/:document_name` `[adm]`: It removes an specific document.
 
-	* `GET /mail/newUser/documents/:document_name/metadata` `[adm]`: It gets the metadata of an specific document. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
+	* `GET /mail/:api_key/documents/:document_name/metadata` `[adm]`: It gets the metadata of an specific document. It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
 
-	* `POST /mail/newUser/documents/:document_name/metadata` `[adm]`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to modify the metadata of the document.
+	* `POST /mail/:api_key/documents/:document_name/metadata` `[adm]`: A document following [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema is used to modify the metadata of the document.
 
 * `GET /enabledUsers`: It returns the list of enabled registered users, along with their validated e-mails. ()
 

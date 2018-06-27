@@ -359,31 +359,56 @@ sub get_mail_json_schema {
 		return send_file(RDConnect::UserManagement::FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE, system_path => 1);
 	}
 	
-	pass;
-}
-
-sub list_newUser_documents {
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->listJSONDocumentsFromDomain(RDConnect::UserManagement::NewUserDomain);
+	my($success,$payload) = $uMgmt->listJSONUsers();
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates for new users not found','trace' => $payload}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Could not fulfill internal queries','trace' => $payload}),500);
+	}
+	
+	# Here the payload is the list of templates
+	return [ map { my $outer = $_ ; my %res = map { $_ => $outer->{$_} } ('apiKey','desc','tokens');\%res } @RDConnect::MetaUserManagement::MailTemplatesDomains ];
+}
+
+sub _get_mailDomain_internal {
+	my $apiKey = params->{'api_key'};
+	unless(exists($RDConnect::MetaUserManagement::MTByApiKey{$apiKey})) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail domain $apiKey not available"}),404);
+	}
+	
+	return ($apiKey,$RDConnect::MetaUserManagement::MTByApiKey{$apiKey});
+}
+
+sub list_mailDomain_documents {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	my $ldapDomain = $p_domain->{'ldapDomain'};
+	
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->listJSONDocumentsFromDomain($ldapDomain);
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for $apiKey not found",'trace' => $payload}),404);
 	}
 	
 	# Here the payload
 	return $payload;
 }
 
-sub get_newUser_document {
+sub get_mailDomain_document {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	my $ldapDomain = $p_domain->{'ldapDomain'};
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,params->{document_name});
+	my $documentName = params->{'document_name'};
+	my($success,$payload) = $uMgmt->getDocumentFromDomain($ldapDomain,$documentName);
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for domain $apiKey not found",'trace' => $payload}),404);
 	} elsif(!defined($payload)) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates do not have document '.params->{document_name}}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for domain $apiKey do not have document $documentName"}),404);
 	}
 	
 	# Here the payload is the document
@@ -391,53 +416,68 @@ sub get_newUser_document {
 	send_file(\$data, content_type => $payload->get_value('mimeType'));
 }
 
-sub get_newUser_document_metadata {
+sub get_mailDomain_document_metadata {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	my $ldapDomain = $p_domain->{'ldapDomain'};
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONDocumentMetadataFromDomain(RDConnect::UserManagement::NewUserDomain,params->{document_name});
+	my $documentName = params->{'document_name'};
+	my($success,$payload) = $uMgmt->getJSONDocumentMetadataFromDomain($ldapDomain,$documentName);
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for domain $apiKey not found",'trace' => $payload}),404);
 	} elsif(!defined($payload)) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates do not have document '.params->{document_name}}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for domain $apiKey do not have document $documentName"}),404);
 	}
 	
 	return $payload;
 }
 
 
-sub modify_newUser_document_metadata {
+sub modify_mailDomain_document_metadata {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	my $ldapDomain = $p_domain->{'ldapDomain'};
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
+	my $documentName = params->{'document_name'};
 	my $p_newMetadata = request->data;
 	
-	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromDomain(RDConnect::UserManagement::NewUserDomain,params->{document_name},$p_newMetadata);
+	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromDomain($ldapDomain,$documentName,$p_newMetadata);
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from mail templates','trace' => $payload}),500);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Error while modifying document $documentName from mail templates $apiKey",'trace' => $payload}),500);
 	}
 	
 	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
-sub modify_newUser_document {
+sub modify_mailDomain_document {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	my $ldapDomain = $p_domain->{'ldapDomain'};
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	# We are getting the raw entry, as we want just the photo
+	# We are getting the raw entry, as we want just the file
 	my $data = request->body;
 	
-	my($success,$payload) = $uMgmt->modifyDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,params->{'document_name'},$data);
+	my $documentName = params->{'document_name'};
+	my($success,$payload) = $uMgmt->modifyDocumentFromDomain($ldapDomain,$documentName,$data);
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates from domain $apiKey not found",'trace' => $payload}),404);
 	}
 	
 	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
-sub attach_newUser_document {
+sub attach_mailDomain_document {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	my $ldapDomain = $p_domain->{'ldapDomain'};
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
 	my %documentMetadata = (
@@ -446,23 +486,26 @@ sub attach_newUser_document {
 	$documentMetadata{'description'} = params->{'description'}  if(exists(params->{'description'}));
 	$documentMetadata{'documentClass'} = params->{'documentClass'}  if(exists(params->{'documentClass'}));
 	
-	my($success,$payload) = $uMgmt->attachDocumentForDomain(RDConnect::UserManagement::NewUserDomain,\%documentMetadata,upload('content')->content);
+	my($success,$payload) = $uMgmt->attachDocumentForDomain($ldapDomain,\%documentMetadata,upload('content')->content,upload('content')->type);
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates from domain $apiKey not found",'trace' => $payload}),404);
 	}
 	
 	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
-sub remove_newUser_document {
+sub remove_mailDomain_document {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	my $ldapDomain = $p_domain->{'ldapDomain'};
+	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->removeDocumentFromDomain(RDConnect::UserManagement::NewUserDomain,params->{'document_name'});
+	my($success,$payload) = $uMgmt->removeDocumentFromDomain($ldapDomain,params->{'document_name'});
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Mail templates not found','trace' => $payload}),404);
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates from domain $apiKey not found",'trace' => $payload}),404);
 	}
 	
 	#send_file(\$data, content_type => 'image/jpeg');
@@ -486,14 +529,14 @@ prefix '/mail' => sub {
 	post '' => auth_cas login => rdconnect_auth admin => \&broadcast_email;
 	
 	# Mail templates
-	prefix '/newUser/documents' => sub {
-		get '' => auth_cas login => \&list_newUser_documents;
-		post '' => auth_cas login => rdconnect_auth admin => \&attach_newUser_document;
-		get '/:document_name' => auth_cas login => rdconnect_auth admin => \&get_newUser_document;
-		put '/:document_name' => auth_cas login => rdconnect_auth admin => \&modify_newUser_document;
-		del '/:document_name' => auth_cas login => rdconnect_auth admin => \&remove_newUser_document;
-		get '/:document_name/metadata' => auth_cas login => rdconnect_auth admin => \&get_newUser_document_metadata;
-		post '/:document_name/metadata' => auth_cas login => rdconnect_auth admin => \&modify_newUser_document_metadata;
+	prefix '/:api_key/documents' => sub {
+		get '' => auth_cas login => \&list_mailDomain_documents;
+		post '' => auth_cas login => rdconnect_auth admin => \&attach_mailDomain_document;
+		get '/:document_name' => auth_cas login => rdconnect_auth admin => \&get_mailDomain_document;
+		put '/:document_name' => auth_cas login => rdconnect_auth admin => \&modify_mailDomain_document;
+		del '/:document_name' => auth_cas login => rdconnect_auth admin => \&remove_mailDomain_document;
+		get '/:document_name/metadata' => auth_cas login => rdconnect_auth admin => \&get_mailDomain_document_metadata;
+		post '/:document_name/metadata' => auth_cas login => rdconnect_auth admin => \&modify_mailDomain_document_metadata;
 	};
 };
 
