@@ -30,13 +30,47 @@ EOF
 
 use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
 my $DEFAULT_passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
+Your new password is  [% password %]  (including any punctuation mark it could contain).
 
 Kind Regards,
 	RD-Connect team
 EOF
+
+use constant GDPRDomain	=>	'GDPRTemplates';
+my $DEFAULT_GDPRTemplate = <<'EOF' ;
+<html>
+<head>
+<title> RD-Connect GPAP: please renew your access in accordance to the EU GDPR </title>
+</head>
+
+<body>
+<p style="color:red"><b>Do not delete this email! You need the link below to keep accessing the RD-Connect genome-phenome analysis platform!</b></p>
+
+
+<p>Dear user of the RD-Connect genome-phenome analysis platform (GPAP),</p>
+
+<p>We have updated our policies and procedures to take account of the new General Data Protection Regulation (GDPR, EU 2016/679). As part of this process we have updated the <a href="https://rd-connect.eu/gpap-code-conduct" Alt="RD-Connect Code of Conduct">RD-Connect Code of Conduct</a> and the <a href="https://rd-connect.eu/gpap-adherence" Alt="Adherence Agreement">Adherence Agreement</a> to include more details on how we manage your own user data and the pseudoanonymised genome-phenome data you submit.</p>
+
+<p>So that we can continue providing you with access to the GPAP, we would appreciate it if you could read the updated documents accessible via the links above and confirm your acceptance by clicking your personalised link below.</p>
+
+
+<p><b>If you are responsible for a user group in the RD-Connect GPAP (usually a Principal Investigator, Group Leader or equivalent)</b>, we need you to confirm you have read, understood and accepted the updated versions of both the Code of Conduct and the Adherence Agreement. You do not need to send us a new signed copy of the Adherence Agreement, but we need you to confirm acceptance online via the link below.</p>
+
+
+<p><b>If you are a member of a group</b>, you are now also required to confirm you have read, understood and accepted the Code of Conduct. You do this by clicking the link below. Please also remind the person responsible for your user group (usually your Principal Investigator, Group Leader or equivalent) that we also need their confirmation (see above).
+
+<p style="color:red"><b>Please click the link below or copy and paste it into your browser to confirm that you have read, understood and accept the new Code of Conduct (and Adherence Agreement if PI, GL or equirvalent):</b></p>
+
+<p><a href="https://platform.rd-connect.eu/GDPRvalidation/[% username %]/token/[% gdprtoken %]">https://platform.rd-connect.eu/GDPRvalidation/[% username %]/token/[% gdprtoken %]</a></p>
+
+<p>You do not need to log in to the system to provide your confirmation, but unfortunately your access to the system will be blocked until we receive it.</p>
+<p>If you need a new confirmation link, a reset of your password, have any questions or experience any problems, please let us know by emailing <a href="mailto:help@rd-connect.eu" Alt="help">help@rd-connect.eu</a>. For urgent issues you can call us on +44 191 241 8621 during office hours.</p>
+
+<p>Thank you very much for your support and understanding,<br><br>The RD-Connect GPAP team</p>
+</body>
+</html>
+EOF
+
 
 our @MailTemplatesDomains = (
 	{
@@ -56,6 +90,15 @@ our @MailTemplatesDomains = (
 		'cn' =>	'changedPassMailTemplate.html',
 		'ldapDesc' => 'Changed password mail template',
 		'default' => $DEFAULT_passMailTemplate
+	},
+	{
+		'apiKey' => 'GDPRTemplate',
+		'desc' => 'GDPR acceptance templates',
+		'tokens' => [ 'username', 'fullname', 'gdprtoken' ],
+		'ldapDomain' => GDPRDomain(),
+		'cn' =>	'GDPRMailTemplate.html',
+		'ldapDesc' => 'GDPR acceptance mail template',
+		'default' => $DEFAULT_GDPRTemplate
 	}
 );
 
@@ -147,6 +190,14 @@ sub FetchEmailTemplate($$) {
 			my $p_domain = $MTByDomain{$domainId};
 			
 			my $defaultTemplate = $p_domain->{'default'};
+			my $mimeType = 'text/plain';
+			
+			# Trying to guess the type of file
+			eval {
+				$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$defaultTemplate));
+				$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $defaultTemplate =~ /<(p|div|br|span)>/);
+			};
+			
 			my($successA,$payloadA) = $uMgmt->attachDocumentForDomain(
 				$domainId,
 				{
@@ -154,11 +205,17 @@ sub FetchEmailTemplate($$) {
 					'description' => $p_domain->{'ldapDesc'},
 					'documentClass' => 'mailTemplate',
 				},
-				$defaultTemplate
+				$defaultTemplate,
+				$mimeType
 			);
 			
 			# Last, set the return value
-			$mailTemplate = $defaultTemplate  if($successA);
+			if($successA) {
+				$mailTemplate = {
+					'content' => \$defaultTemplate,
+					'mime' => $mimeType
+				};
+			}
 		}
 		
 		unless(defined($mailTemplate)) {
@@ -283,7 +340,7 @@ sub ResetUserPassword($$$) {
 	
 	my $cfg = $uMgmt->getCfg();
 	
-	my($mailTemplate,@attachmentFiles) = NewUserEmailTemplate($uMgmt);
+	my($mailTemplate,@attachmentFiles) = FetchEmailTemplate($uMgmt,GDPRDomain());
 	
 	# Error condition
 	return $mailTemplate  if(blessed($mailTemplate));
@@ -297,7 +354,13 @@ sub ResetUserPassword($$$) {
 	
 	return $passMailTemplate  if(blessed($passMailTemplate));
 	
-	my($success,$payload) = $uMgmt->resetUserPassword($userId,$userPassword);
+	my($success,$payload) = $uMgmt->getUser($userId);
+	
+	my $user;
+	if($success) {
+		$user = $payload;
+		($success,$payload) = $uMgmt->resetUserPassword($userId,$userPassword);
+	}
 	
 	my $retval = undef;
 	
@@ -307,8 +370,13 @@ sub ResetUserPassword($$$) {
 		
 		# Mail configuration parameters
 		my $unique = time;
-		my $mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
-		$mail1->setSubject($mail1->getSubject().' (resetted) ['.$unique.']');
+		my $mail1 = undef;
+		
+		unless($uMgmt->didUserAcceptGDPR($user)) {
+			$mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
+			$mail1->setSubject('RD-Connect GDPR acceptance for user '.$userId.' (reminder) ['.$unique.']');
+			$keyval1{'gdprtoken'} = $uMgmt->generateGDPRHashFromUser($user);
+		}
 		
 		my $mail2 = GetMailManagementInstance($cfg,$passMailTemplate,%keyval2,@passAttachmentFiles);
 		$mail2->setSubject('RD-Connect password reset for user '.$userId.' ['.$unique.']');
@@ -321,7 +389,9 @@ sub ResetUserPassword($$$) {
 		$keyval1{'username'} = $username;
 		$keyval1{'fullname'} = $fullname;
 		eval {
-			$mail1->sendMessage($to,\%keyval1);
+			if($mail1) {
+				$mail1->sendMessage($to,\%keyval1);
+			}
 			
 			$keyval2{'password'} = $userPassword;
 			eval {
