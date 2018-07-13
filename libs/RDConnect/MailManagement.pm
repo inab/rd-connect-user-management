@@ -66,6 +66,7 @@ sub new($$\%;\@) {
 		$templateMailBodyMime = $mailTemplateParam->{'mime'};
 	} else {
 		$mailTemplate = $mailTemplateParam;
+		$templateMailBodyMime = 'text/plain';
 	}
 	
 	# Is it a file or a reference to an scalar?
