@@ -1554,6 +1554,35 @@ sub generateGDPRHash($;$) {
 }
 
 # Parameters:
+#	username: the name of the user
+#	userDN: (OPTIONAL) the users' distinguished name
+# It returns true if success
+sub didUsernameAcceptGDPR($;$) {
+	my $self = shift;
+	
+	my($username,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my($success,$user) = $self->getUser($username,$userDN);
+	
+	return $success && $user->exists('acceptedGDPR') && $user->get_value('acceptedGDPR') ne 'GDPR';
+}
+
+
+# Parameters:
+#	user: the LDAP entry of the user
+# It returns true if success
+sub didUserAcceptGDPR($) {
+	my $self = shift;
+	
+	my($user) = @_;
+	
+	return $user->exists('acceptedGDPR') && $user->get_value('acceptedGDPR') ne 'GDPR';
+}
+
+# Parameters:
 #	user: the LDAP entry of the user
 #	encodedToken: the hash to be validated
 # It returns true if success
@@ -1565,11 +1594,9 @@ sub acceptGDPRHashFromUser($$) {
 	my($success,$payload);
 	$success = 1;
 	my $isAdded = $user->exists('acceptedGDPR');
-	if($isAdded) {
-		my $acceptedGDPR = $user->get_value('acceptedGDPR');
-		if($acceptedGDPR ne 'GDPR') {
-			$payload = [ "GDPR already accepted" ];
-		}
+	if($self->didUserAcceptGDPR($user)) {
+		$success = undef;
+		$payload = [ "GDPR already accepted" ];
 	}
 	
 	if($success) {
