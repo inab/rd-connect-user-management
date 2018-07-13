@@ -47,10 +47,8 @@
 			"minLength": 1
 		},
 		"email": {
-			"title": "The e-mail address(es) of the user",
+			"title": "The validated e-mail address(es) of the user",
 			"type": "array",
-			"format": "email",
-			"minItems": 1,
 			"uniqueItems": true,
 			"items": {
 				"type": "string",
@@ -133,6 +131,107 @@
 				"type": "string",
 				"minLength": 1
 			}
+		},
+		"registeredEmails": {
+			"title": "The registered e-mail address(es) for the user, either validated or not",
+			"type": "array",
+			"uniqueItems": true,
+			"readOnly": true,
+			"items": {
+				"type": "object",
+				"properties": {
+					"email": {
+						"type": "string",
+						"minLength": 1,
+						"format": "email"
+					},
+					"registeredAt": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"lastValidatedAt": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"validUntil": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"validQuarantineCheckUntil": {
+						"type" : "string",
+						"format": "date-time"
+					},
+					"status": {
+						"title": "e-mail address enabled",
+						"type": "string",
+						"enum": [ "disabled", "unchecked", "checked", "frozen" ]
+					}
+				},
+				"additionalProperties": false,
+				"required": [
+					"email",
+					"registeredAt",
+					"lastValidatedAt",
+					"validUntil",
+					"validQuarantineCheckUntil",
+					"status"
+				]
+			}
+		},
+		"management": {
+			"title": "The structures used for user features management",
+			"type": "object",
+			"properties": {
+				"validationTokens": {
+					"title": "Validation tokens for several purposes: user creation, e-mail address(es) in quarantine (i.e. in validation process), etc...",
+					"type": "array",
+					"uniqueItems": true,
+					"items": {
+						"type": "object",
+						"properties": {
+							"ns": {
+								"title": "Type of validation token",
+								"type": "string",
+								"enum": [ "email" ]
+							},
+							"id": {
+								"type": "string",
+								"minLength": 1
+							},
+							"labelHash": {
+								"type": "string",
+								"format": "uuid"
+							},
+							"inputHash": {
+								"type": "string",
+								"format": "uuid"
+							},
+							"expectedHash": {
+								"type": "string",
+								"format": "uuid"
+							},
+							"validUntil": {
+								"type" : "string",
+								"format": "date-time"
+							},
+							"payload": {
+								"title": "The optional payload associated to this validation token",
+								"type": "object",
+								"additionalProperties": true
+							}
+						},
+						"additionalProperties": false,
+						"required": [
+							"namespace",
+							"id",
+							"labelHash",
+							"inputHash",
+							"expectedHash",
+							"validUntil"
+						]
+					}
+				},
+			}
 		}
 	},
 	"additionalProperties": false,
@@ -140,7 +239,8 @@
 		"givenName",
 		"surname",
 		"username",
-		"email"
+		"email",
+		"registeredEmails"
 	],
 	"dependencies": {
 		"postalAddress": ["registeredAddress"]

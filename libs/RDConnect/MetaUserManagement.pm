@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # RD-Connect User Management REST API
-# José María Fernández (jmfernandez@cnio.es)
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use strict;
 use warnings 'all';
@@ -223,6 +223,18 @@ sub FetchEmailTemplate($$) {
 		}
 		
 		return ($mailTemplate,@attachmentFiles);
+	} elsif(defined($defaultMailTemplate)) {
+		# First, let's populate the domain with this default
+		# so it is not needed to initialize it again
+		$uMgmt->attachDocumentForDomain($domainId,{'cn' => 'defaultMailTemplate.html','documentClass' => 'mailTemplate','description' => 'New default '. $domainId . ' template'},$defaultMailTemplate);
+		my $counter=0;
+		foreach my $defaultAttachmentFile (@defaultAttachmentFiles) {
+			$uMgmt->attachDocumentForDomain($domainId,{'cn' => "defaultMailAttachment_${counter}.pdf",'documentClass' => 'mailAttachment','description' => 'New default '. $domainId . ' attachment'},$defaultAttachmentFile);
+			$counter++;
+		}
+		
+		# And then, return them!
+		return (\$defaultMailTemplate,map { \$_ } @defaultAttachmentFiles);
 	} else {
 		return bless({'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500},'RDConnect::MetaUserManagement::Error');
 	}
@@ -411,6 +423,85 @@ sub ResetUserPassword($$$) {
 	
 	#send_file(\$data, content_type => 'image/jpeg');
 	return $retval;
+}
+
+use constant DEFAULT_VALIDATE_EMAIL_TEMPLATE => <<EOF;
+Dear RD-Connect user [% username %],
+	this e-mail is used to confirm your e-mail address [% email %] is working
+and you can read messages from it. You should click on next link:
+
+[% link %]
+
+so the RD-Connect User Management system annotates the e-mail address as functional.
+
+Kind Regards,
+	RD-Connect team
+EOF
+
+sub ValidateEmailTemplate($) {
+	my($uMgmt) = @_;
+	
+	return FetchEmailTemplate($uMgmt,RDConnect::UserManagement::ValidateEmailDomain,DEFAULT_VALIDATE_EMAIL_TEMPLATE);
+}
+
+sub SendUserValidateEmail($$$) {
+	my($uMgmt,$userId,$email) = @_;
+	
+	my $cfg = $uMgmt->getCfg();
+	
+	my($mailTemplate,@attachmentFiles) = ValidateEmailTemplate($uMgmt);
+	
+	my($success,$payload) = $uMgmt->putUserEmailOnValidationStatus($userId,$email);
+	
+	if($success) {
+		my %keyval = ( 'username' => '(undefined)', 'email' => $email );
+		
+		# Mail configuration parameters
+		my $unique = time;
+		my $mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
+		$mail1->setSubject($mail1->getSubject().' (resetted) ['.$unique.']');
+		
+		my $passMailTemplate = <<'EOF' ;
+The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
+
+You should change this password by a different one as soon as possible.
+
+Kind Regards,
+	RD-Connect team
+EOF
+		my $mail2 = GetMailManagementInstance($cfg,\$passMailTemplate,%keyval2);
+		$mail2->setSubject('RD-Connect password reset for user '.$userId.' ['.$unique.']');
+		
+		my $username = $payload->{'username'};
+		my $fullname = $payload->{'cn'};
+		my $email = $payload->{'email'}[0];
+		my $to = Email::Address->new($fullname => $email);
+		
+		$keyval1{'username'} = $username;
+		$keyval1{'fullname'} = $fullname;
+		eval {
+			$mail1->sendMessage($to,\%keyval1);
+			
+			$keyval2{'password'} = $userPassword;
+			eval {
+				$mail2->sendMessage($to,\%keyval2);
+			};
+			if($@) {
+				return {'reason' => 'Error while sending password e-mail','trace' => $@,'code' => 500};
+			}
+		};
+		
+		if($@) {
+			return {'reason' => 'Error while sending user e-mail','trace' => $@,'code' => 500};
+		}
+	} else {
+		$retval = {'reason' => 'Error while resetting user password for user '.$userId,'trace' => $payload,'code' => 500};
+	}
+	
+	#send_file(\$data, content_type => 'image/jpeg');
+	return $retval;
+}
+
 }
 
 1;

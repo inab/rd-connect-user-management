@@ -24,3 +24,6 @@ requires 'Plack::Middleware::CrossOrigin';
 requires 'Plack::Middleware::Deflater';
 requires 'FCGI';
 requires 'URI';
+requires 'UUID::Tiny';
+requires 'Email::Valid';
+requires 'DateTime';

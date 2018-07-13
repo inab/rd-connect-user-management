@@ -20,6 +20,11 @@ use Net::LDAP::Util;
 use Scalar::Util qw();
 use File::MimeInfo::Magic qw();
 
+use UUID::Tiny qw();
+use Email::Valid;
+
+use DateTime;
+
 use constant SECTION	=>	'main';
 use constant LDAP_SECTION	=>	'ldap';
 
@@ -185,6 +190,35 @@ sub encodePassword($) {
 	my $digestedPass = '{'.$HASH_MAPPING{$self->{'digestAlg'}}.'}'.encode_base64($hashedContent,'');
 	
 	return $digestedPass;
+}
+
+# This method generates an UUID trio, which can be used for e-mail validation, password reset, etc...
+# Parameters:
+# Returns: an array of three UUIDs, the seed, the input, and the expected
+sub GenerateUUIDTrio() {
+	# The seed UUID is random
+	my $seedUUID = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
+	
+	# As well as the input
+	my $inputUUID = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
+	
+	# The expectedUUID is the result of computing the UUID v5 on
+	# the input UUID using as seed the seed UUID
+	my $expectedUUID = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V5,$seedUUID,$inputUUID);
+	
+	return ($seedUUID,$inputUUID,$expectedUUID);
+}
+
+# This method generates an UUID trio, which can be used for e-mail validation, password reset, etc...
+# Parameters:
+#	seedUUID: The seed for the validation
+#	inputUUID: The input for the validation
+#	expectedUUID: The expected result for the validation
+# Returns: true, if it validates
+sub ValidateUUIDTrio($$$) {
+	my($seedUUID,$inputUUID,$expectedUUID)=@_;
+	
+	return defined($seedUUID) && defined($inputUUID) && defined($expectedUUID) && UUID::Tiny::create_uuid(UUID::Tiny::UUID_V5,$seedUUID,$inputUUID) eq $expectedUUID;
 }
 
 use constant TOKEN_SALT_SIZE	=> 16;
@@ -514,82 +548,466 @@ sub decodePhoto {
 	return decode_base64($photo);
 }
 
+sub serializeURILabel {
+	return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ];
+}
+
+sub deserializeURILabel {
+	my @retval = ();
+	foreach my $labeledURI (@{$_[1]}) {
+		my @tokens = split(' ',$labeledURI,2);
+		push(@retval,{
+			'uri' => @tokens[0],
+			'label' => @tokens[1]
+		});
+	}
+	return \@retval;
+}
+
+sub transpose_JSON_LDAP(\%) {
+	my($p_JSON_h)=@_;
+	
+	my %LDAP_h = ();
+	
+	while(my($jsonKey,$p_JSON) = each(%{$p_JSON_h})) {
+		if(exists($p_JSON->{'_ldapName'}) && defined($p_JSON->{'_ldapName'})) {
+			my %entry_LDAP_h = %{$p_JSON};
+			my $ldapKey = delete($entry_LDAP_h{'_ldapName'});
+			$entry_LDAP_h{'_jsonName'} = $jsonKey;
+			$LDAP_h{$ldapKey} = \%entry_LDAP_h;
+		}
+	}
+	
+	return \%LDAP_h;
+}
+
+
 # Correspondence between JSON attribute names and LDAP attribute names
 # and whether these attributes should be masked on return
 # Array element meaning:	LDAP attribute name, visible attribute on JSON, array attribute on LDAP, method to translate from JSON to LDAP, method to translate from LDAP to JSON, is read-only
 my %JSON_LDAP_USER_ATTRIBUTES = (
-	'givenName'	=>	['givenName', boolean::true, boolean::true, undef, undef, boolean::false],
-	'surname'	=>	['sn', boolean::true, boolean::true, undef, undef, boolean::false],
-	'userPassword'	=>	['userPassword', boolean::false, boolean::false, sub { return (!defined($_[1]) || IsEncodedPassword($_[1])) ? $_[1] : $_[0]->encodePassword($_[1]);}, undef, boolean::false],
-	'username'	=>	['uid',boolean::true, boolean::false, undef, undef, boolean::false],
-	'enabled'	=>	['disabledAccount',boolean::true, boolean::false, sub { return ($_[1] ? 'FALSE':'TRUE'); }, sub { return (defined($_[1]) && $_[1] eq 'TRUE') ? boolean::false : boolean::true; }, boolean::false],
-	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
-	'email'	=>	['mail',boolean::true, boolean::true, undef, undef, boolean::false],
+	'givenName'	=>	{
+		# ['givenName', boolean::true, boolean::true, undef, undef, boolean::false],
+		_ldapName => 'givenName',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'surname'	=>	{
+		# ['sn', boolean::true, boolean::true, undef, undef, boolean::false],
+		_ldapName => 'sn',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'userPassword'	=>	{
+		# ['userPassword', boolean::false, boolean::false, sub { return (!defined($_[1]) || IsEncodedPassword($_[1])) ? $_[1] : $_[0]->encodePassword($_[1]);}, undef, boolean::false],
+		_ldapName => 'userPassword',
+		_visible => boolean::false,
+		_isLdapArray => boolean::false,
+		_json2Ldap => sub {
+			return (!defined($_[1]) || IsEncodedPassword($_[1])) ? $_[1] : $_[0]->encodePassword($_[1]);
+		},
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'username'	=>	{
+		# ['uid',boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'uid',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'enabled'	=>	{
+		# ['disabledAccount',boolean::true, boolean::false, sub { return ($_[1] ? 'FALSE':'TRUE'); }, sub { return (defined($_[1]) && $_[1] eq 'TRUE') ? boolean::false : boolean::true; }, boolean::false],
+		_ldapName => 'disabledAccount',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		_json2Ldap => sub {
+			return ($_[1] ? 'FALSE':'TRUE');
+		},
+		_ldap2Json => sub {
+			return (defined($_[1]) && $_[1] eq 'TRUE') ? boolean::false : boolean::true;
+		},
+		_readOnly => boolean::false,
+	},
+	'cn'	=>	{
+		# ['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'cn',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'email'	=>	{
+		# ['mail',boolean::true, boolean::true, undef, undef, boolean::false],
+		_ldapName => 'mail',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
 	
-	'userCategory'	=>	['userClass', boolean::true, boolean::false, undef, undef, boolean::false],
-	'title'	=>	['title', boolean::true, boolean::false, undef, undef, boolean::false],
-	'picture'	=>	['jpegPhoto', boolean::true, boolean::false, \&decodePhoto, \&encodePhoto, boolean::false],
-	'telephoneNumber'	=>	['telephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
-	'facsimileTelephoneNumber'	=>	['facsimileTelephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
-	'registeredAddress'	=>	['registeredAddress', boolean::true, boolean::false, undef, undef, boolean::false],
-	'postalAddress'	=>	['postalAddress', boolean::true, boolean::false, undef, undef, boolean::false],
-	'links'	=>	['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
+	'userCategory'	=>	{
+		# ['userClass', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'userClass',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'title'	=>	{
+		# ['title', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'title',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'picture'	=>	{
+		# ['jpegPhoto', boolean::true, boolean::false, \&decodePhoto, \&encodePhoto, boolean::false],
+		_ldapName => 'jpegPhoto',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		_json2Ldap => \&decodePhoto,
+		_ldap2Json => \&encodePhoto,
+		_readOnly => boolean::false,
+	},
+	'telephoneNumber'	=>	{
+		# ['telephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
+		_ldapName => 'telephoneNumber',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'facsimileTelephoneNumber'	=>	{
+		# ['facsimileTelephoneNumber', boolean::true, boolean::true, undef, undef, boolean::false],
+		_ldapName => 'facsimileTelephoneNumber',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'registeredAddress'	=>	{
+		# ['registeredAddress', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'registeredAddress',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'postalAddress'	=>	{
+		# ['postalAddress', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'postalAddress',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'links'	=>	{
+		# ['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
+		_ldapName => 'labeledURI',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		_json2Ldap => \&serializeURILabel,
+		_ldap2Json => \&deserializeURILabel,
+		_readOnly => boolean::false,
+	},
 	
-	'groups'	=>	['memberOf', boolean::true, boolean::true, undef, sub { return [ map { _getCNFromGroupDN($_); } @{$_[1]} ]; }, boolean::true],
-	'organizationalUnit'	=>	[undef, boolean::true, boolean::false, undef, undef, boolean::true],
+	'groups'	=>	{
+		# ['memberOf', boolean::true, boolean::true, undef, sub { return [ map { _getCNFromGroupDN($_); } @{$_[1]} ]; }, boolean::true],
+		_ldapName => 'memberOf',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		# _json2Ldap => undef,
+		_ldap2Json => sub {
+			return [ map { _getCNFromGroupDN($_); } @{$_[1]} ];
+		},
+		_readOnly => boolean::true,
+	},
+	'organizationalUnit'	=>	{
+		# [undef, boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => undef,
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'management'	=>	{
+		_ldapName => undef,
+		_visible => boolean::false,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	}
 );
 
 # Inverse correspondence: LDAP attributes to JSON ones
-my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_USER_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_USER_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_USER_ATTRIBUTES);
+# my %LDAP_JSON_USER_ATTRIBUTES = map { $JSON_LDAP_USER_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_USER_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_USER_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_USER_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_USER_ATTRIBUTES);
+
+my $p_LDAP_JSON_USER_ATTRIBUTES = transpose_JSON_LDAP(%JSON_LDAP_USER_ATTRIBUTES);
 
 
 my %JSON_LDAP_ENABLED_USERS_ATTRIBUTES = (
-	'title'	=>	['title', boolean::true, boolean::false, undef, undef, boolean::true],
-	'fullname'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
-	'username'	=>	['uid',boolean::true, boolean::false, undef, undef, boolean::true],
-	'organizationalUnit'	=>	[undef, boolean::true, boolean::false, undef, undef, boolean::true],
+	'title'	=>	{
+		# ['title', boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'title',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'fullname'	=>	{
+		# ['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'cn',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'username'	=>	{
+		# ['uid',boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'uid',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'organizationalUnit'	=>	{
+		# [undef, boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => undef,
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
 	
-	'userCategory'	=>	['userClass', boolean::true, boolean::false, undef, undef, boolean::true],
+	'userCategory'	=>	{
+		# ['userClass', boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'userClass',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
 	
-	'email'	=>	['mail',boolean::true, boolean::true, undef, undef, boolean::true],
+	'email'	=>	{
+		# ['mail',boolean::true, boolean::true, undef, undef, boolean::true],
+		_ldapName => 'mail',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
 );
 
 # Inverse correspondence: LDAP attributes to JSON ones
-my %LDAP_JSON_ENABLED_USERS_ATTRIBUTES = map { $JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_ENABLED_USERS_ATTRIBUTES);
+# my %LDAP_JSON_ENABLED_USERS_ATTRIBUTES = map { $JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_ENABLED_USERS_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_ENABLED_USERS_ATTRIBUTES);
+
+my $p_LDAP_JSON_ENABLED_USERS_ATTRIBUTES = transpose_JSON_LDAP(%JSON_LDAP_ENABLED_USERS_ATTRIBUTES);
 
 my %JSON_LDAP_OU_ATTRIBUTES = (
-	'organizationalUnit'	=>	['ou', boolean::true, boolean::false, undef, undef, boolean::true],
-	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
-	'picture'	=>	['jpegPhoto', boolean::true, boolean::false,  \&decodePhoto, \&encodePhoto, boolean::false],
-	'links'	=>	['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
+	'organizationalUnit'	=>	{
+		# ['ou', boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'ou',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'description'	=>	{
+		# ['description', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'description',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'picture'	=>	{
+		# ['jpegPhoto', boolean::true, boolean::false,  \&decodePhoto, \&encodePhoto, boolean::false],
+		_ldapName => 'jpegPhoto',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		_json2Ldap => \&decodePhoto,
+		_ldap2Json => \&encodePhoto,
+		_readOnly => boolean::false,
+	},
+	'links'	=>	{
+		# ['labeledURI', boolean::true, boolean::true, sub { return [ map { $_->{'uri'}.' '.$_->{'label'}; } @{$_[1]} ]; }, sub { my @retval = (); foreach my $labeledURI (@{$_[1]}) { my @tokens = split(' ',$labeledURI,2); push(@retval,{'uri' => @tokens[0],'label' => @tokens[1]});}; return \@retval; }, boolean::false],
+		_ldapName => 'labeledURI',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		_json2Ldap => \&serializeURILabel,
+		_ldap2Json => \&deserializeURILabel,
+		_readOnly => boolean::false,
+	},
 );
 
-my %LDAP_JSON_OU_ATTRIBUTES = map { $JSON_LDAP_OU_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_OU_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_OU_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_OU_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_OU_ATTRIBUTES);
+# Inverse correspondence: LDAP attributes to JSON ones
+# my %LDAP_JSON_OU_ATTRIBUTES = map { $JSON_LDAP_OU_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_OU_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_OU_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_OU_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_OU_ATTRIBUTES);
+
+my $p_LDAP_JSON_OU_ATTRIBUTES = transpose_JSON_LDAP(%JSON_LDAP_OU_ATTRIBUTES);
 
 
 my %JSON_LDAP_GROUP_ATTRIBUTES = (
-	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
-	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
-	'groupPurpose'	=>	['businessCategory',boolean::true, boolean::false, undef, undef, boolean::false],
-	'owner'	=>	['owner', boolean::true, boolean::true, \&getDNsFromUIDs, \&getUIDsFromDNs, boolean::true],
-	'members'	=>	['member', boolean::true, boolean::true, \&getDNsFromUIDs, \&getUIDsFromDNs, boolean::true],
+	'cn'	=>	{
+		# ['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'cn',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'description'	=>	{
+		# ['description', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'description',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'groupPurpose'	=>	{
+		# ['businessCategory',boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'businessCategory',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'owner'	=>	{
+		# ['owner', boolean::true, boolean::true, \&getDNsFromUIDs, \&getUIDsFromDNs, boolean::true],
+		_ldapName => 'owner',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		_json2Ldap => \&getDNsFromUIDs,
+		_ldap2Json => \&getUIDsFromDNs,
+		_readOnly => boolean::true,
+	},
+	'members'	=>	{
+		# ['member', boolean::true, boolean::true, \&getDNsFromUIDs, \&getUIDsFromDNs, boolean::true],
+		_ldapName => 'member',
+		_visible => boolean::true,
+		_isLdapArray => boolean::true,
+		_json2Ldap => \&getDNsFromUIDs,
+		_ldap2Json => \&getUIDsFromDNs,
+		_readOnly => boolean::true,
+	},
 );
 
-my %LDAP_JSON_GROUP_ATTRIBUTES = map { $JSON_LDAP_GROUP_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_GROUP_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_GROUP_ATTRIBUTES);
+# Inverse correspondence: LDAP attributes to JSON ones
+# my %LDAP_JSON_GROUP_ATTRIBUTES = map { $JSON_LDAP_GROUP_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_GROUP_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_GROUP_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_GROUP_ATTRIBUTES);
+
+my $p_LDAP_JSON_GROUP_ATTRIBUTES = transpose_JSON_LDAP(%JSON_LDAP_GROUP_ATTRIBUTES);
 
 
 my %JSON_LDAP_RDDOCUMENT_ATTRIBUTES = (
-	'cn'	=>	['cn', boolean::true, boolean::false, undef, undef, boolean::true],
-	'description'	=>	['description', boolean::true, boolean::false, undef, undef, boolean::false],
-	'documentClass'	=>	['documentClass', boolean::true, boolean::false, undef, undef, boolean::false],
-	'creationTimestamp'	=>	['createTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
-	'modificationTimestamp'	=>	['modifyTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
-	'owner'	=>	['owner', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
-	'creator'	=>	['creatorsName', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
-	'modifier'	=>	['modifiersName', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
+	'cn'	=>	{
+		# ['cn', boolean::true, boolean::false, undef, undef, boolean::true],
+		_ldapName => 'cn',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+	'description'	=>	{
+		# ['description', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'description',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'documentClass'	=>	{
+		# ['documentClass', boolean::true, boolean::false, undef, undef, boolean::false],
+		_ldapName => 'documentClass',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
+	'creationTimestamp'	=>	{
+		# ['createTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'createTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
+	},
+	'modificationTimestamp'	=>	{
+		# ['modifyTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'modifyTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
+	},
+	'owner'	=>	{
+		# ['owner', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
+		_ldapName => 'owner',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&getUIDFromDN,
+		_readOnly => boolean::true,
+	},
+	'creator'	=>	{
+		# ['creatorsName', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
+		_ldapName => 'creatorsName',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&getUIDFromDN,
+		_readOnly => boolean::true,
+	},
+	'modifier'	=>	{
+		# ['modifiersName', boolean::true, boolean::false, undef, \&getUIDFromDN, boolean::true],
+		_ldapName => 'modifiersName',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&getUIDFromDN,
+		_readOnly => boolean::true,
+	},
 );
 
-my %LDAP_JSON_RDDOCUMENT_ATTRIBUTES = map { $JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_RDDOCUMENT_ATTRIBUTES);
+# Inverse correspondence: LDAP attributes to JSON ones
+# my %LDAP_JSON_RDDOCUMENT_ATTRIBUTES = map { $JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}[0] => [ $_, @{$JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}}[1..$#{$JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}}] ]} grep { defined($JSON_LDAP_RDDOCUMENT_ATTRIBUTES{$_}->[0])? 1 : undef; } keys(%JSON_LDAP_RDDOCUMENT_ATTRIBUTES);
+
+my $p_LDAP_JSON_RDDOCUMENT_ATTRIBUTES = transpose_JSON_LDAP(%JSON_LDAP_RDDOCUMENT_ATTRIBUTES);
+
 
 # Hotchpotches
 
@@ -683,6 +1101,10 @@ sub _normalizeUserCNFromJSON(\%) {
 	}
 }
 
+# Parameters:
+#	timestamp: timestamp in LDAP format
+# Returns:
+#	A string with the date in RFC3339 representation
 sub _LDAP_ISO8601_RFC3339($$) {
 	my($uMgmt,$timestamp) = @_;
 	
@@ -691,6 +1113,18 @@ sub _LDAP_ISO8601_RFC3339($$) {
 	}
 	
 	return $timestamp;
+}
+
+# Parameters:
+#	epoch: Number of seconds since epoch
+# Returns:
+#	A string with the date in RFC3339 representation
+sub _epoch_ISO8601_RFC3339($) {
+	my($epoch) = @_;
+	
+	my $dt = DateTime->from_epoch( epoch => $epoch, time_zone => 'UTC');
+	
+	return $dt->strftime($dt->nanosecond() ? '%Y-%m-%dT%H:%M:%S.%9NZ' : '%Y-%m-%dT%H:%M:%SZ');
 }
 
 
@@ -832,12 +1266,12 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 		
 		# Next, the attributes which go straight to LDAP
 		foreach my $jsonKey (keys(%{$p_entryHash})) {
-			if(exists($p_json2ldap->{$jsonKey}) && defined($p_json2ldap->{$jsonKey}[0])) {
+			if(exists($p_json2ldap->{$jsonKey}) && exists($p_json2ldap->{$jsonKey}{'_ldapName'}) && defined($p_json2ldap->{$jsonKey}{'_ldapName'})) {
 				my $ldapVal = $p_entryHash->{$jsonKey};
-				$ldapVal = [ $ldapVal ]  if($p_json2ldap->{$jsonKey}[2] && !ref($ldapVal) eq 'ARRAY');
-				if(defined($p_json2ldap->{$jsonKey}[3])) {
+				$ldapVal = [ $ldapVal ]  if($p_json2ldap->{$jsonKey}{'_isLdapArray'} && !ref($ldapVal) eq 'ARRAY');
+				if(exists($p_json2ldap->{$jsonKey}{'_json2Ldap'}) && defined($p_json2ldap->{$jsonKey}{'_json2Ldap'})) {
 					my $retval = undef;
-					($ldapVal,$retval) = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal);
+					($ldapVal,$retval) = $p_json2ldap->{$jsonKey}{'_json2Ldap'}->($self,$ldapVal);
 					
 					if(defined($retval)) {
 						if(wantarray) {
@@ -850,7 +1284,7 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 						}
 					}
 				}
-				push(@ldapAttributes,$p_json2ldap->{$jsonKey}[0] => $ldapVal);
+				push(@ldapAttributes,$p_json2ldap->{$jsonKey}{'_ldapName'} => $ldapVal);
 			}
 		}
 		
@@ -943,13 +1377,13 @@ sub genJSONFromLDAP(\@\%;$$$) {
 			
 			if($entry->exists($ldapKey)) {
 				# Only processing those LDAP attributes which are exportable
-				if($ldapDesc->[1]) {
+				if($ldapDesc->{'_visible'}) {
 					# LDAP attribute values always take precedence over JSON ones
 					my @values = $entry->get_value($ldapKey);
-					my $theVal = $ldapDesc->[2] ? \@values : $values[0];
-					if(defined($ldapDesc->[4])) {
+					my $theVal = $ldapDesc->{'_isLdapArray'} ? \@values : $values[0];
+					if(exists($ldapDesc->{'_ldap2Json'}) && defined($ldapDesc->{'_ldap2Json'})) {
 						my $retval = undef;
-						($theVal, $retval) = $ldapDesc->[4]->($self,$theVal);
+						($theVal, $retval) = $ldapDesc->{'_ldap2Json'}->($self,$theVal);
 						
 						if(defined($retval)) {
 							Carp::carp("Error postprocessing LDAP key $ldapKey");
@@ -959,13 +1393,13 @@ sub genJSONFromLDAP(\@\%;$$$) {
 						}
 					}
 					
-					$jsonEntry->{$ldapDesc->[0]} = $theVal;
+					$jsonEntry->{$ldapDesc->{'_jsonName'}} = $theVal;
 				#} else {
-				#	$jsonEntry->{$ldapDesc->[0]} = undef;
+				#	$jsonEntry->{$ldapDesc->{'_jsonName'}} = undef;
 				}
-			} elsif(exists($jsonEntry->{$ldapDesc->[0]})) {
+			} elsif(exists($jsonEntry->{$ldapDesc->{'_jsonName'}})) {
 				# Removing spureous key not any valid
-				delete($jsonEntry->{$ldapDesc->[0]});
+				delete($jsonEntry->{$ldapDesc->{'_jsonName'}});
 			}
 		}
 		
@@ -978,9 +1412,135 @@ sub genJSONFromLDAP(\@\%;$$$) {
 	return defined($as_hash) ? { $as_hash => \@retval } : \@retval;
 }
 
+my $ZERO_EPOCH = _epoch_ISO8601_RFC3339(0);
+
+sub _emailJanitoring($) {
+	my($jsonEntry) = @_;
+	
+	my $wasJanitored = undef;
+	
+	# Upgrade/synchronize the needed structures
+	# E-mails and registered e-mails
+	unless(exists($jsonEntry->{'email'})) {
+		$jsonEntry->{'email'} = [];
+		$wasJanitored = 1;
+	}
+	my $p_emails = $jsonEntry->{'email'};
+	
+	unless(exists($jsonEntry->{'registeredEmails'})) {
+		$jsonEntry->{'registeredEmails'} = [];
+		$wasJanitored = 1;
+	}
+	my $p_registeredEmails = $jsonEntry->{'registeredEmails'};
+	
+	unless(exists($jsonEntry->{'management'})) {
+		$jsonEntry->{'management'} = {};
+		$wasJanitored = 1;
+	}
+	my $jUManagement = $jsonEntry->{'management'};
+	
+	unless(exists($jUManagement->{'validationTokens'})) {
+		$jUManagement->{'validationTokens'} = [];
+		$wasJanitored = 1;
+	}
+	my $p_validationTokens = $jUManagement->{'validationTokens'};
+	
+	# Step 1.a: Upgrade ancient e-mails to registeredEmails structures
+	CHECK_EMAIL:
+	foreach my $email (@{$p_emails}) {
+		foreach my $regEmail (@{$p_registeredEmails}) {
+			next CHECK_EMAIL  if($email eq $regEmail->{'email'});
+		}
+		
+		# If we are here, the e-mail was not found
+		# By default, we should give a 4 weeks grace period for old e-mails
+		my $grace_epoch = _epoch_ISO8601_RFC3339(time()+28*86400);
+		push(@{$p_registeredEmails},{
+			'email'	=> $email,
+			'registeredAt' => $ZERO_EPOCH,
+			'lastValidatedAt' => $ZERO_EPOCH,
+			'validUntil' => $grace_epoch,
+			'validQuarantineCheckUntil' => $grace_epoch,
+			'status' => 'unckeched'
+		});
+		$wasJanitored = 1;
+	}
+	
+	# Step 1.b: Back upgrade registeredEmails which should appear in emails
+	# Step 2.a: Disable enabled 
+	my $current_epoch = _epoch_ISO8601_RFC3339(time());
+	RETRO_CHECK_EMAIL:
+	foreach my $regEmail (@{$p_registeredEmails}) {
+		# Unidentified entries are skipped
+		next  unless(exists($regEmail->{'email'}));
+		
+		# Disable those stale entries
+		if(exists($regEmail->{'status'}) && $regEmail->{'status'} ne 'frozen' && (!exists($regEmail->{'validUntil'}) || $regEmail->{'validUntil'} lt $current_epoch) {
+			$regEmail->{'status'} = 'disabled';
+			$wasJanitored = 1;
+		}
+		
+		# Skip on unchecked e-mails
+		next  if($regEmail->{'status'} eq 'unchecked');
+		
+		if($regEmail->{'status'} eq 'disabled') {
+			# Remove the email from the list
+			my $emailIdx = 0;
+			foreach my $email (@{$p_emails}) {
+				if($email eq $regEmail->{'email'}) {
+					splice(@{$p_emails},$emailIdx,1);
+					$wasJanitored = 1;
+					last;
+				}
+				$emailIdx++;
+			}
+		} else {
+			# Add the email to the list
+			foreach my $email (@{$p_emails}) {
+				next RETRO_CHECK_EMAIL  if($email eq $regEmail->{'email'});
+			}
+			
+			# If we are here, the e-mail was not found
+			push(@{$p_emails},$regEmail->{'mail'});
+			$wasJanitored = 1;
+		}
+	}
+	
+	# Step 2: Cleanup quarantined email structures when their check codes are stale
+	foreach my $regEmail (@{$p_registeredEmails}) {
+		if(exists($regEmail->{'validQuarantineCheckUntil'}) && $regEmail->{'validQuarantineCheckUntil'} lt $current_epoch) {
+			$regEmail->{'validQuarantineCheckUntil'} = $ZERO_EPOCH;
+			$wasJanitored = 1;
+			# Remove it!
+			my $emailIdx = 0;
+			foreach my $quaEmail (@{$p_validationTokens}) {
+				next  unless(exists($quaEmail->{'ns'}) && $quaEmail->{'ns'} eq 'email');
+				
+				if($quaEmail->{'id'} eq $regEmail->{'email'}) {
+					splice(@{$p_quarantineEmails},$emailIdx,1);
+				}
+				$emailIdx++;
+			}
+		}
+	}
+	
+	return $wasJanitored;
+}
+
+# Parameters:
+#	uMgmt: a user management instance
+#	entry: an LDAP user entry
+#	jsonEntry: the JSON entry representation of the LDAP user entry
 sub postFixupUser($$) {
 	my($uMgmt,$entry,$jsonEntry) = @_;
+	
+	# Add the organizationalUnit
 	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn());
+	
+	# Update the LDAP entry with this janitored version
+	if(_emailJanitoring($jsonEntry)) {
+		$uMgmt->modifyJSONUser(undef,$jsonEntry);
+	}
 }
 
 sub postFixupDocument($$) {
@@ -993,31 +1553,31 @@ sub postFixupDocument($$) {
 sub genJSONUsersFromLDAPUsers(\@) {
 	my $self = shift;
 	
-	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_USER_ATTRIBUTES, \&postFixupUser, USER_HOTCHPOTCH_ATTRIBUTE);
+	return $self->genJSONFromLDAP($_[0], $p_LDAP_JSON_USER_ATTRIBUTES, \&postFixupUser, USER_HOTCHPOTCH_ATTRIBUTE);
 }
 
 sub genJSONEnabledUsersFromLDAPUsers(\@) {
 	my $self = shift;
 	
-	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_ENABLED_USERS_ATTRIBUTES, \&postFixupUser, undef, 'results');
+	return $self->genJSONFromLDAP($_[0], $p_LDAP_JSON_ENABLED_USERS_ATTRIBUTES, \&postFixupUser, undef, 'results');
 }
 
 sub genJSONouFromLDAPou(\@) {
 	my $self = shift;
 	
-	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_OU_ATTRIBUTES);
+	return $self->genJSONFromLDAP($_[0], $p_LDAP_JSON_OU_ATTRIBUTES);
 }
 
 sub genJSONGroupsFromLDAPGroups(\@) {
 	my $self = shift;
 	
-	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_GROUP_ATTRIBUTES);
+	return $self->genJSONFromLDAP($_[0], $p_LDAP_JSON_GROUP_ATTRIBUTES);
 }
 
 sub genJSONDocumentsFromLDAPDocuments(\@) {
 	my $self = shift;
 	
-	return $self->genJSONFromLDAP($_[0], \%LDAP_JSON_RDDOCUMENT_ATTRIBUTES, \&postFixupDocument);
+	return $self->genJSONFromLDAP($_[0], $p_LDAP_JSON_RDDOCUMENT_ATTRIBUTES, \&postFixupDocument);
 }
 
 # Parameters:
@@ -1053,7 +1613,7 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 		if(ref($p_removedKeys) eq 'ARRAY') {
 			foreach my $jsonKey (@{$p_removedKeys}) {
 				# Skipping modifications on banned keys or read-only ones
-				next  if(exists($p_json2ldap->{$jsonKey}) && (!$p_json2ldap->{$jsonKey}[1] || $p_json2ldap->{$jsonKey}[5]));
+				next  if(exists($p_json2ldap->{$jsonKey}) && (!$p_json2ldap->{$jsonKey}{'_visible'} || $p_json2ldap->{$jsonKey}{'_readOnly'}));
 				
 				$p_entryHash->{$jsonKey} = undef;
 			}
@@ -1062,7 +1622,9 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 		# Detect modified attributes
 		foreach my $jsonKey (keys(%{$p_entryHash})) {
 			# Skipping modifications on banned keys or read-only ones
-			next  if(exists($p_json2ldap->{$jsonKey}) && (!$p_json2ldap->{$jsonKey}[1] || $p_json2ldap->{$jsonKey}[5]));
+			next  if(exists($p_json2ldap->{$jsonKey}) && (!$p_json2ldap->{$jsonKey}{'_visible'} || $p_json2ldap->{$jsonKey}{'_readOnly'}));
+			
+			my $p_jsonDesc = $p_json2ldap->{$jsonKey};
 			
 			# Small fix for JSON::Validator, which does not expect boolean values
 			if(Scalar::Util::blessed($jsonEntry->{$jsonKey}) && $jsonEntry->{$jsonKey}->isa('boolean')) {
@@ -1085,25 +1647,23 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 				
 				if(defined($p_entryHash->{$jsonKey})) {
 					# This is also an LDAP attribute modification
-					if(exists($p_json2ldap->{$jsonKey})) {
-						my $ldapVal = $p_entryHash->{$jsonKey};
-						$ldapVal = [ $ldapVal ]  if($p_json2ldap->{$jsonKey}[2] && !ref($ldapVal) eq 'ARRAY');
-						if(defined($p_json2ldap->{$jsonKey}[3])) {
-							my $retval = undef;
-							($ldapVal,$retval) = $p_json2ldap->{$jsonKey}[3]->($self,$ldapVal);
-							
-							# Were there processing errors?
-							if(defined($retval)) {
-								$success = undef;
-								push(@{$payload},"Error on key $jsonKey post-processing",@{$retval});
-							}
-						}
+					my $ldapVal = $p_entryHash->{$jsonKey};
+					$ldapVal = [ $ldapVal ]  if($p_jsonDesc->{'_isLdapArray'} && !ref($ldapVal) eq 'ARRAY');
+					if(exists($p_jsonDesc->{'_json2Ldap'}) && defined($p_jsonDesc->{'_json2Ldap'})) {
+						my $retval = undef;
+						($ldapVal,$retval) = $p_jsonDesc->{'_json2Ldap'}->($self,$ldapVal);
 						
-						if(exists($jsonEntry->{$jsonKey})) {
-							push(@modifiedLDAPAttributes, $p_json2ldap->{$jsonKey}[0] => $ldapVal);
-						} else {
-							push(@addedLDAPAttributes, $p_json2ldap->{$jsonKey}[0] => $ldapVal);
+						# Were there processing errors?
+						if(defined($retval)) {
+							$success = undef;
+							push(@{$payload},"Error on key $jsonKey post-processing",@{$retval});
 						}
+					}
+					
+					if(exists($jsonEntry->{$jsonKey})) {
+						push(@modifiedLDAPAttributes, $p_jsonDesc->{'_ldapName'} => $ldapVal);
+					} else {
+						push(@addedLDAPAttributes, $p_jsonDesc->{'_ldapName'} => $ldapVal);
 					}
 					
 					$jsonEntry->{$jsonKey} = $p_entryHash->{$jsonKey};
@@ -1111,9 +1671,7 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 					delete($jsonEntry->{$jsonKey});
 					
 					# This is an attribute removal
-					if(exists($p_json2ldap->{$jsonKey})) {
-						push(@removedLDAPAttributes,$p_json2ldap->{$jsonKey}[0]);
-					}
+					push(@removedLDAPAttributes,$p_jsonDesc->{'_ldapName'});
 				}
 			}
 		}
@@ -1143,7 +1701,7 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 					foreach my $jsonKey (keys(%{$p_json2ldap})) {
 						if(exists($jsonEntry->{$jsonKey})) {
 							my $p_jsonDesc = $p_json2ldap->{$jsonKey};
-							unless($p_jsonDesc->[1]) {
+							unless($p_jsonDesc->{'_visible'}) {
 								#$jsonEntry->{$jsonKey} = undef;
 								delete($jsonEntry->{$jsonKey});
 							}
@@ -1223,6 +1781,8 @@ sub modifyJSONUser($\%;\@$) {
 	my $self = shift;
 	
 	my($username,$p_userHash,$p_removedKeys,$userDN) = @_;
+	
+	$username = $p_userHash->{'username'}  unless(defined($username) || ! exists($p_userHash->{'username'}));
 	
 	my($success,$payload,$user) = $self->getJSONUser($username,$userDN);
 	
@@ -1784,6 +2344,92 @@ sub listJSONEnabledUsers(;$) {
 	
 	return ($success,$payload);
 }
+
+# Parameters:
+#	username: the RD-Connect username or valid user e-mail
+#	email: the e-mail address which is going to be added or
+#		it is going to be in quarantine
+sub putUserEmailOnValidationStatus($$;$) {
+	my $self = shift;
+	
+	my($username,$email,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my($success,$payload) = $self->getJSONUser($username,$userDN);
+	if($success) {
+		my $jsonUser = $payload;
+		
+		# First, find the registered e-mail 
+		my $p_registeredEmails = $jsonUser->{'registeredEmails'};
+		my $foundRegEmail = undef;
+		foreach my $regEmail (@{$p_registeredEmails}) {
+			if($email eq $regEmail->{'email'}) {
+				$foundRegEmail = $regEmail;
+				last;
+			}
+		}
+		# If it is not found, we assume it is a new one!
+		my $reftime = time();
+		my $now_epoch = _epoch_ISO8601_RFC3339($reftime);
+		# One week's grace
+		my $grace_epoch = _epoch_ISO8601_RFC3339($reftime+7*86400);
+		
+		if(defined($foundRegEmail)) {
+			$foundRegEmail->{'validQuarantineCheckUntil'} = $grace_epoch;
+		} elsif(Email::Valid->address($email)) {
+			$foundRegEmail = {
+				'email'	=> $email,
+				'registeredAt' => $new_epoch,
+				'lastValidatedAt' => $ZERO_EPOCH,
+				'validUntil' => $ZERO_EPOCH,
+				'validQuarantineCheckUntil' => $grace_epoch,
+				'status' => 'unckeched'
+			};
+		} else {
+			# The e-mail address was wrong
+			$foundRegEmail = undef;
+		}
+		
+		if(defined($foundRegEmail)) {
+			# Then, put e-mail address in quarantine
+			my $jUManagement = $jsonUser->{'management'};
+			my $p_validationTokens = $jUManagement->{'validationTokens'};
+			
+			my($seedUUID,$inputUUID,$expectedUUID) = GenerateUUIDTrio();
+			my $labelUUID = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
+			my $p_valToken = {
+				'ns'	=>	'email',
+				'id'	=>	$email,
+				'labelHash'	=>	$labelUUID,
+				'inputHash'	=>	$inputUUID,
+				'expectedHash'	=>	$expectedUUID,
+				'validUntil'	=>	$grace_epoch
+			};
+			
+			push(@{$p_validationTokens},$p_valToken);
+		
+			$payload = [$labelUUID,$seedUUID];
+		} else {
+			$success = undef;
+			$payload = [ $Email::Valid::Details ];
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
 
 my @LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	 ['extensibleObject','organizationalUnit'],
@@ -3399,7 +4045,7 @@ sub listDocumentsFromEntry($) {
 	
 	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
 		# Second, build the entry
-		if($searchMesg->count>0) {
+		if($searchMesg->count() > 0) {
 			$success = 1;
 			$payload = [ $searchMesg->entries() ];
 		#} else {
@@ -4031,6 +4677,9 @@ sub createDomain($) {
 	my $self = shift;
 	
 	my($domainCN) = @_;
+	
+	# Avoiding to smash the admin account
+	return undef  if($domainCN eq 'admin');
 	
 	my $entry = Net::LDAP::Entry->new();
 	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($domainCN),$self->{'parentDN'});
