@@ -1,3 +1,4 @@
+requires 'local::lib';
 requires 'LWP::UserAgent','< 6.20';
 requires 'LWP::Protocol::https';
 requires 'Test::More';

@@ -3,13 +3,16 @@
 use warnings "all";
 use strict;
 
+use FindBin;
+use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
+
 use Carp;
 use Config::IniFiles;
 use Email::Address;
 use Text::Unidecode qw();
 
-use FindBin;
-use lib $FindBin::Bin . '/libs';
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
 use RDConnect::MetaUserManagement;
 

@@ -3,9 +3,13 @@
 use warnings "all";
 use strict;
 
-use File::Path;
 use FindBin;
-use lib $FindBin::Bin . '/libs';
+use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
+
+use File::Path;
+
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
 
 my $userVal = RDConnect::UserManagement::getCASUserValidator();

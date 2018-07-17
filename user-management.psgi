@@ -5,14 +5,16 @@
 use strict;
 use warnings 'all';
 
-use boolean qw();
 use FindBin;
 use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
+
+use boolean qw();
 use File::Temp qw();
 use JSON -no_export;
 use URI;
 
-use lib File::Spec->catfile($FindBin::Bin,"libs");
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 
 package RDConnect::UserManagement::DancerCommon;
 
