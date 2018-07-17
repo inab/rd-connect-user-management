@@ -1,22 +1,8 @@
-# RD-Connect user management programs
+# RD-Connect user management programs and API
 
-RD-Connect Perl scripts to batch create users, groups and their associations.
+RD-Connect Perl libraries and scripts to batch create users, groups and their associations.
 
-These programs use next Perl modules:
-
-* boolean
-* experimental
-* Config::IniFiles
-* Net::LDAP , also known as [perl-ldap](http://ldap.perl.org/)
-* Digest::SHA1 (or the corresponding module to encode passwords)
-* Email::Address
-* Email::MIME
-* Email::Sender::Transport::SMTPS
-* File::Basename
-* File::MimeInfo
-* JSON::Validator
-* MIME::Base64
-* Text::Unidecode
+These programs use Perl modules described in `cpanfile`. Installation instructions are available at [INSTALL.md](INSTALL.md).
 
 These programs use a configuration profile, which must be based on the provided [template file](template-config.ini).
 

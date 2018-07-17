@@ -30,31 +30,18 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	useradd -m -U -c 'RD-Connect REST API unprivileged user' rdconnect-rest
 	```
 
-3. As the user `rdconnect-rest`, install the needed Perl modules
-
-	```bash
-	# Autoconfiguration for CPAN
-	(echo y;echo o conf prerequisites_policy follow;echo o conf commit)|cpan
-	export PERL_LOCAL_LIB_ROOT="$PERL_LOCAL_LIB_ROOT:${HOME}/perl5";
-	export PERL_MB_OPT="--install_base ${HOME}/perl5";
-	export PERL_MM_OPT="INSTALL_BASE="${HOME}"/perl5";
-	export PERL5LIB="${HOME}/perl5/lib/perl5:$PERL5LIB";
-	export PATH="${HOME}/perl5/bin:$PATH";
-	export NO_NETWORK_TESTING=n
-	
-	cpan -i LWP LWP::Protocol::https Test::More boolean experimental Config::IniFiles Net::LDAP MIME::Base64 Digest::MD5 Digest::SHA1 JSON::Validator Email::Address Email::MIME Email::Sender::Transport::SMTPS Env File::MimeInfo Text::Unidecode
-	(echo y; echo y) | cpan -i Template
-	cpan -i Authen::CAS::Client Authen::CAS::External Dancer2 Plack::Middleware::CrossOrigin Plack::Middleware::Deflater FCGI
-	```
-
-	This can be done running `install-deps.sh` script
-
-4. Clone this code, in order to install the API:
+3. As the user `rdconnect-rest`, clone this code, in order to install the API:
 
 	```bash
 	cd "${HOME}"
 	git clone https://github.com/inab/rd-connect-user-management.git
 	cd rd-connect-user-management
+	```
+
+4. Install the needed Perl modules, using the `install-deps.sh` script
+
+	```bash
+	./install-deps.sh
 	```
 
 5. Create a file called `user-management.ini` on the directory `configs`, based on [template-config.ini](template-config.ini), with the connection and authentication parameters to use the LDAP server, as well as the mail server, and the proper parameter setup in `rdconnect-usermanagement-api` section.
