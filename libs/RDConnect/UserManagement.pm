@@ -1475,7 +1475,7 @@ sub _emailJanitoring($) {
 		next  unless(exists($regEmail->{'email'}));
 		
 		# Disable those stale entries
-		if(exists($regEmail->{'status'}) && $regEmail->{'status'} ne 'frozen' && (!exists($regEmail->{'validUntil'}) || $regEmail->{'validUntil'} lt $current_epoch) {
+		if(exists($regEmail->{'status'}) && $regEmail->{'status'} ne 'frozen' && (!exists($regEmail->{'validUntil'}) || $regEmail->{'validUntil'} lt $current_epoch)) {
 			$regEmail->{'status'} = 'disabled';
 			$wasJanitored = 1;
 		}
@@ -1517,7 +1517,7 @@ sub _emailJanitoring($) {
 				next  unless(exists($quaEmail->{'ns'}) && $quaEmail->{'ns'} eq 'email');
 				
 				if($quaEmail->{'id'} eq $regEmail->{'email'}) {
-					splice(@{$p_quarantineEmails},$emailIdx,1);
+					splice(@{$p_validationTokens},$emailIdx,1);
 				}
 				$emailIdx++;
 			}
@@ -2381,7 +2381,7 @@ sub putUserEmailOnValidationStatus($$;$) {
 		} elsif(Email::Valid->address($email)) {
 			$foundRegEmail = {
 				'email'	=> $email,
-				'registeredAt' => $new_epoch,
+				'registeredAt' => $now_epoch,
 				'lastValidatedAt' => $ZERO_EPOCH,
 				'validUntil' => $ZERO_EPOCH,
 				'validQuarantineCheckUntil' => $grace_epoch,
