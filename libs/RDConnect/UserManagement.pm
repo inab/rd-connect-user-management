@@ -1542,9 +1542,9 @@ sub postFixupUser($$) {
 	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn());
 	
 	# Update the LDAP entry with this janitored version
-	if(_emailJanitoring($jsonEntry)) {
-		$uMgmt->modifyJSONUser(undef,$jsonEntry);
-	}
+	#if(_emailJanitoring($jsonEntry)) {
+	#	$uMgmt->modifyJSONUser(undef,$jsonEntry);
+	#}
 }
 
 sub postFixupDocument($$) {
@@ -1845,7 +1845,7 @@ sub getUser($;$) {
 	my $payload = [];
 	
 	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-		if($searchMesg->count>0) {
+		if($searchMesg->count > 0) {
 			$success = 1;
 			# The user entry
 			$payload = $searchMesg->entry(0);
