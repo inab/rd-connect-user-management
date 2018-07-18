@@ -1,3 +1,6 @@
+# RD-Connect User Management Libraries
+# José María Fernández (jose.m.fernandez@bsc.es)
+
 package Dancer2::Serializer::MaybeJSON;
 # ABSTRACT: Serializer for handling JSON data
 $Dancer2::Serializer::MaybeJSON::VERSION = '0.204001';

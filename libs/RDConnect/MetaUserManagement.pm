@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# RD-Connect User Management REST API
+# RD-Connect User Management Libraries
 # José María Fernández (jose.m.fernandez@bsc.es)
 
 use strict;

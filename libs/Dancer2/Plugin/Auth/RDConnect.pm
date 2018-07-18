@@ -1,3 +1,6 @@
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
+
 use 5.008001;
 use strict;
 use warnings;

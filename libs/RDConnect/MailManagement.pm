@@ -1,4 +1,6 @@
 #!/usr/bin/perl -w
+# RD-Connect User Management Libraries
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use strict;
 package RDConnect::MailManagement;

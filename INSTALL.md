@@ -68,7 +68,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	chcon -Rv --type=httpd_sys_content_t /home/rdconnect-rest/DOCUMENT_ROOT
 	chcon -Rv --type=httpd_sys_content_t /home/rdconnect-rest/rd-connect-user-management
 	chcon -Rv --type=httpd_sys_content_t /home/rdconnect-rest/RDConnect-UserManagement-REST-API
-	chcon -Rv --type=httpd_sys_script_exec_t /home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.cgi
+	chcon -Rv --type=httpd_sys_script_exec_t /home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.*cgi
 	```
 
 ## Web server setup with a secure virtual host (in CentOS)

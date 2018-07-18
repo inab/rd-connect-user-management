@@ -1,4 +1,6 @@
 #!/usr/bin/perl
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use warnings "all";
 use strict;

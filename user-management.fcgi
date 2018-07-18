@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # RD-Connect User Management REST API
-# José María Fernández (jmfernandez@cnio.es)
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use strict;
 use warnings 'all';

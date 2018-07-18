@@ -1,8 +1,11 @@
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
+
 use 5.008001;
 use strict;
 use warnings;
 
-# With this patch we support CAS 3.0
+# With this patch we support CAS 3.0 protocol
 use Authen::CAS::Client;
 package Authen::CAS::Client;
 
