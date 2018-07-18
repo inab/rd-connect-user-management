@@ -342,20 +342,22 @@ sub createUser($$$$$$$;$) {
 
 use File::Spec;
 
+use constant SCHEMAS_REL_DIR	=>	'schemas';
+
 use constant USER_VALIDATION_SCHEMA_FILE	=>	'userValidation.json';
-use constant FULL_USER_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),USER_VALIDATION_SCHEMA_FILE);
+use constant FULL_USER_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,USER_VALIDATION_SCHEMA_FILE);
 
 use constant ENABLED_USERS_SCHEMA_FILE	=>	'enabledUsers.json';
-use constant FULL_ENABLED_USERS_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),ENABLED_USERS_SCHEMA_FILE);
+use constant FULL_ENABLED_USERS_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,ENABLED_USERS_SCHEMA_FILE);
 
 use constant OU_VALIDATION_SCHEMA_FILE	=>	'organizationalUnitValidation.json';
-use constant FULL_OU_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),OU_VALIDATION_SCHEMA_FILE);
+use constant FULL_OU_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,OU_VALIDATION_SCHEMA_FILE);
 
 use constant GROUP_VALIDATION_SCHEMA_FILE	=>	'groupValidation.json';
-use constant FULL_GROUP_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),GROUP_VALIDATION_SCHEMA_FILE);
+use constant FULL_GROUP_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,GROUP_VALIDATION_SCHEMA_FILE);
 
 use constant RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	'documentValidation.json';
-use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),RDDOCUMENT_VALIDATION_SCHEMA_FILE);
+use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,RDDOCUMENT_VALIDATION_SCHEMA_FILE);
 {
 
 	use JSON::Validator;

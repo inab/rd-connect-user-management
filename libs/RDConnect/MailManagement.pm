@@ -21,8 +21,10 @@ my %DEFAULT_keyval = ( 'username' => '(undefined)', 'fullname' => '(undefined)' 
 
 use File::Spec;
 
+use constant SCHEMAS_REL_DIR	=>	'schemas';
+
 use constant MAIL_VALIDATION_SCHEMA_FILE	=>	'mailValidation.json';
-use constant FULL_MAIL_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),MAIL_VALIDATION_SCHEMA_FILE);
+use constant FULL_MAIL_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,MAIL_VALIDATION_SCHEMA_FILE);
 
 # Parameters:
 #	cfg: A Config::IniFiles instance
