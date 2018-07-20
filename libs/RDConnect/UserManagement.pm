@@ -2434,6 +2434,93 @@ sub putUserEmailOnValidationStatus($$;$) {
 	} 
 }
 
+my @LDAP_GENERIC_OU_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 ['extensibleObject','organizationalUnit'],
+);
+
+# Parameters:
+#	ou: The short, organizational unit name, which will hang on parentDN
+#	description: The description of the new organizational unit
+#	parentDN: (OPTIONAL) The DN used as parent of this new ou. If not set,
+#		it uses the one inferred from the configuration file.
+sub createGenericOrganizationalUnit($$;$) {
+	my $self = shift;
+	
+	my($ou,$description,$parentDN) = @_;
+	
+	$parentDN = $self->{'parentDN'}  unless(defined($parentDN) && length($parentDN)>0);
+	$description = $ou  unless(defined($description));
+	
+	my $entry = Net::LDAP::Entry->new();
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$parentDN);
+	$entry->dn($dn);
+	$entry->add(
+		'ou'	=>	$ou,
+		'description'	=>	$description,
+		@LDAP_GENERIC_OU_DEFAULT_ATTRIBUTES
+	);
+	
+	my $updMesg = $entry->update($self->{'ldap'});
+	
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $entry->ldif();
+		
+		Carp::carp("Unable to create generic organizational unit $dn (does the organizational unit already exist?)\n".Dumper($updMesg));
+	}
+	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+# Parameters:
+#	ou: the RD-Connect generic organizational unit
+#	createWhenMissing: if it is true, the domain is created when it is not found
+#	parentDN: (OPTIONAL) The DN used as ancestor of this generic ou. If not set,
+#		it uses the one read from the configuration file.
+# It returns the LDAP entry of the organizational unit on success
+sub getGenericOrganizationalUnit($;$$) {
+	my $self = shift;
+	
+	my($ou,$createWhenMissing,$parentDN) = @_;
+	
+	$parentDN = $self->{'parentDN'}  unless(defined($parentDN) && length($parentDN)>0);
+	
+	my $escaped_ou = Net::LDAP::Util::escape_filter_value($ou);
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $parentDN,
+		'filter' => "(&(objectClass=organizationalUnit)(ou=$escaped_ou))",
+		'sizelimit' => 1,
+		'scope' => 'one'
+	);
+	
+	my $success = undef;
+	my $payload = [];
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		if($searchMesg->count>0) {
+			$success = 1;
+			# The ou entry
+			$payload = $searchMesg->entry(0);
+		} elsif($createWhenMissing && $self->createGenericOrganizationalUnit($ou,undef,$parentDN)) {
+			return $self->getGenericOrganizationalUnit($ou,undef,$parentDN);
+		} else {
+			push(@{$payload},"No matching generic organizational unit found for $ou at $parentDN");
+		}
+	} else {
+		push(@{$payload},"Error while finding generic organizational unit $ou at $parentDN\n".Dumper($searchMesg));
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
 
 my @LDAP_PEOPLE_OU_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	 ['extensibleObject','organizationalUnit'],
@@ -4675,6 +4762,21 @@ my @LDAP_DOMAIN_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	 [ DomainEntryRole ],
 );
 
+use constant DocumentDomainsOU => 'document-domains';
+
+sub getDocumentDomainsDN() {
+	my $self = shift;
+	
+	unless(exists($self->{'domainsDN'})) {
+		# First, assure it already exists
+		my($success, $documentDomainsOU) = $self->getGenericOrganizationalUnit(DocumentDomainsOU,boolean::true);
+		
+		$self->{'domainsDN'} = $documentDomainsOU->dn();
+	}
+	
+	return $self->{'domainsDN'};
+}
+
 # Parameters:
 #	domainCN: The short, domain name, which will hang on parentDN
 sub createDomain($) {
@@ -4686,7 +4788,7 @@ sub createDomain($) {
 	return undef  if($domainCN eq 'admin');
 	
 	my $entry = Net::LDAP::Entry->new();
-	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($domainCN),$self->{'parentDN'});
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($domainCN),$self->getDocumentDomainsDN());
 	$entry->dn($dn);
 	$entry->add(
 		'cn'	=>	$domainCN,
@@ -4705,12 +4807,11 @@ sub createDomain($) {
 
 # Parameters:
 #	domainCN: the RD-Connect domain
-#	createWhenMissing: if it is true, the domain is created when it is not found
 # It returns the LDAP entry of the domain on success
-sub getDomain($;$) {
+sub getDomainV0($) {
 	my $self = shift;
 	
-	my($domainCN,$createWhenMissing) = @_;
+	my($domainCN) = @_;
 	
 	# First, each owner must be found
 	my $escaped_domainCN = Net::LDAP::Util::escape_filter_value($domainCN);
@@ -4730,7 +4831,76 @@ sub getDomain($;$) {
 			# The user entry
 			$payload = $searchMesg->entry(0);
 		} else {
-			if($createWhenMissing && $self->createDomain($domainCN)) {
+			push(@{$payload},"No matching domain found for $domainCN");
+		}
+	} else {
+		push(@{$payload},"Error while finding domain $domainCN\n".Dumper($searchMesg));
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	domainCN: the RD-Connect domain
+#	createWhenMissing: if it is true, the domain is created when it is not found
+# It returns the LDAP entry of the domain on success
+sub getDomain($;$) {
+	my $self = shift;
+	
+	my($domainCN,$createWhenMissing) = @_;
+	
+	# First, each owner must be found
+	my $escaped_domainCN = Net::LDAP::Util::escape_filter_value($domainCN);
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $self->getDocumentDomainsDN(),
+		'filter' => "(&(objectClass=".DomainEntryRole.")(cn=$escaped_domainCN))",
+		'sizelimit' => 1,
+		'scope' => 'children'
+	);
+	
+	my $success = undef;
+	my $payload = [];
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		if($searchMesg->count>0) {
+			$success = 1;
+			# The user entry
+			$payload = $searchMesg->entry(0);
+		} else {
+			# Cheking whether we have to migrate to new version
+			my($v0success,$v0) = $self->getDomainV0($domainCN);
+			
+			if($v0success) {
+				$v0->changetype("moddn");
+				# The old entry will be erased later, when all the updates are in place
+				$v0->add(
+					"newsuperior" => $self->getDocumentDomainsDN(),
+					"deleteoldrdn" => 1,
+					"newrdn" => "cn=$escaped_domainCN"
+				);
+				
+				my $updMesg = $v0->update($self->{'ldap'});
+				if($updMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+					# Now it is moved, return it
+					return $self->getDomain($domainCN);
+				} else {
+					$success = undef;
+					print STDERR $v0->ldif(),"\n";
+					print STDERR $v0->ldif()  unless(wantarray);
+					
+					push(@{$payload}, "Could not migrate domain $escaped_domainCN\n".Dumper($updMesg) );
+				}
+			} elsif($createWhenMissing && $self->createDomain($domainCN)) {
 				return $self->getDomain($domainCN);
 			} else {
 				push(@{$payload},"No matching domain found for $domainCN");
