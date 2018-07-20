@@ -4895,7 +4895,6 @@ sub getDomain($;$) {
 					return $self->getDomain($domainCN);
 				} else {
 					$success = undef;
-					print STDERR $v0->ldif(),"\n";
 					print STDERR $v0->ldif()  unless(wantarray);
 					
 					push(@{$payload}, "Could not migrate domain $escaped_domainCN\n".Dumper($updMesg) );
