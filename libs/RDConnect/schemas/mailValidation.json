@@ -1,5 +1,5 @@
 {
-	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#Mail",
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/Mail",
 	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
 	"title": "RD-Connect user management mail messages",
 	"type": "object",

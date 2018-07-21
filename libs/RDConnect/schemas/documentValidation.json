@@ -1,5 +1,5 @@
 {
-	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#CASDocument",
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/CASDocument",
 	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
 	"title": "RD-Connect document (agreements et al)",
 	"type": "object",

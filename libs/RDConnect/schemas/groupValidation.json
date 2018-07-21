@@ -1,5 +1,5 @@
 {
-	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#CASGroup",
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/CASGroup",
 	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
 	"title": "RD-Connect CAS group / role",
 	"type": "object",

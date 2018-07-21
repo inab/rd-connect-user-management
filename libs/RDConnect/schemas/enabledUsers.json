@@ -1,5 +1,5 @@
 {
-	"id": "http://rd-connect.eu/cas/json-schemas/userValidation#enabledUsers",
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/enabledUsers",
 	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
 	"title": "RD-Connect CAS enabled users",
 	"type": "object",
