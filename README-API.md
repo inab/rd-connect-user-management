@@ -27,6 +27,8 @@ The services under the endpoint have several levels of authorization, which requ
 
 	* `POST /mail` `[adm]`: An administrator uses this endpoint to send an e-mail to everybody, or a subset of users, organizational units or groups. The input must be a JSON document following [mailValidation.json](libs/RDConnect/mailValidation.json) JSON schema (but not enforcing the existence of all the keys).
 	
+	* `GET /mail/:api_key`: It returns the information about this template mail domain.
+	
 	* `GET /mail/:api_key/documents` `[adm]`: It lists the documents for this template domain, which are the mail template and the attachments (like user agreements and so). It follows [documentValidation.json](libs/RDConnect/documentValidation.json) JSON schema.
 
 	* `POST /mail/:api_key/documents` `[adm]`: It attaches the described document in the multipart/form-data transferred field to this user. The valid parameters are 'cn' (the name), 'description', 'documentClass' and 'content' (this last is the uploaded document).

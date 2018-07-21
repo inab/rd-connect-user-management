@@ -361,14 +361,6 @@ sub get_mail_json_schema {
 		return send_file(RDConnect::UserManagement::FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE, system_path => 1);
 	}
 	
-	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
-	
-	my($success,$payload) = $uMgmt->listJSONUsers();
-	
-	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Could not fulfill internal queries','trace' => $payload}),500);
-	}
-	
 	# Here the payload is the list of templates
 	return [ map { my $outer = $_ ; my %res = map { $_ => $outer->{$_} } ('apiKey','desc','tokens');\%res } @RDConnect::MetaUserManagement::MailTemplatesDomains ];
 }
@@ -380,6 +372,15 @@ sub _get_mailDomain_internal {
 	}
 	
 	return ($apiKey,$RDConnect::MetaUserManagement::MTByApiKey{$apiKey});
+}
+
+sub get_template_domain_desc {
+	my($apiKey, $p_domain) = _get_mailDomain_internal();
+	
+	# Filtering in those keys we want to publish
+	my %res = map { $_ => $p_domain->{$_} } ('apiKey','desc','tokens');
+	
+	return \%res;
 }
 
 sub list_mailDomain_documents {
@@ -529,6 +530,8 @@ prefix '/mail' => sub {
 	get '' => \&get_mail_json_schema;
 	
 	post '' => auth_cas login => rdconnect_auth admin => \&broadcast_email;
+	
+	get '/:api_key' => \&get_template_domain_desc;
 	
 	# Mail templates
 	prefix '/:api_key/documents' => sub {
