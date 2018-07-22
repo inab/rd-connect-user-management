@@ -1296,7 +1296,7 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 		foreach my $jsonKey (keys(%{$p_json2ldap})) {
 			if(exists($p_entryHash->{$jsonKey})) {
 				my $p_jsonDesc = $p_json2ldap->{$jsonKey};
-				unless($p_jsonDesc->[1]) {
+				unless($p_jsonDesc->{'_visible'}) {
 					#$p_entryHash->{$jsonKey} = undef;
 					delete($p_entryHash->{$jsonKey});
 				}
