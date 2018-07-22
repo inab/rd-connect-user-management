@@ -392,7 +392,15 @@ sub list_mailDomain_documents {
 	my($success,$payload) = $uMgmt->listJSONDocumentsFromDomain($ldapDomain);
 	
 	unless($success) {
-		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for $apiKey not found",'trace' => $payload}),404);
+		# Last attempt, trying to materialize the template (if it is possible)
+		RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$p_domain->{'ldapDomain'});
+				
+		# Last attempt, trying to materialize the template (if it is possible)
+		($success,$payload) = $uMgmt->listJSONDocumentsFromDomain($ldapDomain);
+		
+		unless($success) {
+			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for $apiKey not found",'trace' => $payload}),404);
+		}
 	}
 	
 	# Here the payload
