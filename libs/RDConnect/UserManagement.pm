@@ -361,15 +361,31 @@ use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File:
 {
 
 	use JSON::Validator;
+	use URI;
 	use File::Basename ();
+	
+	sub dataUrlValidator($) {
+		return URI->new($_[0])->scheme() eq 'data';
+	}
+	
+	sub getJSONValidator() {
+		my $v = JSON::Validator->new();
+		
+		# Setting up new string formats
+		my $p_formats = $v->formats();
+		$p_formats->{'data-url'} = \&dataUrlValidator;
+		$v->formats($p_formats);
+		
+		return $v;
+	}
 
 	my $userValidator = undef;
-
+	
 	sub getCASUserValidator() {
 		unless(defined($userValidator)) {
 			my $userSchemaPath = FULL_USER_VALIDATION_SCHEMA_FILE;
 			if(-r $userSchemaPath) {
-				$userValidator = JSON::Validator->new();
+				$userValidator = getJSONValidator();
 				$userValidator->schema($userSchemaPath);
 			}
 		}
@@ -383,7 +399,7 @@ use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File:
 		unless(defined($ouValidator)) {
 			my $ouSchemaPath = FULL_OU_VALIDATION_SCHEMA_FILE;
 			if(-r $ouSchemaPath) {
-				$ouValidator = JSON::Validator->new();
+				$ouValidator = getJSONValidator();
 				$ouValidator->schema($ouSchemaPath);
 			}
 		}
@@ -397,7 +413,7 @@ use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File:
 		unless(defined($groupValidator)) {
 			my $groupSchemaPath = FULL_GROUP_VALIDATION_SCHEMA_FILE;
 			if(-r $groupSchemaPath) {
-				$groupValidator = JSON::Validator->new();
+				$groupValidator = getJSONValidator();
 				$groupValidator->schema($groupSchemaPath);
 			}
 		}
@@ -411,7 +427,7 @@ use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File:
 		unless(defined($rdDocumentValidator)) {
 			my $rdDocumentSchemaPath = FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE;
 			if(-r $rdDocumentSchemaPath) {
-				$rdDocumentValidator = JSON::Validator->new();
+				$rdDocumentValidator = getJSONValidator();
 				$rdDocumentValidator->schema($rdDocumentSchemaPath);
 			}
 		}
@@ -585,6 +601,11 @@ sub transpose_JSON_LDAP(\%) {
 	return \%LDAP_h;
 }
 
+use constant {
+	PendingGDPR	=>	'GDPR',
+	GDPR_ldapAttr => 'acceptedGDPR',
+	GDPR_jsonAttr => 'acceptedGDPR'
+};
 
 # Correspondence between JSON attribute names and LDAP attribute names
 # and whether these attributes should be masked on return
@@ -641,6 +662,16 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 		},
 		_readOnly => boolean::false,
 	},
+	GDPR_jsonAttr()	=>	{
+		_ldapName => GDPR_ldapAttr(),
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => sub {
+			return (defined($_[1]) && $_[1] ne PendingGDPR()) ? $_[1] : undef;
+		},
+		_readOnly => boolean::true,
+	},
 	'cn'	=>	{
 		# ['cn', boolean::true, boolean::false, undef, undef, boolean::true],
 		_ldapName => 'cn',
@@ -657,7 +688,7 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 		_isLdapArray => boolean::true,
 		# _json2Ldap => undef,
 		# _ldap2Json => undef,
-		_readOnly => boolean::false,
+		_readOnly => boolean::true,
 	},
 	
 	'userCategory'	=>	{
@@ -753,6 +784,14 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 		# _ldap2Json => undef,
 		_readOnly => boolean::true,
 	},
+	'registeredEmails' => {
+		_ldapName => undef,
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		# _ldap2Json => undef,
+		_readOnly => boolean::false,
+	},
 	'management'	=>	{
 		_ldapName => undef,
 		_visible => boolean::false,
@@ -824,6 +863,17 @@ my %JSON_LDAP_ENABLED_USERS_ATTRIBUTES = (
 		_isLdapArray => boolean::true,
 		# _json2Ldap => undef,
 		# _ldap2Json => undef,
+		_readOnly => boolean::true,
+	},
+
+	GDPR_jsonAttr()	=>	{
+		_ldapName => GDPR_ldapAttr(),
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => sub {
+			return (defined($_[1]) && $_[1] ne PendingGDPR()) ? $_[1] : undef;
+		},
 		_readOnly => boolean::true,
 	},
 );
@@ -1418,7 +1468,7 @@ sub genJSONFromLDAP(\@\%;$$$) {
 
 my $ZERO_EPOCH = _epoch_ISO8601_RFC3339(0);
 
-sub _emailJanitoring($) {
+sub _userJanitoring($) {
 	my($jsonEntry) = @_;
 	
 	my $wasJanitored = undef;
@@ -1437,17 +1487,17 @@ sub _emailJanitoring($) {
 	}
 	my $p_registeredEmails = $jsonEntry->{'registeredEmails'};
 	
-	unless(exists($jsonEntry->{'management'})) {
-		$jsonEntry->{'management'} = {};
-		$wasJanitored = 1;
-	}
-	my $jUManagement = $jsonEntry->{'management'};
-	
-	unless(exists($jUManagement->{'validationTokens'})) {
-		$jUManagement->{'validationTokens'} = [];
-		$wasJanitored = 1;
-	}
-	my $p_validationTokens = $jUManagement->{'validationTokens'};
+	#unless(exists($jsonEntry->{'management'})) {
+	#	$jsonEntry->{'management'} = {};
+	#	$wasJanitored = 1;
+	#}
+	#my $jUManagement = $jsonEntry->{'management'};
+	#
+	#unless(exists($jUManagement->{'validationTokens'})) {
+	#	$jUManagement->{'validationTokens'} = [];
+	#	$wasJanitored = 1;
+	#}
+	#my $p_validationTokens = $jUManagement->{'validationTokens'};
 	
 	# Step 1.a: Upgrade ancient e-mails to registeredEmails structures
 	CHECK_EMAIL:
@@ -1465,7 +1515,7 @@ sub _emailJanitoring($) {
 			'lastValidatedAt' => $ZERO_EPOCH,
 			'validUntil' => $grace_epoch,
 			'validQuarantineCheckUntil' => $grace_epoch,
-			'status' => 'unckeched'
+			'status' => 'unchecked'
 		});
 		$wasJanitored = 1;
 	}
@@ -1511,22 +1561,22 @@ sub _emailJanitoring($) {
 	}
 	
 	# Step 2: Cleanup quarantined email structures when their check codes are stale
-	foreach my $regEmail (@{$p_registeredEmails}) {
-		if(exists($regEmail->{'validQuarantineCheckUntil'}) && $regEmail->{'validQuarantineCheckUntil'} lt $current_epoch) {
-			$regEmail->{'validQuarantineCheckUntil'} = $ZERO_EPOCH;
-			$wasJanitored = 1;
-			# Remove it!
-			my $emailIdx = 0;
-			foreach my $quaEmail (@{$p_validationTokens}) {
-				next  unless(exists($quaEmail->{'ns'}) && $quaEmail->{'ns'} eq 'email');
-				
-				if($quaEmail->{'id'} eq $regEmail->{'email'}) {
-					splice(@{$p_validationTokens},$emailIdx,1);
-				}
-				$emailIdx++;
-			}
-		}
-	}
+	#foreach my $regEmail (@{$p_registeredEmails}) {
+	#	if(exists($regEmail->{'validQuarantineCheckUntil'}) && $regEmail->{'validQuarantineCheckUntil'} lt $current_epoch) {
+	#		$regEmail->{'validQuarantineCheckUntil'} = $ZERO_EPOCH;
+	#		$wasJanitored = 1;
+	#		# Remove it!
+	#		my $emailIdx = 0;
+	#		foreach my $quaEmail (@{$p_validationTokens}) {
+	#			next  unless(exists($quaEmail->{'ns'}) && $quaEmail->{'ns'} eq 'email');
+	#			
+	#			if($quaEmail->{'id'} eq $regEmail->{'email'}) {
+	#				splice(@{$p_validationTokens},$emailIdx,1);
+	#			}
+	#			$emailIdx++;
+	#		}
+	#	}
+	#}
 	
 	return $wasJanitored;
 }
@@ -1535,14 +1585,15 @@ sub _emailJanitoring($) {
 #	uMgmt: a user management instance
 #	entry: an LDAP user entry
 #	jsonEntry: the JSON entry representation of the LDAP user entry
-sub postFixupUser($$) {
+sub postFixupUser($$$) {
 	my($uMgmt,$entry,$jsonEntry) = @_;
 	
 	# Add the organizationalUnit
 	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn());
 	
 	# Update the LDAP entry with this janitored version
-	#if(_emailJanitoring($jsonEntry)) {
+	_userJanitoring($jsonEntry);
+	#if(_userJanitoring($jsonEntry)) {
 	#	$uMgmt->modifyJSONUser(undef,$jsonEntry);
 	#}
 }
@@ -2037,16 +2088,16 @@ sub setAcceptedGDPRAttr($$) {
 	
 	# Now, reset the user attribute
 	my $dn = $user->dn();
-	my $isAdded = $user->exists('acceptedGDPR');
+	my $isAdded = $user->exists(GDPR_ldapAttr());
 	
 	$user->changetype('modify');
 	if($isAdded) {
 		$user->replace(
-			'acceptedGDPR'	=>	$acceptedGDPR,
+			GDPR_ldapAttr()	=>	$acceptedGDPR,
 		);
 	} else{
 		$user->add(
-			'acceptedGDPR'	=>	$acceptedGDPR,
+			GDPR_ldapAttr()	=>	$acceptedGDPR,
 		);
 	}
 	
@@ -2072,7 +2123,7 @@ sub generateGDPRHashFromUser($) {
 	
 	my($user) = @_;
 	
-	my($success,$payload) = $self->setAcceptedGDPRAttr($user,'GDPR');
+	my($success,$payload) = $self->setAcceptedGDPRAttr($user,PendingGDPR());
 	if($success) {
 		my $token = $self->computeGDPRTokenFromUser($user);
 		
@@ -2131,7 +2182,7 @@ sub didUsernameAcceptGDPR($;$) {
 	# First, get the entry
 	my($success,$user) = $self->getUser($username,$userDN);
 	
-	return $success && $user->exists('acceptedGDPR') && $user->get_value('acceptedGDPR') ne 'GDPR';
+	return $success && $self->didUserAcceptGDPR($user);
 }
 
 
@@ -2143,7 +2194,7 @@ sub didUserAcceptGDPR($) {
 	
 	my($user) = @_;
 	
-	return $user->exists('acceptedGDPR') && $user->get_value('acceptedGDPR') ne 'GDPR';
+	return $user->exists(GDPR_ldapAttr()) && $user->get_value(GDPR_ldapAttr()) ne PendingGDPR();
 }
 
 # Parameters:
@@ -2157,7 +2208,7 @@ sub acceptGDPRHashFromUser($$) {
 	
 	my($success,$payload);
 	$success = 1;
-	my $isAdded = $user->exists('acceptedGDPR');
+	my $isAdded = $user->exists(GDPR_ldapAttr());
 	if($self->didUserAcceptGDPR($user)) {
 		$success = undef;
 		$payload = [ "GDPR already accepted" ];
