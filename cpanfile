@@ -28,3 +28,4 @@ requires 'URI';
 requires 'UUID::Tiny';
 requires 'Email::Valid';
 requires 'DateTime';
+requires 'Data::Password::zxcvbn';
