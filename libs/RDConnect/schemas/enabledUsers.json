@@ -30,6 +30,11 @@
 						"type": "string",
 						"minLength": 1
 					},
+					"acceptedGDPR": {
+						"title": "The date of GDPR acceptance",
+						"type": "string",
+						"format": "date-time"
+					},
 					"userCategory": {
 						"title": "User category",
 						"type": "string",

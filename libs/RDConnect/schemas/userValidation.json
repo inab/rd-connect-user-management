@@ -41,6 +41,11 @@
 			"title": "User enabled",
 			"type": "boolean"
 		},
+		"acceptedGDPR": {
+			"title": "The date of GDPR acceptance",
+			"type": "string",
+			"format": "date-time"
+		},
 		"cn": {
 			"title": "Common name (usually givenName + surname)",
 			"type": "string",
