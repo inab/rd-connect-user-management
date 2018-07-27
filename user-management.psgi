@@ -487,7 +487,7 @@ sub modify_mailDomain_document {
 				'documentClass' => 'mailAttachment',
 			);
 			
-			($success,$payload) = $uMgmt->attachDocumentForDomain($ldapDomain,\%documentMetadata,request->header('Content-Type'));
+			($success,$payload) = $uMgmt->attachDocumentForDomain($ldapDomain,\%documentMetadata,$data,request->header('Content-Type'));
 		}
 	}
 	
