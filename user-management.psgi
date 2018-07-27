@@ -813,7 +813,19 @@ sub modify_user_document {
 	# We are getting the raw entry, as we want just the photo
 	my $data = request->body;
 	
-	my($success,$payload) = $uMgmt->modifyDocumentFromUser(params->{'user_id'},params->{'document_name'},$data);
+	my $documentName = params->{'document_name'};
+	my($success,$payload) = $uMgmt->modifyDocumentFromUser(params->{'user_id'},$documentName,$data);
+	
+	unless($success) {
+		# Let's create it
+		if(scalar(@{$payload}) > 0  && blessed($payload->[0]) && $payload->[0]->isa(RDConnect::UserManagement::DOCUMENT_NOT_FOUND_CLASS)) {
+			my %documentMetadata = (
+				'cn' =>	$documentName
+			);
+			
+			($success,$payload) = $uMgmt->attachDocumentForUser(params->{'user_id'},\%documentMetadata,$data,request->header('Content-Type'));
+		}
+	}
 	
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
@@ -1385,7 +1397,19 @@ sub modify_group_document {
 	# We are getting the raw entry, as we want just the photo
 	my $data = request->body;
 	
-	my($success,$payload) = $uMgmt->modifyDocumentFromGroup(params->{'group_id'},params->{'document_name'},$data);
+	my $documentName = params->{'document_name'};
+	my($success,$payload) = $uMgmt->modifyDocumentFromGroup(params->{'group_id'},$documentName,$data);
+	
+	unless($success) {
+		# Let's create it
+		if(scalar(@{$payload}) > 0  && blessed($payload->[0]) && $payload->[0]->isa(RDConnect::UserManagement::DOCUMENT_NOT_FOUND_CLASS)) {
+			my %documentMetadata = (
+				'cn' =>	$documentName
+			);
+			
+			($success,$payload) = $uMgmt->attachDocumentForGroup(params->{'group_id'},\%documentMetadata,$data,request->header('Content-Type'));
+		}
+	}
 	
 	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
