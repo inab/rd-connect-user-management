@@ -107,6 +107,8 @@ use Dancer2::Session::YAML;
 use Dancer2::Plugin::Auth::CAS;
 use Dancer2::Plugin::Auth::RDConnect;
 
+use Scalar::Util qw(blessed);
+
 set engines => {
 	'serializer' => {
 		'MaybeJSON' => {
@@ -478,6 +480,18 @@ sub modify_mailDomain_document {
 	my($success,$payload) = $uMgmt->modifyDocumentFromDomain($ldapDomain,$documentName,$data);
 	
 	unless($success) {
+		# Let's create it
+		if(scalar(@{$payload}) > 0  && blessed($payload->[0]) && $payload->[0]->isa(RDConnect::UserManagement::DOCUMENT_NOT_FOUND_CLASS)) {
+			my %documentMetadata = (
+				'cn' =>	$documentName,
+				'documentClass' => 'mailAttachment',
+			);
+			
+			($success,$payload) = $uMgmt->attachDocumentForDomain($ldapDomain,\%documentMetadata,request->header('Content-Type'));
+		}
+	}
+	
+	unless($success) {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates from domain $apiKey not found",'trace' => $payload}),404);
 	}
 	
@@ -495,7 +509,7 @@ sub attach_mailDomain_document {
 		'cn'	=> params->{'cn'},
 	);
 	$documentMetadata{'description'} = params->{'description'}  if(exists(params->{'description'}));
-	$documentMetadata{'documentClass'} = params->{'documentClass'}  if(exists(params->{'documentClass'}));
+	$documentMetadata{'documentClass'} = exists(params->{'documentClass'}) ? params->{'documentClass'} : 'mailAttachment';
 	
 	my($success,$payload) = $uMgmt->attachDocumentForDomain($ldapDomain,\%documentMetadata,upload('content')->content,upload('content')->type);
 	

@@ -1870,7 +1870,7 @@ sub modifyJSONUser($\%;\@$) {
 	} 
 }
 
-
+use constant USER_NOT_FOUND_CLASS	=>	'RDConnect::UserManagement::UserNotFound';
 # Parameters:
 #	username: the RD-Connect username or user e-mail
 #	userDN: (OPTIONAL) The DN used as ancestor of this username. If not set,
@@ -1901,7 +1901,7 @@ sub getUser($;$) {
 			# The user entry
 			$payload = $searchMesg->entry(0);
 		} else {
-			push(@{$payload},"No matching user found for $username");
+			push(@{$payload},bless(\"No matching user found for $username",USER_NOT_FOUND_CLASS));
 		}
 	} else {
 		push(@{$payload},"Error while finding user $username\n".Dumper($searchMesg));
@@ -3304,6 +3304,8 @@ sub createExtGroup(\[%@];$) {
 	} 
 }
 
+use constant GROUP_NOT_FOUND_CLASS	=>	'RDConnect::UserManagement::GroupNotFound';
+
 # Parameters:
 #	groupCN: The cn of the groupOfNames to find
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
@@ -3333,7 +3335,7 @@ sub getGroup($;$) {
 			# The group entry
 			$payload = $searchMesg->entry(0);
 		} else {
-			push(@{$payload},"No matching group found for $groupCN");
+			push(@{$payload},bless(\"No matching group found for $groupCN",GROUP_NOT_FOUND_CLASS));
 		}
 	} else {
 		push(@{$payload},"Error while finding group $groupCN\n".Dumper($searchMesg));
@@ -4226,6 +4228,8 @@ sub listJSONDocumentsFromEntry($) {
 	return ($success,$payload);
 }
 
+use constant DOCUMENT_NOT_FOUND_CLASS	=>	'RDConnect::UserManagement::DocumentNotFound';
+
 # Parameters:
 #	dn: the distinguished named of the parent entry
 #	documentName: the name of the document to look for
@@ -4251,16 +4255,18 @@ sub getDocumentFromEntry($$) {
 	
 	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
 		# Second, build the entry
-		$success = 1;
-		if($searchMesg->count>0) {
+		if($searchMesg->count > 0) {
+			$success = 1;
 			$payload = $searchMesg->entry(0);
 		#} else {
 		#	push(@{$payload},"No matching user found for $username");
+		} else {
+			$payload = [bless(\"Document $documentName not found at $dn",DOCUMENT_NOT_FOUND_CLASS)];
 		}
 	#} elsif($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
 	#	$success = 1;
 	} else {
-		$payload = ["Error while finding entry $dn\n".Dumper($searchMesg)];
+		$payload = [bless(\"Error while finding entry $dn\n".Dumper($searchMesg),DOCUMENT_NOT_FOUND_CLASS)];
 	}
 	
 	if(wantarray) {
@@ -4288,9 +4294,14 @@ sub getJSONDocumentMetadataFromEntry($$) {
 	my($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
 	my $documentMetadataEntry = undef;
 	
-	if($success && defined($payload)) {
-		$documentMetadataEntry = $payload;
-		$payload = $self->genJSONDocumentsFromLDAPDocuments([ $documentMetadataEntry ])->[0];
+	if($success) {
+		if(defined($payload)) {
+			$documentMetadataEntry = $payload;
+			$payload = $self->genJSONDocumentsFromLDAPDocuments([ $documentMetadataEntry ])->[0];
+		} else {
+			$success = undef;
+			$payload = [bless(\"Document $documentName not found at $dn",DOCUMENT_NOT_FOUND_CLASS)];
+		}
 	}
 	
 	return ($success,$payload,$documentMetadataEntry);
@@ -4380,6 +4391,8 @@ sub modifyDocumentFromEntry($$$) {
 			
 			$payload = [ "Unable to set content for document $dn\n".Dumper($updMesg) ];
 		}
+	} else {
+		$success = undef;
 	}
 	
 	if(wantarray) {
@@ -4440,7 +4453,7 @@ sub attachDocumentForUser($\%$;$$) {
 			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data,$mimeType);
 		} else {
 			$success = undef;
-			$payload = ['User '.$username.' not found'];
+			$payload = [bless(\'User '.$username.' not found',USER_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4465,7 +4478,7 @@ sub listJSONDocumentsFromUser($;$) {
 			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
 		} else {
 			$success = undef;
-			$payload = ['User '.$username.' not found'];
+			$payload = [bless(\'User '.$username.' not found',USER_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4491,7 +4504,7 @@ sub getDocumentFromUser($$;$) {
 			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['User '.$username.' not found'];
+			$payload = [bless(\'User '.$username.' not found',USER_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4518,7 +4531,7 @@ sub getJSONDocumentMetadataFromUser($$;$) {
 			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['User '.$username.' not found'];
+			$payload = [bless(\'User '.$username.' not found',USER_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4548,7 +4561,7 @@ sub modifyJSONDocumentMetadataFromUser($$\%;\@$) {
 			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
 		} else {
 			$success = undef;
-			$payload = ['User '.$username.' not found'];
+			$payload = [bless(\'User '.$username.' not found',USER_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4576,7 +4589,7 @@ sub modifyDocumentFromUser($$$;$) {
 			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
 		} else {
 			$success = undef;
-			$payload = ['User '.$username.' not found'];
+			$payload = [bless(\'User '.$username.' not found',USER_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4603,7 +4616,7 @@ sub removeDocumentFromUser($$;$) {
 			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['User '.$username.' not found'];
+			$payload = [bless(\'User '.$username.' not found',USER_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4632,7 +4645,7 @@ sub attachDocumentForGroup($\%$;$$) {
 			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data,$mimeType);
 		} else {
 			$success = undef;
-			$payload = ['Group '.$groupCN.' not found'];
+			$payload = [bless(\'Group '.$groupCN.' not found',GROUP_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4657,7 +4670,7 @@ sub listJSONDocumentsFromGroup($;$) {
 			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
 		} else {
 			$success = undef;
-			$payload = ['Group '.$groupCN.' not found'];
+			$payload = [bless(\'Group '.$groupCN.' not found',GROUP_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4683,7 +4696,7 @@ sub getDocumentFromGroup($$;$) {
 			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Group '.$groupCN.' not found'];
+			$payload = [bless(\'Group '.$groupCN.' not found',GROUP_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4710,7 +4723,7 @@ sub getJSONDocumentMetadataFromGroup($$;$) {
 			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Group '.$groupCN.' not found'];
+			$payload = [bless(\'Group '.$groupCN.' not found',GROUP_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4740,7 +4753,7 @@ sub modifyJSONDocumentMetadataFromGroup($$\%;\@$) {
 			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
 		} else {
 			$success = undef;
-			$payload = ['Group '.$groupCN.' not found'];
+			$payload = [bless(\'Group '.$groupCN.' not found',GROUP_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4768,7 +4781,7 @@ sub modifyDocumenFromGroup($$$;$) {
 			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
 		} else {
 			$success = undef;
-			$payload = ['Group '.$groupCN.' not found'];
+			$payload = [bless(\'Group '.$groupCN.' not found',GROUP_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4795,7 +4808,7 @@ sub removeDocumenFromGroup($$;$) {
 			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Group '.$groupCN.' not found'];
+			$payload = [bless(\'Group '.$groupCN.' not found',GROUP_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -4901,6 +4914,8 @@ sub getDomainV0($) {
 	} 
 }
 
+use constant DOMAIN_NOT_FOUND_CLASS	=>	'RDConnect::UserManagement::DomainNotFound';
+
 # Parameters:
 #	domainCN: the RD-Connect domain
 #	createWhenMissing: if it is true, the domain is created when it is not found
@@ -4953,7 +4968,7 @@ sub getDomain($;$) {
 			} elsif($createWhenMissing && $self->createDomain($domainCN)) {
 				return $self->getDomain($domainCN);
 			} else {
-				push(@{$payload},"No matching domain found for $domainCN");
+				push(@{$payload},bless(\"No matching domain found for $domainCN",DOMAIN_NOT_FOUND_CLASS));
 			}
 		}
 	} else {
@@ -4989,7 +5004,7 @@ sub listJSONDocumentsFromDomain($) {
 			($success,$payload) = $self->listJSONDocumentsFromEntry($dn);
 		} else {
 			$success = undef;
-			$payload = ['Domain '.$domainCN.' not found'];
+			$payload = [bless(\'Domain '.$domainCN.' not found',DOMAIN_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -5013,7 +5028,7 @@ sub getDocumentFromDomain($$) {
 			($success,$payload) = $self->getDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Domain '.$domainCN.' not found'];
+			$payload = [bless(\'Domain '.$domainCN.' not found',DOMAIN_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -5038,7 +5053,7 @@ sub getJSONDocumentMetadataFromDomain($$) {
 			($success,$payload,$documentMetadataEntry) = $self->getJSONDocumentMetadataFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Domain '.$domainCN.' not found'];
+			$payload = [bless(\'Domain '.$domainCN.' not found',DOMAIN_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -5066,7 +5081,7 @@ sub modifyJSONDocumentMetadataFromDomain($$\%;\@) {
 			($success,$payload,$documentMetadataEntry) = $self->modifyJSONDocumentMetadataFromEntry($dn,$documentName,$p_metadataHash,$p_removedKeys);
 		} else {
 			$success = undef;
-			$payload = ['Domain '.$domainCN.' not found'];
+			$payload = [bless(\'Domain '.$domainCN.' not found',DOMAIN_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -5092,7 +5107,7 @@ sub modifyDocumentFromDomain($$$) {
 			($success,$payload) = $self->modifyDocumentFromEntry($dn,$documentName,$data);
 		} else {
 			$success = undef;
-			$payload = ['Domain '.$domainCN.' not found'];
+			$payload = [bless(\'Domain '.$domainCN.' not found',DOMAIN_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -5118,7 +5133,7 @@ sub attachDocumentForDomain($\%$;$) {
 			($success,$payload) = $self->attachDocumentForEntry($dn,$dn,$p_documentMetadata,$data,$mimeType);
 		} else {
 			$success = undef;
-			$payload = ['Domain '.$domainCN.' not found'];
+			$payload = [bless(\'Domain '.$domainCN.' not found',DOMAIN_NOT_FOUND_CLASS)];
 		}
 	}
 	
@@ -5143,7 +5158,7 @@ sub removeDocumentFromDomain($$) {
 			($success,$payload) = $self->removeDocumentFromEntry($dn,$documentName);
 		} else {
 			$success = undef;
-			$payload = ['Domain '.$domainCN.' not found'];
+			$payload = [bless(\'Domain '.$domainCN.' not found',DOMAIN_NOT_FOUND_CLASS)];
 		}
 	}
 	
