@@ -4246,6 +4246,8 @@ sub getDocumentFromEntry($$) {
 		# We know what we want
 		'attrs'	=>	['*','createTimestamp','modifyTimestamp','creatorsName','modifiersName'],
 		'filter' => "(&(objectClass=RDConnectDocument)(cn=".$escaped_documentName."))",
+		# Needed to get content in binary format
+		'raw' => qr/(?i:^jpegPhoto|content|;binary)/,
 		'sizelimit' => 1,
 		'scope' => 'children'
 	);

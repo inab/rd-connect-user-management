@@ -426,7 +426,7 @@ sub get_mailDomain_document {
 	
 	# Here the payload is the document
 	my $data = $payload->get_value('content');
-	send_file(\$data, content_type => $payload->get_value('mimeType'));
+	return send_file(\$data, content_type => $payload->get_value('mimeType'), streaming => 1);
 }
 
 sub get_mailDomain_document_metadata {
@@ -463,7 +463,6 @@ sub modify_mailDomain_document_metadata {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Error while modifying document $documentName from mail templates $apiKey",'trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -495,7 +494,6 @@ sub modify_mailDomain_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates from domain $apiKey not found",'trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -517,7 +515,6 @@ sub attach_mailDomain_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates from domain $apiKey not found",'trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -533,7 +530,6 @@ sub remove_mailDomain_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates from domain $apiKey not found",'trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -615,7 +611,7 @@ sub get_user_photo {
 	
 	# Here the payload is the user
 	my $data = $payload->get_value('jpegPhoto');
-	send_file(\$data, content_type => 'image/jpeg');
+	return send_file(\$data, content_type => 'image/jpeg');
 }
 
 sub get_user_groups {
@@ -661,7 +657,7 @@ sub get_user_document {
 	
 	# Here the payload is the document
 	my $data = $payload->get_value('content');
-	send_file(\$data, content_type => $payload->get_value('mimeType'));
+	return send_file(\$data, content_type => $payload->get_value('mimeType'));
 }
 
 sub get_user_document_metadata {
@@ -702,7 +698,6 @@ sub modify_user {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying user '.params->{user_id},'trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -718,7 +713,6 @@ sub put_user_photo {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -788,7 +782,6 @@ sub remove_user_from_groups {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while removing user '.params->{user_id}.' from groups','trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -803,7 +796,6 @@ sub modify_user_document_metadata {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from user '.params->{user_id},'trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -831,7 +823,6 @@ sub modify_user_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -850,7 +841,6 @@ sub attach_user_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -863,7 +853,6 @@ sub remove_user_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1053,7 +1042,7 @@ sub get_OU_photo {
 	
 	# Here the payload is the user
 	my $data = $payload->get_value('jpegPhoto');
-	send_file(\$data, content_type => 'image/jpeg');
+	return send_file(\$data, content_type => 'image/jpeg');
 }
 
 
@@ -1070,7 +1059,6 @@ sub create_OU {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating organizational unit','trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1087,7 +1075,6 @@ sub modify_OU {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying organizational unit '.params->{ou_id},'trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1103,7 +1090,6 @@ sub put_OU_photo {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1274,7 +1260,7 @@ sub get_group_document {
 	
 	# Here the payload is the document
 	my $data = $payload->get_value('content');
-	send_file(\$data, content_type => $payload->get_value('mimeType'));
+	return send_file(\$data, content_type => $payload->get_value('mimeType'));
 }
 
 # next operations should be allowed only to allowed / privileged users
@@ -1290,7 +1276,6 @@ sub create_group {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while creating group','trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1305,7 +1290,6 @@ sub modify_group {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying group '.params->{group_id},'trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1330,7 +1314,6 @@ sub add_group_users {
 		}
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1364,7 +1347,6 @@ sub remove_users_from_group {
 		}
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1387,7 +1369,6 @@ sub modify_group_document_metadata {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from group '.params->{group_id},'trace' => $payload}),500);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1415,7 +1396,6 @@ sub modify_group_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1434,7 +1414,6 @@ sub attach_group_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
@@ -1447,7 +1426,6 @@ sub remove_group_document {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
 	}
 	
-	#send_file(\$data, content_type => 'image/jpeg');
 	return [];
 }
 
