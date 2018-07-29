@@ -127,6 +127,8 @@ The services under the endpoint have several levels of authorization, which requ
 
 	* `POST /groups/:group_id` `[own]`: It modifies an existing group features, but not its members or owners. The input must be a JSON document following [groupValidation.json](libs/RDConnect/groupValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
 	
+	* `DELETE /groups/:group_id` `[own]`: It removes the group.
+	
 	* `POST /groups/:group_id/renamesTo/:new_group_id` `[own]`: It renames the group or 404 if not found.
 	
 	* `POST /groups/:group_id/movesTo/:new_group_id` `[adm]`: It moves all the members of this group to another existing one, or 404 if not found.

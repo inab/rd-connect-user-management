@@ -1293,6 +1293,18 @@ sub modify_group {
 	return [];
 }
 
+sub remove_group {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->removeGroup(params->{group_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while removing group '.params->{group_id},'trace' => $payload}),500);
+	}
+	
+	return [];
+}
+
 sub add_group_users {
 	my $isOwner = shift;
 	
@@ -1470,6 +1482,7 @@ prefix '/groups' => sub {
 	# next operations should be allowed only to allowed / privileged users
 	put '' => auth_cas login => rdconnect_auth PI => \&create_group;
 	post '/:group_id' => auth_cas login => rdconnect_auth owner => \&modify_group;
+	del '/:group_id' => auth_cas login => rdconnect_auth owner => \&remove_group;
 	post '/:group_id/renamesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&rename_group;
 	post '/:group_id/movesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&move_group_members;
 	post '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&add_group_members;
