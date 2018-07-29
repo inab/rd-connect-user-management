@@ -438,6 +438,50 @@ use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File:
 }
 
 # This method fetches the LDAP directory, in order to find the
+# entry with this DN
+sub getEntryFromDN($;$) {
+	my $self = shift;
+	
+	my($DN,$beStrict) = shift;
+	
+	my $success = undef;
+	my $payload = undef;
+	
+	if(defined($DN)) {
+		my $searchMesg = $self->{'ldap'}->search(
+			'base' => $DN,
+			'filter' => "(objectClass=*)",
+			'sizelimit' => 1,
+			'scope' => 'base'
+		);
+		
+		if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+			if($searchMesg->count>0) {
+				# The entry
+				$success = 1;
+				$payload = $searchMesg->entry(0);
+			} else {
+				$payload = [];
+				push(@{$payload},"No matching entry found for $DN");
+			}
+		} else {
+			$payload = [];
+			push(@{$payload},"Error while finding entry $DN\n".Dumper($searchMesg));
+		}
+	}
+	
+	# Show errors when they are not going to be processed upstream
+	if(defined($payload) && !wantarray) {
+		foreach my $err (@{$payload}) {
+			Carp::carp($err);
+		}
+	}
+	
+	return wantarray ? ($success,$payload) : $payload;
+}
+
+
+# This method fetches the LDAP directory, in order to find the
 # correspondence between DNs and their usernames
 sub getUIDFromDN($;$) {
 	my $self = shift;
@@ -3389,41 +3433,78 @@ sub getJSONGroup($;$) {
 #	usersFacet: The facet where the users are listed
 #	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
 #		If not set, it uses the one read from the configuration file.
-# It returns a reference to the array of LDAP entries corresponding to the group members on success
-sub getGroupUsersFacet($$;$) {
+# It returns a reference to the array of DNs of the facet
+sub getGroupUserDNsFacet($$;$) {
 	my $self = shift;
 	
 	my($groupCN,$usersFacet,$groupDN)=@_;
 	
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
 	
-	my($success,$group) = $self->getGroup($groupCN,$groupDN);
-	return undef  unless($success);
 	
-	my $payload = [];
-	my @users = ();
-	my $p_userDNs = $group->get_value($usersFacet,'asref' => 1);
-	foreach my $userDN (@{$p_userDNs}) {
-		my $searchMesg = $self->{'ldap'}->search(
-			'base' => $userDN,
-			'filter' => '(objectClass=*)',
-			'sizelimit' => 1,
-			'scope' => 'base'
-		);
+	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
+	
+	if($success) {
+		my $group = $payload;
 		
-		if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
-			push(@users,$searchMesg->entry(0));
-		} else {
-			$success = undef;
-			push(@{$payload},"Error while finding user $userDN\n".Dumper($searchMesg));
-			
-			next;
-		}
+		$payload = $group->get_value($usersFacet,'asref' => 1);
 	}
 	
-	$payload = \@users  if($success);
+	return ($success,$payload);
+}
+
+# Parameters:
+#	groupCN: The cn of the groupOfNames to find
+#	usersFacet: The facet where the users are listed
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+# It returns a reference to the array of LDAP entries corresponding to the group members on success
+sub getGroupUsersFacet($$;$) {
+	my $self = shift;
+	
+	my($groupCN,$usersFacet,$groupDN)=@_;
+	
+	my($success,$payload) = $self->getGroupUserDNsFacet($groupCN,$usersFacet,$groupDN);
+	if($success) {
+		my $p_userDNs = $payload;
+		
+		$payload = [];
+		my @users = ();
+		foreach my $userDN (@{$p_userDNs}) {
+			my $searchMesg = $self->{'ldap'}->search(
+				'base' => $userDN,
+				'filter' => '(objectClass=*)',
+				'sizelimit' => 1,
+				'scope' => 'base'
+			);
+			
+			if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+				push(@users,$searchMesg->entry(0));
+			} else {
+				$success = undef;
+				push(@{$payload},"Error while finding user $userDN\n".Dumper($searchMesg));
+				
+				next;
+			}
+		}
+		
+		$payload = \@users  if($success);
+	}
 	
 	return ($success,$payload);
+}
+
+# Parameters:
+#	groupCN: The cn of the groupOfNames to find
+#	groupDN: (OPTIONAL) The DN used as parent of this new groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+# It returns a reference to the array of member DNs
+sub getGroupMemberDNs($;$) {
+	my $self = shift;
+	
+	my($groupCN,$groupDN)=@_;
+	
+	return $self->getGroupUserDNsFacet($groupCN,'member',$groupDN);
 }
 
 # Parameters:
@@ -3640,24 +3721,40 @@ sub addUserToGroup($$$;$$) {
 	#	$payload = [ 'Cannot modify a disabled user' ];
 	#}
 	
+	my @groups = ();
+	# Second, all the groups must be found
+	if($success) {
+		foreach my $groupCN (@{$p_groupCN}) {
+			# Is the group already a Net::LDAP::Entry????
+			if(Scalar::Util::blessed($groupCN) && $groupCN->isa('Net::LDAP::Entry')) {
+				$success = 1;
+				push(@groups,$groupCN);
+			} else {
+				($success, $payload) = $self->getGroup($groupCN,$groupDN);
+				
+				last  unless($success);
+				
+				# Saving the LDAP user entries for further usage
+				push(@groups,$payload);
+			}
+		}
+	}
+	
 	# Then, let's add the users one by one
-	if($success && scalar(@users) > 0) {
+	if($success && scalar(@users) > 0 && scalar(@groups) > 0) {
+		my @groupsToBeUpdated = ();
+		my %groupsToBeUpdatedH = ();
+		
+		my @usersToBeUpdated = ();
+		
+		$payload = [];
+		
 		foreach my $user (@users) {
-			$payload = [];
 			
 			my @newGroups = ();
 			
 			ADD_USER_GROUPCN:
-			foreach my $groupCN (@{$p_groupCN}) {
-				# Second, each group of names must be found
-				my($partialSuccess,$group) = $self->getGroup($groupCN,$groupDN);
-				
-				unless($partialSuccess) {
-					$success = undef;
-					push(@{$payload},@{$group});
-					next;
-				}
-				
+			foreach my $group (@groups) {
 				# Is the user already in the group?
 				my $isMember = 1;
 				my $p_members = $group->get_value('member', 'asref' => 1);
@@ -3678,51 +3775,66 @@ sub addUserToGroup($$$;$$) {
 					}
 				}
 				
+				# Recording the group
+				unless(exists($groupsToBeUpdatedH{$group + 0})) {
+					push(@groupsToBeUpdated,$group);
+					$group->changetype('modify');
+					
+					$groupsToBeUpdatedH{$group + 0} = undef;
+				}
+				
 				push(@newGroups,[$group,$isMember,$isOwner]);
 			}
 			
-			if($success && scalar(@newGroups) > 0) {
+			if(scalar(@newGroups) > 0) {
 				my @newGroupDNs = ();
 				foreach my $p_gDesc (@newGroups) {
 					my($group,$isMember,$isOwner) = @{$p_gDesc};
 					# Now, add the user dn to the group's member list
-					$group->changetype('modify');
 					$group->add('member' => $user->dn())  if($isMember);
 					$group->add('owner' => $user->dn())  if($isOwner);
-					
-					my $updMesg = $group->update($self->{'ldap'});
-					
-					if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-						$success = undef;
-						print STDERR $group->ldif()  unless(wantarray);
-						
-						push(@{$payload},"Unable to add ".($isOwner?"owner":"member")." ".$user->dn()." to ".$group->dn()."\n".Dumper($updMesg));
-						last;
-					}
 					
 					# Add only in case of new membership of a group
 					push(@newGroupDNs,$group->dn())  if($isMember);
 				}
 				
-				if($success && scalar(@newGroupDNs) > 0) {
-					@newGroups = ();
-					
+				if(scalar(@newGroupDNs) > 0) {
 					# And, at last, add the group dn to the user's memberOf list
 					$user->changetype('modify');
 					$user->add(USER_MEMBEROF_ATTRIBUTE() => \@newGroupDNs);
 					
+					push(@usersToBeUpdated,$user);
+				}
+			}
+		}
+		
+		if(scalar(@groupsToBeUpdated) > 0) {
+			# Batch update to the groups
+			foreach my $group (@groupsToBeUpdated) {
+				my $updMesg = $group->update($self->{'ldap'});
+				
+				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+					$success = undef;
+					print STDERR $group->ldif()  unless(wantarray);
+					
+					push(@{$payload},"Unable to add ".($isOwner?"owners":"members")." to ".$group->dn()."\n".Dumper($updMesg));
+					last;
+				}
+			}
+			
+			if($success) {
+				# Now, the users batch update
+				foreach my $user (@usersToBeUpdated) {
 					my $updMesg = $user->update($self->{'ldap'});
 					
 					if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 						$success = undef;
 						print STDERR $user->ldif()  unless(wantarray);
 						
-						push(@{$payload},"Unable to add memberOf ".join(',',@newGroupDNs)." to ".$user->dn()."\n".Dumper($updMesg));
+						push(@{$payload},"Unable to add memberOf to ".$user->dn()."\n".Dumper($updMesg));
 					}
 				}
 			}
-			
-			last  unless($success);
 		}
 	}
 	
@@ -3740,7 +3852,7 @@ sub addUserToGroup($$$;$$) {
 }
 
 # Parameters:
-#	userUID: The uid of the user to be added to the groupOfNames as a member.
+#	userUID: The uid of the user to be added to the groupOfNames, or an array of them.
 #	p_groupCN: The cn(s) of the groupOfNames where the user must be added
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
 #		it uses the one read from the configuration file.
@@ -3755,7 +3867,7 @@ sub addMemberToGroup($$;$$) {
 }
 
 # Parameters:
-#	userUID: The uid of the user to be added to the groupOfNames as an owner.
+#	userUID: The uid of the user to be added to the groupOfNames, or an array of them.
 #	p_groupCN: The cn(s) of the groupOfNames where the user must be added
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
 #		it uses the one read from the configuration file.
@@ -3771,7 +3883,7 @@ sub addOwnerToGroup($$;$$) {
 
 
 # Parameters:
-#	userUID: The uid of the user to be removed from the groupOfNames.
+#	userUID: The uid of the user to be removed from the groupOfNames, or an array of them.
 #	isOwner: Must this uid be removed as an owner instead of as a member?
 #	p_groupCN: The cn(s) of the groupOfNames where the user must be removed from
 #	userDN: (OPTIONAL) The DN used as parent of all the ou. If not set,
@@ -3786,102 +3898,143 @@ sub removeUserFromGroup($$$;$$) {
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
 	
+	my $p_userUIDs = (ref($userUID) eq 'ARRAY') ? $userUID : [ $userUID ];
+	
 	$p_groupCN = [ $p_groupCN ]  unless(ref($p_groupCN) eq 'ARRAY');
 	
-	# First, the user must be found
-	my($success, $payload) = $self->getUser($userUID,$userDN);
-	#if($success && $payload->get_value('disabledAccount') eq 'TRUE') {
-	#	$success = undef;
-	#	$payload = [ 'Cannot modify a disabled user' ];
-	#}
+	my $success = undef;
+	my $payload = undef;
+	my @users = ();
+	# First, all the user(s) must be found
+	foreach my $userUID (@{$p_userUIDs}) {
+		# Is the user already a Net::LDAP::Entry????
+		if(Scalar::Util::blessed($userUID) && $userUID->isa('Net::LDAP::Entry')) {
+			$success = 1;
+			push(@users,$userUID);
+		} else {
+			($success, $payload) = $self->getUser($userUID,$userDN);
+			
+			last  unless($success);
+			
+			# Saving the LDAP user entries for further usage
+			push(@users,$payload);
+		}
+	}
 	
+	my @groups = ();
+	# Second, all the groups must be found
 	if($success) {
-		my $user = $payload;
+		foreach my $groupCN (@{$p_groupCN}) {
+			# Is the group already a Net::LDAP::Entry????
+			if(Scalar::Util::blessed($groupCN) && $groupCN->isa('Net::LDAP::Entry')) {
+				$success = 1;
+				push(@groups,$groupCN);
+			} else {
+				($success, $payload) = $self->getGroup($groupCN,$groupDN);
+				
+				last  unless($success);
+				
+				# Saving the LDAP user entries for further usage
+				push(@groups,$payload);
+			}
+		}
+	}
+	
+	if($success && scalar(@users) > 0 && scalar(@groups) > 0) {
+		my @groupsToBeUpdated = ();
+		my %groupsToBeUpdatedH = ();
+		
+		my @usersToBeUpdated = ();
+		
 		$payload = [];
 		
-		my @groupsToBeRemovedFromAsMember = ();
-		my @groupsToBeRemovedFromAsOwner = ();
-		
-		REMOVE_USER_GROUPCN:
-		foreach my $groupCN (@{$p_groupCN}) {
-			# Second, each group of names must be found
-			my($partialSuccess,$group) = $self->getGroup($groupCN,$groupDN);
+		foreach my $user (@users) {
+			my $dn_user = $user->dn();
 			
-			unless($partialSuccess) {
-				$success = undef;
-				push(@{$payload},@{$group});
-				next;
-			}
+			my @groupsToBeRemovedFromAsMember = ();
+			my @groupsToBeRemovedFromAsOwner = ();
 			
-			if($isOwner) {
-				my $p_owners = $group->get_value('owner', 'asref' => 1);
-				foreach my $owner (@{$p_owners}) {
-					if($owner eq $user->dn()) {
-						push(@groupsToBeRemovedFromAsOwner,$group);
-						last;
+			foreach my $group (@groups) {
+				my $doRecordGroup = undef;
+				if($isOwner) {
+					my $p_owners = $group->get_value('owner', 'asref' => 1);
+					foreach my $owner (@{$p_owners}) {
+						if($owner eq $dn_user) {
+							$doRecordGroup = 1;
+							push(@groupsToBeRemovedFromAsOwner,$group);
+							last;
+						}
+					}
+				} else {
+					my $p_members = $group->get_value('member', 'asref' => 1);
+					foreach my $member (@{$p_members}) {
+						if($member eq $dn_user) {
+							$doRecordGroup = 1;
+							push(@groupsToBeRemovedFromAsMember,$group);
+							last;
+						}
 					}
 				}
-			} else {
-				my $p_members = $group->get_value('member', 'asref' => 1);
-				foreach my $member (@{$p_members}) {
-					if($member eq $user->dn()) {
-						push(@groupsToBeRemovedFromAsMember,$group);
-						last;
-					}
+				
+				# Recording the group
+				if($doRecordGroup && !exists($groupsToBeUpdatedH{$group + 0})) {
+					push(@groupsToBeUpdated,$group);
+					$group->changetype('modify');
+					
+					$groupsToBeUpdatedH{$group + 0} = undef;
+				}
+			}
+			
+			if(scalar(@groupsToBeRemovedFromAsMember) > 0 || scalar(@groupsToBeRemovedFromAsOwner) > 0) {
+				if(scalar(@groupsToBeRemovedFromAsMember) > 0) {
+					my @removeGroupDNs = map { $_->dn(); } @groupsToBeRemovedFromAsMember;
+					
+					# And, at last, add the group dn to the user's memberOf list
+					$user->changetype('modify');
+					$user->delete(USER_MEMBEROF_ATTRIBUTE() => \@removeGroupDNs);
+					
+					push(@usersToBeUpdated,$user);
+				}
+				
+				# First batch of group processing
+				foreach my $group (@groupsToBeRemovedFromAsMember) {
+					# Now, remove the user dn from the group's member list
+					$group->delete('member' => [ $dn_user ]);
+				}
+				
+				# Processing second batch of groups
+				foreach my $group (@groupsToBeRemovedFromAsOwner) {
+					# Now, remove the user dn from the group's member list
+					$group->delete('owner' => [ $dn_user ]);
 				}
 			}
 		}
 		
-		if($success && (scalar(@groupsToBeRemovedFromAsMember) > 0 || scalar(@groupsToBeRemovedFromAsOwner) > 0)) {
-			if(scalar(@groupsToBeRemovedFromAsMember) > 0) {
-				my @removeGroupDNs = map { $_->dn(); } @groupsToBeRemovedFromAsMember;
+		if(scalar(@groupsToBeUpdated) > 0) {
+			# Batch update to the groups
+			foreach my $group (@groupsToBeUpdated) {
+				my $updMesg = $group->update($self->{'ldap'});
 				
-				# And, at last, add the group dn to the user's memberOf list
-				$user->changetype('modify');
-				$user->delete(USER_MEMBEROF_ATTRIBUTE() => \@removeGroupDNs);
-				
+				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+					$success = undef;
+					print STDERR $group->ldif()  unless(wantarray);
+					
+					push(@{$payload},"Unable to remove ".($isOwner?"owners":"members")." from ".$group->dn()."\n".Dumper($updMesg));
+					last;
+				}
+			}
+		}
+		
+		if($success && scalar(@usersToBeUpdated) > 0) {
+			# Now, the users batch update
+			foreach my $user (@usersToBeUpdated) {
 				my $updMesg = $user->update($self->{'ldap'});
 				
 				if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 					$success = undef;
 					print STDERR $user->ldif()  unless(wantarray);
 					
-					push(@{$payload},"Unable to remove memberOf ".join(',',@removeGroupDNs)." from ".$user->dn()."\n".Dumper($updMesg));
-				}
-			}
-			
-			if($success) {
-				foreach my $group (@groupsToBeRemovedFromAsMember) {
-					# Now, remove the user dn from the group's member list
-					$group->changetype('modify');
-					$group->delete('member' => [ $user->dn() ]);
-					
-					my $updMesg = $group->update($self->{'ldap'});
-					
-					if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-						$success = undef;
-						print STDERR $group->ldif()  unless(wantarray);
-						
-						push(@{$payload},"Unable to remove member ".$user->dn()." from ".$group->dn()."\n".Dumper($updMesg));
-						last;
-					}
-				}
-				if($success) {
-					foreach my $group (@groupsToBeRemovedFromAsOwner) {
-						# Now, remove the user dn from the group's member list
-						$group->changetype('modify');
-						$group->delete('owner' => [ $user->dn() ]);
-						
-						my $updMesg = $group->update($self->{'ldap'});
-						
-						if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
-							$success = undef;
-							print STDERR $group->ldif()  unless(wantarray);
-							
-							push(@{$payload},"Unable to remove owner ".$user->dn()." from ".$group->dn()."\n".Dumper($updMesg));
-							last;
-						}
-					}
+					push(@{$payload},"Unable to remove memberOf from ".$user->dn()."\n".Dumper($updMesg));
 				}
 			}
 		}
@@ -3930,6 +4083,63 @@ sub removeOwnerFromGroup($$;$$) {
 	return $self->removeUserFromGroup($userUID,1,$p_groupCN,$userDN,$groupDN);
 }
 
+# This method is needed by removeGroup, removing the cross-references
+# Parameters:
+#	group: The LDAP instance of the group
+sub removeMemberOfToGroup($) {
+	my $self = shift;
+	
+	my($group)=@_;
+	
+	$group->get_value('member', 'asref' => 1);
+	my $p_members = $group->get_value('member', 'asref' => 1);
+	# First, all the members must be found
+	my $success = undef;
+	my $payload = undef;
+	my @users = ();
+	foreach my $dn_member (@{$p_members}) {
+		($success,$payload) = $self->getEntryFromDN($dn_member);
+		
+		last  unless($success);
+		
+		push(@users, $payload);
+	}
+	
+	# Now, remove memberOf pointers
+	if($success && scalar(@users) > 0) {
+		$payload = [];
+		my $p_dn_group = [ $group->dn() ];
+		
+		foreach my $user (@users) {
+			$user->changetype('modify');
+			$user->delete(USER_MEMBEROF_ATTRIBUTE() => $p_dn_group);
+			
+			my $updMesg = $user->update($self->{'ldap'});
+			
+			if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+				$success = undef;
+				print STDERR $user->ldif()  unless(wantarray);
+				
+				push(@{$payload},"Unable to remove memberOf from ".$user->dn()."\n".Dumper($updMesg));
+			}
+			
+			last  unless($success);
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
 # Parameters:
 #	groupCN: The cn of the groupOfNames to be removed
 #	groupDN: (OPTIONAL) The DN used as parent of this groupOfNames.
@@ -3941,11 +4151,18 @@ sub removeGroup($;$) {
 	
 	$groupDN = $self->{'groupDN'}  unless(defined($groupDN) && length($groupDN)>0);
 	
-	# Is the group found?
 	my($success,$payload) = $self->getGroup($groupCN,$groupDN);
 	
+	# Is the group found?
+	my $group;
 	if($success) {
-		my $group = $payload;
+		$group = $payload;
+		
+		($success,$payload) = $self->removeMemberOfToGroup($group);
+	}
+	
+	# Did we remove the memberOf pointers?
+	if($success) {
 		$payload = [];
 		
 		# Now, erasing the group (this operation CANNOT BE UNDONE!)
@@ -4096,6 +4313,76 @@ sub renameGroup($$;$$) {
 			
 			push(@{$payload}, "Could not rename entry $oldDn\n".Dumper($updMesg) );
 		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# Parameters:
+#	oldGroupCN: The old cn of the groupOfNames, where the members to be moved live
+#	newGroupCN: The cn of the destination groupOfNames
+#	oldBaseGroupDN: (OPTIONAL) The DN used as parent of this groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+#	newBaseGroupDN: (OPTIONAL) The DN used as parent of the renamed groupOfNames.
+#		If not set, it uses the one read from the configuration file.
+sub moveGroupMembers($$;$$) {
+	my $self = shift;
+	
+	my($oldGroupCN,$newGroupCN,$oldBaseGroupDN,$newBaseGroupDN)=@_;
+	
+	$oldBaseGroupDN = $self->{'groupDN'}  unless(defined($oldBaseGroupDN) && length($oldBaseGroupDN)>0);
+	$newBaseGroupDN = $self->{'groupDN'}  unless(defined($newBaseGroupDN) && length($newBaseGroupDN)>0);
+	my $parentDN = $self->{'parentDN'};
+	
+	# Is the group and its members found?
+	my($success,$payload) = $self->getGroup($oldGroupCN,$oldBaseGroupDN);
+	
+	my $escaped_newGroupCN;
+	my $group;
+	my $oldDn;
+	my $newDn;
+	if($success) {
+		$group = $payload;
+		$oldDn = $group->dn();
+		
+		$success = undef;
+		$payload = [];
+		
+		$escaped_newGroupCN = Net::LDAP::Util::escape_filter_value($newGroupCN);
+		my $e_newGroupDN = Net::LDAP::Util::ldap_explode_dn($newBaseGroupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
+		unshift(@{$e_newGroupDN},{'cn' => $newGroupCN});
+		$newDn = Net::LDAP::Util::canonical_dn($e_newGroupDN,@LDAP_UTIL_SERIALIZATION_PARAMS);
+		
+		# Is the new name in use?
+		if($self->existsDN($newDn)) {
+			# Now, let's get the group members
+			($success,$payload) = $self->getGroupMembers($oldGroupCN,$oldBaseGroupDN);
+		} else {
+			push(@{$payload},"Error, $newGroupCN does not exist under $newBaseGroupDN");
+		}
+	}
+	
+	my $p_members = undef;
+	# Add them to the destination group
+	if($success) {
+		$p_members = $payload;
+		
+		($success,$payload) = $self->addMemberToGroup($p_members,$newGroupCN,undef,$newBaseGroupDN);
+	}
+	
+	# Now, time to remove the group
+	if($success) {
+		($success,$payload) = $self->removeGroup($oldGroupCN,$oldBaseGroupDN);
 	}
 	
 	if(wantarray) {

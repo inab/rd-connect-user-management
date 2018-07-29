@@ -915,7 +915,7 @@ sub rename_user {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Unable to rename user '.params->{'user_id'}.' to '.$newUsername,'trace' => $payload}),400);
 	}
 	
-	return $p_jsonUser, 201
+	redirect '../'.$newUsername, 303;
 }
 
 # Routing for /users prefix
@@ -923,8 +923,8 @@ prefix '/users' => sub {
 	get '' => \&get_users;
 	get '/:user_id' => => \&get_user;
 	get '/:user_id/picture' => \&get_user_photo;
-	get '/:user_id/migratesTo/:ou_id' => auth_cas login => rdconnect_auth admin => \&migrate_user;
-	get '/:user_id/renamesTo/:new_user_id' => auth_cas login => rdconnect_auth admin => \&rename_user;
+	post '/:user_id/migratesTo/:ou_id' => auth_cas login => rdconnect_auth admin => \&migrate_user;
+	post '/:user_id/renamesTo/:new_user_id' => auth_cas login => rdconnect_auth admin => \&rename_user;
 	get '/:user_id/groups' => \&get_user_groups;
 	get '/:user_id/groups/:group_id' => \&get_user_group;
 	# next operations should be allowed only to privileged users
@@ -1146,10 +1146,10 @@ sub rename_organizationalUnit(;$) {
 	
 	# Last, remove the empty OU
 	my($oldRemoved) = $uMgmt->removePeopleOU($oldOUname);
-	my $httpCode = $oldRemoved ? 201 : 206;
+	#my $httpCode = $oldRemoved ? 201 : 206;
 	
 	# It can be improved, returning the new location or the modified entry
-	return [],$httpCode;
+	redirect '../'.$newOUname, 303;
 }
 
 sub move_organizationalUnit() {
@@ -1159,8 +1159,8 @@ sub move_organizationalUnit() {
 prefix '/organizationalUnits' => sub {
 	get '' => \&get_OUs;
 	get '/:ou_id' => \&get_OU;
-	get '/:ou_id/renamesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&rename_organizationalUnit;
-	get '/:ou_id/movesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&move_organizationalUnit;
+	post '/:ou_id/renamesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&rename_organizationalUnit;
+	post '/:ou_id/movesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&move_organizationalUnit;
 	get '/:ou_id/picture' => \&get_OU_photo;
 	get '/:ou_id/users' => \&get_OU_users;
 	get '/:ou_id/users/:user_id' => \&get_OU_user;
@@ -1447,8 +1447,19 @@ sub rename_group {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Renaming group '.params->{'group_id'}.' to '.params->{'new_group_id'}.' failed','trace' => $payload}),400);
 	}
 	
-	# Here the payload is the group
-	return [],201;
+	redirect '../'.params->{'new_group_id'} , 303
+}
+
+sub move_group_members {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->moveGroupMembers(params->{'group_id'},params->{'new_group_id'});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Moving group members from '.params->{'group_id'}.' to '.params->{'new_group_id'}.' failed','trace' => $payload}),400);
+	}
+	
+	redirect '../'.params->{'new_group_id'} , 303
 }
 
 prefix '/groups' => sub {
@@ -1459,7 +1470,8 @@ prefix '/groups' => sub {
 	# next operations should be allowed only to allowed / privileged users
 	put '' => auth_cas login => rdconnect_auth PI => \&create_group;
 	post '/:group_id' => auth_cas login => rdconnect_auth owner => \&modify_group;
-	get '/:group_id/renamesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&rename_group;
+	post '/:group_id/renamesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&rename_group;
+	post '/:group_id/movesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&move_group_members;
 	post '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&add_group_members;
 	del '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&remove_group_members;
 	
