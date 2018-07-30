@@ -395,7 +395,7 @@ sub list_mailDomain_documents {
 	
 	unless($success) {
 		# Last attempt, trying to materialize the template (if it is possible)
-		RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$p_domain->{'ldapDomain'});
+		RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$ldapDomain);
 				
 		# Last attempt, trying to materialize the template (if it is possible)
 		($success,$payload) = $uMgmt->listJSONDocumentsFromDomain($ldapDomain);
