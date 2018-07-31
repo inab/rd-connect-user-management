@@ -56,6 +56,8 @@ The services under the endpoint have several levels of authorization, which requ
 	* `GET /users/:user_id`: It returns the user which matches the record, or 404 if not found. It follows [userValidation.json](libs/RDConnect/userValidation.json) JSON schema.
 	
 	* `POST /users/:user_id` `[u]`: It modifies an existing user. The input must be a JSON document following [userValidation.json](libs/RDConnect/userValidation.json) JSON schema (but not enforcing the existence of all the keys). Those keys whose value is `null` will be removed.
+	
+	* `DELETE /users/:user_id` `[adm]`: It removes an user, fulfilling the restrictions.
 
 	* `POST /users/:user_id/_mail` `[u]`: An administrator (or the same user) uses this endpoint to send an e-mail to this specific user. The input must be a JSON document following [mailValidation.json](libs/RDConnect/mailValidation.json) JSON schema (but not enforcing the existence of all the keys).
 	

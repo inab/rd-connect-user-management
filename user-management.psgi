@@ -716,6 +716,18 @@ sub put_user_photo {
 	return [];
 }
 
+sub remove_user {
+	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
+	
+	my($success,$payload) = $uMgmt->removeUser(params->{user_id});
+	
+	unless($success) {
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Error while removing user '.params->{user_id},'trace' => $payload}),500);
+	}
+	
+	return [];
+}
+
 sub set_user_enabled_state {
 	my $newState = shift;
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
@@ -930,6 +942,7 @@ prefix '/users' => sub {
 	# next operations should be allowed only to privileged users
 	put '' => auth_cas login => rdconnect_auth PI => \&create_user;
 	post '/:user_id' => auth_cas login => rdconnect_auth user => \&modify_user;
+	del '/:user_id' => auth_cas login => rdconnect_auth admin => \&remove_user;
 	put '/:user_id/picture' => auth_cas login => rdconnect_auth user => \&put_user_photo;
 	post '/:user_id/disable' => auth_cas login => rdconnect_auth user => \&disable_user;
 	post '/:user_id/enable' => auth_cas login => rdconnect_auth admin => \&enable_user;
