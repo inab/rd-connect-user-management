@@ -28,7 +28,7 @@ if(scalar(@ARGV)>=1) {
 	
 	print "* List of mail template domains\n";
 	foreach my $p_domain (@RDConnect::MetaUserManagement::MailTemplatesDomains ) {
-		print "\t- ",$p_domain->{'apiKey'}," (tokens ",join(", ",@{$p_domain->{'tokens'}}),"): ",$p_domain->{'desc'},"\n";
+		print "\t- ",$p_domain->{'apiKey'}," (domain ",$p_domain->{'ldapDomain'},", tokens ",join(", ",@{$p_domain->{'tokens'}}),"): ",$p_domain->{'desc'},"\n";
 		
 		my $ldapDomain = $p_domain->{'ldapDomain'};
 		my($success,$payload) = $uMgmt->listJSONDocumentsFromDomain($ldapDomain);

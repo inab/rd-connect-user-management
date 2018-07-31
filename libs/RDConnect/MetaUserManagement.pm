@@ -198,6 +198,7 @@ sub FetchEmailTemplate($$) {
 					my $data = $payloadT->get_value('content');
 					my $mime = $payloadT->get_value('mimeType');
 					my $preparedMime = {
+						'cn' => $mailTemplateMetadata->{'cn'},
 						'content' => \$data,
 						'mime' => $mime
 					};
@@ -234,6 +235,7 @@ sub FetchEmailTemplate($$) {
 			# Last, set the return value
 			if($successA) {
 				$mailTemplate = {
+					'cn' => $p_domain->{'cn'},
 					'content' => \$defaultTemplate,
 					'mime' => $mimeType
 				};
