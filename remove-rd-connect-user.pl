@@ -20,16 +20,16 @@ if(scalar(@ARGV)==2) {
 	
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
-	my($groupName) = @ARGV;
+	my($username) = @ARGV;
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
 	# Change the group name
-	my($success,$payload) = $uMgmt->removeGroup($groupName);
+	my($success,$payload) = $uMgmt->removeUser($username);
 	
 	if($success) {
-		print "Group $groupName has been removed\n";
+		print "User $username has been removed\n";
 	} else {
 		foreach my $retval (@{$payload}) {
 			Carp::carp($retval);
@@ -37,6 +37,6 @@ if(scalar(@ARGV)==2) {
 	}
 } else {
 	die <<EOF ;
-Usage:	$0 {IniFile} {group name}
+Usage:	$0 {IniFile} {username or e-mail}
 EOF
 }
