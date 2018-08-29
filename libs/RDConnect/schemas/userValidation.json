@@ -142,6 +142,7 @@
 			"type": "array",
 			"uniqueItems": true,
 			"readOnly": true,
+			"minItems": 1,
 			"items": {
 				"type": "object",
 				"properties": {
