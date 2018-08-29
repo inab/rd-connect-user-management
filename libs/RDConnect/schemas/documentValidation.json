@@ -10,13 +10,13 @@
 			"minLength": 1
 		},
 		"description": {
-			"title": "Document description",
+			"title": "Optional document description",
 			"type": "string"
 		},
 		"documentClass": {
 			"title": "Document category",
 			"type": "string",
-			"enum": ["userAgreement","genericAgreement","otherAgreement","miscelaneous","mailTemplate","mailAttachment"]
+			"enum": ["userAgreement","genericAgreement","otherAgreement","miscelaneous","mailTemplate","mailTemplateTitle","mailAttachment"]
 		},
 		"creationTimestamp": {
 			"title": "Creation timestamp",
