@@ -5,6 +5,25 @@
 use strict;
 use warnings 'all';
 
+package RDConnect::MetaUserManagement::Error;
+
+use Scalar::Util qw(reftype);
+
+# This declaration is needed to be able to serialize this errors from JSON 
+sub TO_JSON {
+	my $self = shift;
+	
+	if(reftype($self) eq 'HASH') {
+		my %retval = %{$self};
+		return \%retval;
+	} elsif(reftype($self) eq 'ARRAY') {
+		return [@{$self}];
+	} elsif(reftype($self) eq 'SCALAR') {
+		my $retval = ${$self};
+		return \$retval;
+	}
+}
+
 package RDConnect::MetaUserManagement;
 
 use RDConnect::UserManagement;
@@ -29,6 +48,7 @@ https://rdconnectcas.rd-connect.eu/RDConnect-UserManagement-API/users/[% usernam
 EOF
 
 use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
+use constant ResettedPasswordDomain	=>	'resettedPasswordTemplates';
 my $DEFAULT_passMailTemplate = <<'EOF' ;
 Your new password is  [% password %]  (including any punctuation mark it could contain).
 
@@ -89,37 +109,51 @@ our @MailTemplatesDomains = (
 	{
 		'apiKey' => 'newUser',
 		'desc' => 'New user creation templates',
-		'tokens' => [ 'username', 'fullname', 'gdprtoken' ],
+		'tokens' => [ 'username', 'fullname', 'gdprtoken', 'unique' ],
 		'ldapDomain' => NewUserDomain(),
 		'cn' =>	'mailTemplate.html',
 		'ldapDesc' => 'New User Mail Template',
+		'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
 		'default' => $DEFAULT_newUserTemplate
 	},
 	{
 		'apiKey' => 'passTemplate',
-		'desc' => 'New or resetted password templates',
-		'tokens' => [ 'password' ],
+		'desc' => 'New password templates',
+		'tokens' => [ 'password', 'unique' ],
 		'ldapDomain' => ChangedPasswordDomain(),
 		'cn' =>	'changedPassMailTemplate.html',
 		'ldapDesc' => 'Changed password mail template',
+		'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
+		'default' => $DEFAULT_passMailTemplate
+	},
+	{
+		'apiKey' => 'resetPassTemplate',
+		'desc' => 'Resetted password templates',
+		'tokens' => [ 'password', 'unique' ],
+		'ldapDomain' => ResettedPasswordDomain(),
+		'cn' =>	'resettedPassMailTemplate.html',
+		'ldapDesc' => 'Resetted password mail template',
+		'defaultTitle' => 'RD-Connect platform portal password change [[% unique %]]',
 		'default' => $DEFAULT_passMailTemplate
 	},
 	{
 		'apiKey' => 'GDPRTemplate',
 		'desc' => 'GDPR acceptance templates',
-		'tokens' => [ 'username', 'fullname', 'gdprtoken' ],
+		'tokens' => [ 'username', 'fullname', 'gdprtoken', 'unique' ],
 		'ldapDomain' => GDPRDomain(),
 		'cn' =>	'GDPRMailTemplate.html',
 		'ldapDesc' => 'GDPR acceptance mail template',
+		'defaultTitle' => 'RD-Connect GDPR acceptance for user [% username %] [[% unique %]]',
 		'default' => $DEFAULT_GDPRTemplate
 	},
 	{
 		'apiKey' => 'validEmailTemplate',
 		'desc' => 'E-mail validating templates',
-		'tokens' => [ 'username', 'fullname' ],
+		'tokens' => [ 'username', 'fullname', 'unique' ],
 		'ldapDomain' => ValidateEmailDomain(),
 		'cn' =>	'ValidateMailTemplate.html',
 		'ldapDesc' => 'E-mail validating mail template',
+		'defaultTitle' => 'RD-Connect platform portal e-mail validation [[% unique %]]',
 		'default' => $DEFAULT_VALIDATE_EMAIL_TEMPLATE
 	}
 );
@@ -159,7 +193,11 @@ sub GetMailManagementInstance($$\%;\@) {
 	return RDConnect::MailManagement->new($cfg,$mailTemplate,$p_keyvals,$p_attachmentFiles);
 }
 
-
+our %MailTemplateKeys = (
+	'mailTemplate'	=>	undef,
+	'mailTemplateTitle'	=>	undef,
+	'mailAttachment'	=>	undef,
+);
 
 sub FetchEmailTemplate($$) {
 	my($uMgmt,$domainId) = @_;
@@ -179,12 +217,13 @@ sub FetchEmailTemplate($$) {
 	if($successMail) {
 		# Now, let's fetch
 		my $mailTemplate;
+		my $mailTemplateTitle;
 		my @attachmentFiles = ();
 		
 		# Does the domain contain documents?
 		if(ref($payloadMail) eq 'ARRAY') {
 			foreach my $mailTemplateMetadata (@{$payloadMail}) {
-				if(exists($mailTemplateMetadata->{'documentClass'}) && ($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate' || $mailTemplateMetadata->{'documentClass'} eq 'mailAttachment')) {
+				if(exists($mailTemplateMetadata->{'documentClass'}) && exists($MailTemplateKeys{$mailTemplateMetadata->{'documentClass'}})) {
 					# Fetching the document
 					my($successT,$payloadT) = $uMgmt->getDocumentFromDomain($domainId,$mailTemplateMetadata->{'cn'});
 					
@@ -204,6 +243,9 @@ sub FetchEmailTemplate($$) {
 					};
 					if($mailTemplateMetadata->{'documentClass'} eq 'mailTemplate') {
 						$mailTemplate = $preparedMime;
+					} elsif($mailTemplateMetadata->{'documentClass'} eq 'mailTemplateTitle') {
+						# The title is always inline!!!!
+						$mailTemplateTitle = $data;
 					} else {
 						push(@attachmentFiles,$preparedMime);
 					}
@@ -221,13 +263,15 @@ sub FetchEmailTemplate($$) {
 				$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $defaultTemplate =~ /<(p|div|br|span)>/);
 			};
 			
+			my %metadata = (
+				'cn' =>	$p_domain->{'cn'},
+				'description' => $p_domain->{'ldapDesc'},
+				'documentClass' => 'mailTemplate',
+			);
+			
 			my($successA,$payloadA) = $uMgmt->attachDocumentForDomain(
 				$domainId,
-				{
-					'cn' =>	$p_domain->{'cn'},
-					'description' => $p_domain->{'ldapDesc'},
-					'documentClass' => 'mailTemplate',
-				},
+				\%metadata,
 				$defaultTemplate,
 				$mimeType
 			);
@@ -235,18 +279,46 @@ sub FetchEmailTemplate($$) {
 			# Last, set the return value
 			if($successA) {
 				$mailTemplate = {
-					'cn' => $p_domain->{'cn'},
+					'cn' => $metadata{'cn'},
 					'content' => \$defaultTemplate,
 					'mime' => $mimeType
 				};
 			}
 		}
 		
-		unless(defined($mailTemplate)) {
+		if(defined($mailTemplate)) {
+			# Special case: no title
+			unless(defined($mailTemplateTitle)) {
+				my $p_domain = $MTByDomain{$domainId};
+				
+				my $defaultTemplateTitle = $p_domain->{'defaultTitle'};
+				my $mimeType = 'text/plain';
+				
+				my %metadata = (
+					'cn' =>	'.templateTitle.txt',
+					'description' => 'Template title',
+					'documentClass' => 'mailTemplateTitle',
+				);
+				my($successA,$payloadA) = $uMgmt->attachDocumentForDomain(
+					$domainId,
+					\%metadata,
+					$defaultTemplateTitle,
+					$mimeType
+				);
+				
+				# Last, set the return value
+				if($successA) {
+					# The title always goes inline
+					$mailTemplateTitle = $defaultTemplateTitle;
+				} else {
+					return bless({'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadA,'code' => 500},'RDConnect::MetaUserManagement::Error');
+				}
+			}
+		} else {
 			return bless({'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500},'RDConnect::MetaUserManagement::Error');
 		}
 		
-		return ($mailTemplate,@attachmentFiles);
+		return ($mailTemplate,$mailTemplateTitle,@attachmentFiles);
 	} else {
 		return bless({'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500},'RDConnect::MetaUserManagement::Error');
 	}
@@ -274,18 +346,20 @@ sub CreateUser($\[%@];$) {
 	# Before any task
 	# Getting the mailTemplate and the attachments for new user creation
 	my $mailTemplate;
+	my $mailTemplateTitle;
 	my @attachmentFiles = ();
 	
 	my $passMailTemplate;
+	my $passMailTemplateTitle;
 	my @passAttachmentFiles = ();
 	
 	unless($NOEMAIL) {
-		($mailTemplate,@attachmentFiles) = NewUserEmailTemplate($uMgmt);
+		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = NewUserEmailTemplate($uMgmt);
 		
 		# Return if error condition
 		return $mailTemplate  if(blessed($mailTemplate));
 		
-		($passMailTemplate,@passAttachmentFiles) = ChangedPasswordEmailTemplate($uMgmt);
+		($passMailTemplate,$passMailTemplateTitle,@passAttachmentFiles) = ChangedPasswordEmailTemplate($uMgmt);
 		
 		return $passMailTemplate  if(blessed($passMailTemplate));
 	}
@@ -309,16 +383,17 @@ sub CreateUser($\[%@];$) {
 			my $user = $p_users->[0];
 			my $username = $payload->[0]{'username'};
 			unless($NOEMAIL) {
-				my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)', 'gdprtoken' => '(undefined)' );
-				my %keyval2 = ( 'password' => '(undefined)' );
+				my $unique = time;
+				
+				my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)', 'gdprtoken' => '(undefined)', 'unique' => $unique );
+				my %keyval2 = ( 'password' => '(undefined)', 'unique' => $unique );
 				
 				# Mail configuration parameters
-				my $unique = time;
 				my $mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
-				$mail1->setSubject($mail1->getSubject().' (I) ['.$unique.']');
+				$mail1->setSubject($mailTemplateTitle.' (I)');
 				
 				my $mail2 = GetMailManagementInstance($cfg,$passMailTemplate,%keyval2,@passAttachmentFiles);
-				$mail2->setSubject($mail2->getSubject().' (II) ['.$unique.']');
+				$mail2->setSubject($passMailTemplateTitle.' (II)');
 				
 				my $fullname = $payload->[0]{'cn'};
 				my $email = $payload->[0]{'email'}[0];
@@ -364,7 +439,7 @@ sub ResetUserPassword($$$) {
 	
 	my $cfg = $uMgmt->getCfg();
 	
-	my($mailTemplate,@attachmentFiles) = FetchEmailTemplate($uMgmt,GDPRDomain());
+	my($mailTemplate,$mailTemplateTitle,@attachmentFiles) = FetchEmailTemplate($uMgmt,GDPRDomain());
 	
 	# Error condition
 	return $mailTemplate  if(blessed($mailTemplate));
@@ -374,7 +449,7 @@ sub ResetUserPassword($$$) {
 		return $userPassword  if(blessed($userPassword));
 	}
 
-	my($passMailTemplate,@passAttachmentFiles) = ChangedPasswordEmailTemplate($uMgmt);
+	my($passMailTemplate,$passMailTemplateTitle,@passAttachmentFiles) = FetchEmailTemplate($uMgmt,ResettedPasswordDomain());
 	
 	return $passMailTemplate  if(blessed($passMailTemplate));
 	
@@ -389,21 +464,21 @@ sub ResetUserPassword($$$) {
 	my $retval = undef;
 	
 	if($success) {
-		my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
-		my %keyval2 = ( 'password' => '(undefined)' );
+		my $unique = time;
+		my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)', 'unique' => $unique );
+		my %keyval2 = ( 'password' => '(undefined)', 'unique' => $unique );
 		
 		# Mail configuration parameters
-		my $unique = time;
 		my $mail1 = undef;
 		
 		unless($uMgmt->didUserAcceptGDPR($user)) {
 			$mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
-			$mail1->setSubject('RD-Connect GDPR acceptance for user '.$userId.' (reminder) ['.$unique.']');
+			$mail1->setSubject($mailTemplateTitle.' (reminder)');
 			$keyval1{'gdprtoken'} = $uMgmt->generateGDPRHashFromUser($user);
 		}
 		
 		my $mail2 = GetMailManagementInstance($cfg,$passMailTemplate,%keyval2,@passAttachmentFiles);
-		$mail2->setSubject('RD-Connect password reset for user '.$userId.' ['.$unique.']');
+		$mail2->setSubject($passMailTemplateTitle);
 		
 		my $username = $payload->{'username'};
 		my $fullname = $payload->{'cn'};
