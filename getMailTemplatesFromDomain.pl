@@ -32,7 +32,7 @@ if(scalar(@ARGV)==3) {
 	my $j = JSON::MaybeXS->new('convert_blessed' => 1,'utf8' => 0,'pretty' => 1);
 	
 	print "* Reading templates for domain $ldapDomain\n";
-	my($mailTemplate,@attachments) = RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$ldapDomain);
+	my($mailTemplate,$mailTemplateTitle,@attachments) = RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$ldapDomain);
 	
 	if(Scalar::Util::blessed($mailTemplate) && $mailTemplate->isa('RDConnect::MetaUserManagement::Error')) {
 		my $j = JSON::MaybeXS->new('allow_blessed' => 1,'convert_blessed' => 1,'utf8' => 0,'pretty' => 1);
@@ -42,6 +42,7 @@ if(scalar(@ARGV)==3) {
 		File::Path::make_path($destdir);
 		
 		# Now, save the templates in the destination directory
+		print "\t- Title: ",$mailTemplateTitle,"\n";
 		foreach my $mTemplate ($mailTemplate,@attachments) {
 			my $mailTPath = File::Spec->catfile($destdir,$mTemplate->{'cn'});
 			print "\t- Saving $mailTPath\n";
