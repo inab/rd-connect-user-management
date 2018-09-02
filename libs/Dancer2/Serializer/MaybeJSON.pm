@@ -58,6 +58,12 @@ sub serialize {
 sub deserialize {
     my ( $self, $entity, $options ) = @_;
 
+    my $config = blessed $self ? $self->config : {};
+
+    foreach (keys %$config) {
+        $options->{$_} = $config->{$_} unless exists $options->{$_};
+    }
+
     $options->{utf8} = 1 if !defined $options->{utf8};
     	# This is needed due a Perl bug related to return inside a eval block
     	my $retval;
