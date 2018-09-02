@@ -98,12 +98,6 @@ sub new($$\%;\@) {
 		}
 	}
 	
-	# These are the recognized replacements
-	my %replacements = map { $_ => undef } $templateMailBody =~ /\[% ([a-zA-Z0-9._-]+) %\]/g;
-	foreach my $var (keys(%replacements)) {
-		Carp::carp("WARNING: annotation $var in template does not exist")  unless(exists($defaultKeyval{$var}));
-	}
-	
 	# Identify the attachments
 	my @attachments = ();
 	foreach my $attachmentFileComponent (@attachmentFiles) {
@@ -149,7 +143,6 @@ sub new($$\%;\@) {
 	$self->{'defaultKeyval'} = \%defaultKeyval;
 	$self->{'templateMailBody'} = $templateMailBody;
 	$self->{'templateMailBodyMime'} = $templateMailBodyMime;
-	$self->{'replacements'} = \%replacements;
 	$self->{'attachments'} = \@attachments  if(scalar(@attachments)>0);
 	
 	return bless($self,$class);
@@ -179,11 +172,17 @@ sub sendMessage($\%) {
 	my $mailBody = $self->{'templateMailBody'};
 	my $subject = $self->{'subject'};
 	
-	foreach my $var (keys(%{$self->{'replacements'}})) {
+	# These are the recognized replacements
+	my %replacements = map { $_ => undef } ($mailBody =~ /\[% ([a-zA-Z0-9._-]+) %\]/g, $subject =~ /\[% ([a-zA-Z0-9._-]+) %\]/g);
+	
+	foreach my $var (keys(%replacements)) {
+		Carp::carp("WARNING: annotation $var in template does not exist")  unless(exists($self->{'defaultKeyval'}{$var}));
 		my $val = exists($p_keyval->{$var}) ? $p_keyval->{$var} : (exists($self->{'defaultKeyval'}{$var}) ? $self->{'defaultKeyval'}{$var} : '(FIXME!)');
 		
-		$mailBody =~ s/\Q[% $var %]\E/$val/g;
-		$subject =~ s/\Q[% $var %]\E/$val/g;
+		my $pat = quotemeta("[% $var %]");
+		
+		$mailBody =~ s/$pat/$val/g;
+		$subject =~ s/$pat/$val/g;
 	}
 	
 	my $mailPart = Email::MIME->create(
