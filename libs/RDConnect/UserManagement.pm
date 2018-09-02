@@ -9,6 +9,35 @@ use experimental 'smartmatch';
 use boolean qw();
 use POSIX ();
 
+use RDConnect::UserManagement::Error;
+
+
+package RDConnect::UserManagement::UserNotFound;
+
+use parent 'RDConnect::UserManagement::Error';
+
+1;
+
+package RDConnect::UserManagement::GroupNotFound;
+
+use parent 'RDConnect::UserManagement::Error';
+
+1;
+
+package RDConnect::UserManagement::DocumentNotFound;
+
+use parent 'RDConnect::UserManagement::Error';
+
+1;
+
+package RDConnect::UserManagement::DomainNotFound;
+
+use parent 'RDConnect::UserManagement::Error';
+
+1;
+
+
+
 package RDConnect::UserManagement;
 
 use Carp;
@@ -1189,6 +1218,9 @@ sub _getGroupDNFromJSON($\%) {
 	return $dn;
 }
 
+# Declared later
+sub _userJanitoring(\%);
+
 sub _normalizeUserCNFromJSON(\%) {
 	my($jsonUser) = @_;
 	
@@ -1197,6 +1229,11 @@ sub _normalizeUserCNFromJSON(\%) {
 		my $surname = ref($jsonUser->{'surname'}) eq 'ARRAY' ? join(' ',@{$jsonUser->{'surname'}}) : $jsonUser->{'surname'};
 		$jsonUser->{'cn'} = $givenName .' '.$surname;
 	}
+}
+
+sub normalizeUserFromJSON(\%) {
+	_normalizeUserCNFromJSON(%{$_[0]});
+	_userJanitoring(%{$_[0]});
 }
 
 # Parameters:
@@ -1305,6 +1342,9 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 			}
 		}
 		
+		# cn normalization
+		$m_normalizePKJSON->($p_entryHash)  if(ref($m_normalizePKJSON) eq 'CODE');
+		
 		# Now, the validation of each input
 		my @valErrors = $validator->validate($p_entryHash);
 		if(scalar(@valErrors) > 0) {
@@ -1316,9 +1356,6 @@ sub createLDAPFromJSON(\[%@]$$$$\%$\@;$) {
 		}
 		
 		unless($failed) {
-			# cn normalization
-			$m_normalizePKJSON->($p_entryHash)  if(ref($m_normalizePKJSON) eq 'CODE');
-			
 			push(@{$p_err},'');
 			
 			# Consistency validator
@@ -1433,7 +1470,7 @@ sub createExtUser(\[%@];$) {
 	return $self->createLDAPFromJSON(
 				$p_userArray,
 				\&_getUserDNFromJSON,
-				\&_normalizeUserCNFromJSON,
+				\&normalizeUserFromJSON,
 				getCASUserValidator(),
 				'newUserConsistency',
 				\%JSON_LDAP_USER_ATTRIBUTES,
@@ -1512,7 +1549,7 @@ sub genJSONFromLDAP(\@\%;$$$) {
 
 my $ZERO_EPOCH = _epoch_ISO8601_RFC3339(0);
 
-sub _userJanitoring($) {
+sub _userJanitoring(\%) {
 	my($jsonEntry) = @_;
 	
 	my $wasJanitored = undef;
@@ -1636,7 +1673,7 @@ sub postFixupUser($$$) {
 	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn());
 	
 	# Update the LDAP entry with this janitored version
-	_userJanitoring($jsonEntry);
+	_userJanitoring(%{$jsonEntry});
 	#if(_userJanitoring($jsonEntry)) {
 	#	$uMgmt->modifyJSONUser(undef,$jsonEntry);
 	#}
