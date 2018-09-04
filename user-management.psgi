@@ -94,7 +94,7 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_DIR
 	}
 }
 
-our $jserr = JSON->new->convert_blessed();
+our $jserr = JSON->new->convert_blessed()->allow_blessed();
 
 1;
 
@@ -391,18 +391,14 @@ sub list_mailDomain_documents {
 	
 	my $uMgmt = RDConnect::UserManagement::DancerCommon::getUserManagementInstance();
 	
+	# Last attempt, trying to materialize the template (if it is possible)
+	RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$ldapDomain);
+			
+	# Last attempt, trying to materialize the template (if it is possible)
 	my($success,$payload) = $uMgmt->listJSONDocumentsFromDomain($ldapDomain);
 	
 	unless($success) {
-		# Last attempt, trying to materialize the template (if it is possible)
-		RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$ldapDomain);
-				
-		# Last attempt, trying to materialize the template (if it is possible)
-		($success,$payload) = $uMgmt->listJSONDocumentsFromDomain($ldapDomain);
-		
-		unless($success) {
-			send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for $apiKey not found",'trace' => $payload}),404);
-		}
+		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => "Mail templates for $apiKey not found",'trace' => $payload}),404);
 	}
 	
 	# Here the payload
