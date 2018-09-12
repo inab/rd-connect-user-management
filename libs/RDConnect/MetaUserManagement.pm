@@ -29,6 +29,7 @@ package RDConnect::MetaUserManagement;
 use RDConnect::UserManagement;
 use RDConnect::MailManagement;
 use Scalar::Util qw(blessed);
+use File::Basename qw();
 
 use constant APGSECTION	=>	'apg';
 
@@ -198,6 +199,207 @@ our %MailTemplateKeys = (
 	'mailTemplateTitle'	=>	undef,
 	'mailAttachment'	=>	undef,
 );
+
+our @TMetaKeys = ('cn','description','documentClass');
+
+sub SetEmailTemplate($$$$@) {
+	my($uMgmt,$domainId,$mailTemplateTitle,$mailTemplateFile,@attachments) = @_;
+	
+	my($successMail,$payloadMail) = $uMgmt->listJSONDocumentsFromDomain($domainId);
+	
+	unless($successMail) {
+		# Side effect, initialize email template
+		# First, get/create the domain
+		my($successD,$payloadD) = $uMgmt->getDomain($domainId,1);
+		if($successD) {
+			$successMail = 1;
+			$payloadMail = [];
+		}
+	}
+	
+	if($successMail) {
+		my $jsonDomainDocuments = $payloadMail;
+		
+		my $retval = undef;
+		
+		# Start checking the files are readable
+		foreach my $file ($mailTemplateFile,@attachments) {
+			unless(ref($file) || (-f $file && -r $file)) {
+				$retval = bless({'reason' => 'Error before storing mail templates for domain '.$domainId,'trace' => "File $file does not exist",'code' => 500},'RDConnect::MetaUserManagement::Error');
+				last;
+			}
+		}
+		
+		unless(defined($retval)) {
+			# Identify what it is being replaced/removed
+			my $prevMailTemplate = undef;
+			my $prevMailTemplateTitle = undef;
+			# These ones are going to be removed always!
+			my @other = ();
+			foreach my $prevEntry (@{$jsonDomainDocuments}) {
+				if($prevEntry->{'documentClass'} eq 'mailTemplate') {
+					unless(defined($prevMailTemplate)) {
+						$prevMailTemplate = $prevEntry;
+					} else {
+						push(@other,$prevEntry);
+					}
+				} elsif($prevEntry->{'documentClass'} eq 'mailTemplateTitle') {
+					unless(defined($prevMailTemplateTitle)) {
+						$prevMailTemplateTitle = $prevEntry;
+					} else {
+						push(@other,$prevEntry);
+					}
+				#} elsif($prevEntry->{'documentClass'} eq 'mailAttachment') {
+				#	push(@prevAttachments,$prevEntry);
+				} else {
+					push(@other,$prevEntry);
+				}
+			}
+			
+			# The title
+			{
+				my($successA,$payloadA);
+				
+				if(defined($prevMailTemplateTitle)) {
+					($successA,$payloadA) = $uMgmt->modifyDocumentFromDomain(
+						$domainId,
+						$prevMailTemplateTitle->{'cn'},
+						$mailTemplateTitle
+					);
+				} else {
+					my $mimeType = 'text/plain';
+					my %metadata = (
+						'cn' =>	'.templateTitle.txt',
+						'description' => 'Template title',
+						'documentClass' => 'mailTemplateTitle',
+					);
+					
+					($successA,$payloadA) = $uMgmt->attachDocumentForDomain(
+						$domainId,
+						\%metadata,
+						$mailTemplateTitle,
+						$mimeType
+					);
+				}
+				
+				unless($successA) {
+					$retval = bless({'reason' => 'Error while replacing mail template title from domain '.$domainId,'trace' => $payloadA,'code' => 500},'RDConnect::MetaUserManagement::Error');
+				}
+			}
+			
+			# The body
+			unless(defined($retval)) {
+				if(open(my $F,'<:raw',$mailTemplateFile)) {
+					local $/;
+					my $mailTemplate = <$F>;
+					close $F;
+					
+					my($successA,$payloadA);
+					
+					if(defined($prevMailTemplate)) {
+						($successA,$payloadA) = $uMgmt->modifyDocumentFromDomain(
+							$domainId,
+							$prevMailTemplate->{'cn'},
+							$mailTemplate
+						);
+					} else {
+						my $mimeType = 'text/plain';
+						# Trying to guess the type of file
+						eval {
+							$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$mailTemplate));
+							$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $mailTemplate =~ /<(p|div|br|span)>/);
+						};
+						
+						my $p_domain;
+						if(exists($MTByDomain{$domainId})) {
+							$p_domain = $MTByDomain{$domainId};
+						} else {
+							$p_domain = {
+								'cn'	=>	'unknownTemplate.html',
+								'ldapDesc'	=>	'(no description)'
+							};
+						}
+						my %metadata = (
+							'cn' =>	$p_domain->{'cn'},
+							'description' => $p_domain->{'ldapDesc'},
+							'documentClass' => 'mailTemplate',
+						);
+						
+						($successA,$payloadA) = $uMgmt->attachDocumentForDomain(
+							$domainId,
+							\%metadata,
+							$mailTemplate,
+							$mimeType
+						);
+					}
+					
+					unless($successA) {
+						$retval = bless({'reason' => 'Error while replacing mail template body in domain '.$domainId,'trace' => $payloadA,'code' => 500},'RDConnect::MetaUserManagement::Error');
+					}
+				} else {
+					$retval = bless({'reason' => "Error while reading mail template body in domain $domainId",'trace' => [$!],'code' => 500},'RDConnect::MetaUserManagement::Error');
+				}
+			}
+			
+			# Remove previous attachments
+			unless(defined($retval)) {
+				foreach my $doc (@other) {
+					my($success,$payload) = $uMgmt->removeDocumentFromDomain($domainId,$doc->{'cn'});
+						
+					unless($success) {
+						$retval = bless({'reason' => "Error while removing attachment $doc->{'cn'} from domain $domainId",'trace' => $payload,'code' => 500},'RDConnect::MetaUserManagement::Error');
+						last;
+					}
+				}
+			}
+			
+			# Add the new attachments
+			unless(defined($retval)) {
+				foreach my $attachment (@attachments) {
+					if(open(my $F,'<:raw',$attachment)) {
+						local $/;
+						my $attachmentContent = <$F>;
+						close $F;
+							
+						my $mimeType = 'application/octet-stream';
+						# Trying to guess the type of file
+						eval {
+							$mimeType = File::MimeInfo::Magic::mimetype(IO::Scalar->new(\$attachmentContent));
+							$mimeType = 'text/html'  if($mimeType eq 'text/plain' && $attachmentContent =~ /<(p|div|br|span)>/);
+						};
+						
+						my %metadata = (
+							'cn' =>	File::Basename::basename($attachment),
+							'description' => 'attachment',
+							'documentClass' => 'mailAttachment',
+						);
+						
+						my($successA,$payloadA) = $uMgmt->attachDocumentForDomain(
+							$domainId,
+							\%metadata,
+							$attachmentContent,
+							$mimeType
+						);
+						
+						unless($successA) {
+							$retval = bless({'reason' => "Error while storing attachment $attachment for domain $domainId",'trace' => $payloadA,'code' => 500},'RDConnect::MetaUserManagement::Error');
+							last;
+						}
+					} else {
+						$retval = bless({'reason' => "Error while reading attachment $attachment for domain $domainId",'trace' => [$!],'code' => 500},'RDConnect::MetaUserManagement::Error');
+						last;
+					}
+				}
+			}
+			
+			$retval = 1  unless(defined($retval));
+		}
+		
+		return $retval;
+	} else {
+		return bless({'reason' => 'Error while fetching mail templates from domain '.$domainId,'trace' => $payloadMail,'code' => 500},'RDConnect::MetaUserManagement::Error');
+	}
+}
 
 sub FetchEmailTemplate($$) {
 	my($uMgmt,$domainId) = @_;
