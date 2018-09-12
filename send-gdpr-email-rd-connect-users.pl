@@ -18,17 +18,30 @@ use Text::Unidecode qw();
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
-use RDConnect::MailManagement;
+use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
 
-if(scalar(@ARGV)>=3) {
+if(scalar(@ARGV)>=2) {
 	my $configFile = shift(@ARGV);
 	my $usersFile = shift(@ARGV);
-	my $mailTemplate = shift(@ARGV);
-	my @attachmentFiles = @ARGV;
 	
+	# LDAP configuration
 	my $cfg = Config::IniFiles->new( -file => $configFile);
+	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	
+	my $mailTemplateTitle;
+	my $mailTemplate;
+	my @attachmentFiles;
+	
+	# Use the template available in the LDAP directory, or the default
+	if(scalar(@ARGV) == 0) {
+		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,RDConnect::MetaUserManagement::GDPRDomain());
+	} else {
+		$mailTemplateTitle = 'IMPORTANT! RD-Connect GPAP: please renew your access in accordance with the EU GDPR';
+		$mailTemplate = shift(@ARGV);
+		@attachmentFiles = @ARGV;
+	}
 	
 	# Now, let's read all the parameters
 	
@@ -37,11 +50,8 @@ if(scalar(@ARGV)>=3) {
 	
 	my $mail1;
 	# Mail configuration parameters
-	$mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
-	$mail1->setSubject('IMPORTANT! RD-Connect GPAP: please renew your access in accordance with the EU GDPR');
-	
-	# LDAP configuration
-	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	$mail1 = RDConnect::MetaUserManagement::GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
+	$mail1->setSubject($mailTemplateTitle);
 	
 	# Read the users
 	my @users = ();
@@ -131,6 +141,6 @@ if(scalar(@ARGV)>=3) {
 	}
 } else {
 	die <<EOF ;
-Usage:	$0 [-r] {IniFile} {File with usernames (in UTF-8, one per line)} {Message Template} {Attachments}*
+Usage:	$0 [-r] {IniFile} {File with usernames (in UTF-8, one per line)} [{Message Template} {Attachments}*]
 EOF
 }
