@@ -1169,7 +1169,7 @@ prefix '/organizationalUnits' => sub {
 	get '' => \&get_OUs;
 	get '/:ou_id' => \&get_OU;
 	post '/:ou_id/renamesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&rename_organizationalUnit;
-	post '/:ou_id/movesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&move_organizationalUnit;
+	post '/:ou_id/mergesTo/:new_ou_id' => auth_cas login => rdconnect_auth admin => \&move_organizationalUnit;
 	get '/:ou_id/picture' => \&get_OU_photo;
 	get '/:ou_id/users' => \&get_OU_users;
 	get '/:ou_id/users/:user_id' => \&get_OU_user;
@@ -1493,7 +1493,7 @@ prefix '/groups' => sub {
 	post '/:group_id' => auth_cas login => rdconnect_auth owner => \&modify_group;
 	del '/:group_id' => auth_cas login => rdconnect_auth owner => \&remove_group;
 	post '/:group_id/renamesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&rename_group;
-	post '/:group_id/movesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&move_group_members;
+	post '/:group_id/mergesTo/:new_group_id' => auth_cas login => rdconnect_auth owner => \&move_group_members;
 	post '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&add_group_members;
 	del '/:group_id/members' => auth_cas login => rdconnect_auth owner => \&remove_group_members;
 	

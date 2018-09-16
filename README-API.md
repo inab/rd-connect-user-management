@@ -109,7 +109,7 @@ The services under the endpoint have several levels of authorization, which requ
 
 	* `POST /organizationalUnits/:ou_id/renamesTo/:new_ou_id` `[adm]`: It renames the organizational unit to a new one
 
-	* `POST /organizationalUnits/:ou_id/movesTo/:new_ou_id` `[adm]`: It moves all the members of the organizational unit to a new or existing one, disappearing the original organizational unit
+	* `POST /organizationalUnits/:ou_id/mergesTo/:new_ou_id` `[adm]`: It moves all the members of the organizational unit to a new or existing one, disappearing the original organizational unit
 
 	* `GET /organizationalUnits/:ou_id/picture`: It returns the photo associated to the organizational unit which matches the record, or 404 if not found, or the organizational unit does not have an associated photo.
 
@@ -133,7 +133,7 @@ The services under the endpoint have several levels of authorization, which requ
 	
 	* `POST /groups/:group_id/renamesTo/:new_group_id` `[own]`: It renames the group or 404 if not found.
 	
-	* `POST /groups/:group_id/movesTo/:new_group_id` `[adm]`: It moves all the members of this group to another existing one, or 404 if not found.
+	* `POST /groups/:group_id/mergesTo/:new_group_id` `[adm]`: It moves all the members of this group to another existing one, or 404 if not found.
 	
 	* `GET /groups/:group_id/members`: It returns the list of users which are members of this group, or 404 if not found.
 	
