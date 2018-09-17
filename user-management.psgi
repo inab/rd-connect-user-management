@@ -624,7 +624,7 @@ sub get_user_groups {
 }
 
 sub get_user_group {
-	redirect '../../groups/'.params->{'group_id'}, 301;
+	redirect request->path.'/../../../../groups/'.params->{'group_id'}, 301;
 }
 
 sub list_user_documents {
@@ -923,7 +923,7 @@ sub rename_user {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Unable to rename user '.params->{'user_id'}.' to '.$newUsername,'trace' => $payload}),400);
 	}
 	
-	redirect '../'.$newUsername, 303;
+	redirect request->path.'/../../../'.$newUsername, 303;
 }
 
 # Routing for /users prefix
@@ -1034,7 +1034,7 @@ sub get_OU_users {
 }
 
 sub get_OU_user {
-	redirect '../../users/'.params->{user_id}, 301;
+	redirect request->path.'/../../../../users/'.params->{user_id}, 301;
 }
 
 sub get_OU_photo {
@@ -1158,7 +1158,7 @@ sub rename_organizationalUnit(;$) {
 	#my $httpCode = $oldRemoved ? 201 : 206;
 	
 	# It can be improved, returning the new location or the modified entry
-	redirect '../'.$newOUname, 303;
+	redirect request->path.'/../../../'.$newOUname, 303;
 }
 
 sub move_organizationalUnit() {
@@ -1468,7 +1468,7 @@ sub rename_group {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Renaming group '.params->{'group_id'}.' to '.params->{'new_group_id'}.' failed','trace' => $payload}),400);
 	}
 	
-	redirect '../'.params->{'new_group_id'} , 303
+	redirect request->path.'/../../../'.params->{'new_group_id'} , 303
 }
 
 sub move_group_members {
@@ -1480,7 +1480,7 @@ sub move_group_members {
 		send_error($RDConnect::UserManagement::DancerCommon::jserr->encode({'reason' => 'Moving group members from '.params->{'group_id'}.' to '.params->{'new_group_id'}.' failed','trace' => $payload}),400);
 	}
 	
-	redirect '../'.params->{'new_group_id'} , 303
+	redirect request->path.'/../../../'.params->{'new_group_id'} , 303
 }
 
 prefix '/groups' => sub {
