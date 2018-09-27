@@ -763,6 +763,26 @@ my %JSON_LDAP_USER_ATTRIBUTES = (
 		# _ldap2Json => undef,
 		_readOnly => boolean::true,
 	},
+
+	'creationTimestamp'	=>	{
+		# ['createTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'createTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
+	},
+	
+	'modificationTimestamp'	=>	{
+		# ['modifyTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'modifyTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
+	},
 	
 	'userCategory'	=>	{
 		# ['userClass', boolean::true, boolean::false, undef, undef, boolean::false],
@@ -939,6 +959,26 @@ my %JSON_LDAP_ENABLED_USERS_ATTRIBUTES = (
 		_readOnly => boolean::true,
 	},
 
+	'creationTimestamp'	=>	{
+		# ['createTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'createTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
+	},
+	
+	'modificationTimestamp'	=>	{
+		# ['modifyTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'modifyTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
+	},
+	
 	GDPR_jsonAttr()	=>	{
 		_ldapName => GDPR_ldapAttr(),
 		_visible => boolean::true,
@@ -1028,6 +1068,24 @@ my %JSON_LDAP_GROUP_ATTRIBUTES = (
 		# _json2Ldap => undef,
 		# _ldap2Json => undef,
 		_readOnly => boolean::false,
+	},
+	'creationTimestamp'	=>	{
+		# ['createTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'createTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
+	},
+	'modificationTimestamp'	=>	{
+		# ['modifyTimestamp', boolean::true, boolean::false, undef, \&_LDAP_ISO8601_RFC3339, boolean::true],
+		_ldapName => 'modifyTimestamp',
+		_visible => boolean::true,
+		_isLdapArray => boolean::false,
+		# _json2Ldap => undef,
+		_ldap2Json => \&_LDAP_ISO8601_RFC3339,
+		_readOnly => boolean::true,
 	},
 	'owner'	=>	{
 		# ['owner', boolean::true, boolean::true, \&getDNsFromUIDs, \&getUIDsFromDNs, boolean::true],
@@ -1969,6 +2027,7 @@ sub getUser($;$) {
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $userDN,
 		'filter' => "(&(objectClass=basicRDproperties)(|(uid=$escaped_username)(mail=$escaped_username)))",
+		'attrs' => [ '*','createTimestamp','modifyTimestamp' ],
 		'sizelimit' => 1,
 		'scope' => 'sub'
 	);
@@ -2617,6 +2676,7 @@ sub listUsers(;$) {
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $userDN,
 		'filter' => '(objectClass=inetOrgPerson)',
+		'attrs' => [ '*','createTimestamp','modifyTimestamp' ],
 		'scope' => 'children'
 	);
 	
@@ -2645,6 +2705,7 @@ sub listEnabledUsers(;$) {
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $userDN,
 		'filter' => '(&(objectClass=inetOrgPerson)(disabledAccount=FALSE))',
+		'attrs' => [ '*','createTimestamp','modifyTimestamp' ],
 		'scope' => 'children'
 	);
 	
@@ -3148,6 +3209,7 @@ sub listPeopleOUUsers($;$) {
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $dn,
 		'filter' => '(objectClass=inetOrgPerson)',
+		'attrs' => [ '*','createTimestamp','modifyTimestamp' ],
 		'scope' => 'children'
 	);
 	
@@ -3615,6 +3677,7 @@ sub getGroup($;$) {
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $groupDN,
 		'filter' => "(&(objectClass=groupOfNames)(cn=$escaped_groupCN))",
+		'attrs' => [ '*','createTimestamp','modifyTimestamp' ],
 		'sizelimit' => 1,
 		'scope' => 'sub'
 	);
@@ -3887,6 +3950,7 @@ sub listGroups(;$) {
 	my $searchMesg = $self->{'ldap'}->search(
 		'base' => $groupDN,
 		'filter' => '(objectClass=groupOfNames)',
+		'attrs' => [ '*','createTimestamp','modifyTimestamp' ],
 		'scope' => 'sub'
 	);
 	
@@ -3965,6 +4029,7 @@ sub getGroupsByUser($;$$) {
 		my $searchMesg = $self->{'ldap'}->search(
 			'base' => $groupDN,
 			'filter' => "(&(objectClass=groupOfNames)(|(member=$dn_user)(owner=$dn_user)))",
+			'attrs' => [ '*','createTimestamp','modifyTimestamp' ],
 			'scope' => 'sub'
 		);
 	

@@ -137,6 +137,16 @@
 				"minLength": 1
 			}
 		},
+		"creationTimestamp": {
+			"title": "Creation timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
+		"modificationTimestamp": {
+			"title": "Last modification timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
 		"registeredEmails": {
 			"title": "The registered e-mail address(es) for the user, either validated or not",
 			"type": "array",

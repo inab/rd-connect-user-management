@@ -19,6 +19,16 @@
 			"type": "string",
 			"enum": [ "sampleAccessControl", "applicationAccessControl", "management", "other" ]
 		},
+		"creationTimestamp": {
+			"title": "Creation timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
+		"modificationTimestamp": {
+			"title": "Last modification timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
 		"owner": {
 			"title": "Owner(s) username(s)",
 			"type": "array",

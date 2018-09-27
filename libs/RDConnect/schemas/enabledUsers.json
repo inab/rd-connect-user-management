@@ -40,6 +40,16 @@
 						"type": "string",
 						"enum": [ "PI", "Researcher", "PhD", "Student", "Technician", "Collaborator", "External"]
 					},
+					"creationTimestamp": {
+						"title": "Creation timestamp",
+						"type": "string",
+						"format": "date-time"
+					},
+					"modificationTimestamp": {
+						"title": "Last modification timestamp",
+						"type": "string",
+						"format": "date-time"
+					},
 					"email": {
 						"title": "The validated e-mail address(es) of the user",
 						"type": "array",
