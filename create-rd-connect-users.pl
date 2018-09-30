@@ -132,9 +132,8 @@ if(scalar(@ARGV)>=3) {
 		
 		if(defined($retval)) {
 			use Data::Dumper;
-			print STDERR Dumper(\@newUsers),"\n";
 			
-			Carp::croak($retval->{'reason'}.'. Trace: '.(ref($retval->{'trace'})?Dumper($retval->{'trace'}):$retval->{'trace'}));
+			Carp::croak($retval->{'reason'}.'. Trace: '.join("\n",map { Dumper($_) } @{(ref($retval->{'trace'}) eq 'ARRAY') ? $retval->{'trace'} : [$retval->{'trace'}]}));
 		}
 	} else {
 		Carp::croak("Unable to read file $usersFile");

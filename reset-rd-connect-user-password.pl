@@ -53,7 +53,9 @@ if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) &&
 		my $retval = RDConnect::MetaUserManagement::ResetUserPassword($uMgmt,$username,$pass);
 		
 		if(defined($retval)) {
-			Carp::carp($retval->{'reason'}.'. Trace: '.(ref($retval->{'trace'})?join("\n",@{$retval->{'trace'}}):$retval->{'trace'}));
+			use Data::Dumper;
+			
+			Carp::carp($retval->{'reason'}.'. Trace: '.join("\n",map { Dumper($_) } @{(ref($retval->{'trace'}) eq 'ARRAY') ? $retval->{'trace'} : [$retval->{'trace'}]}));
 		} else {
 			print "User $username password was reset\n";
 		}

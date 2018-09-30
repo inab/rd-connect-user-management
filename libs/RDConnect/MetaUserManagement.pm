@@ -5,6 +5,8 @@
 use strict;
 use warnings 'all';
 
+use Data::Password::zxcvbn;
+
 package RDConnect::MetaUserManagement::Error;
 
 use Scalar::Util qw(reftype);
@@ -636,6 +638,7 @@ sub CreateUser($\[%@];$) {
 	}
 }
 
+# This method is called from the API and command-line when a password is being changed
 sub ResetUserPassword($$$) {
 	my($uMgmt,$userId,$userPassword) = @_;
 	
@@ -646,11 +649,15 @@ sub ResetUserPassword($$$) {
 	# Error condition
 	return $mailTemplate  if(blessed($mailTemplate));
 	
-	unless(defined($userPassword)) {
+	if(defined($userPassword)) {
+		# Now, let's check the strength of the input password
+		my $evPass = Data::Password::zxcvbn::password_strength($userPassword);
+		return bless({'reason' => 'Password is too weak','trace' => $evPass,'code' => 400},'RDConnect::MetaUserManagement::Error')  if($evPass->{'score'} < 3);
+	} else {
 		$userPassword = GetRandomPassword($cfg);
 		return $userPassword  if(blessed($userPassword));
 	}
-
+	
 	my($passMailTemplate,$passMailTemplateTitle,@passAttachmentFiles) = FetchEmailTemplate($uMgmt,ResettedPasswordDomain());
 	
 	return $passMailTemplate  if(blessed($passMailTemplate));

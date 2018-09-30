@@ -38,8 +38,9 @@ if(scalar(@ARGV)>=4) {
 	if(Scalar::Util::blessed($success) && $success->isa('RDConnect::MetaUserManagement::Error')) {
 		Carp::carp("ERROR: ".$success->{'reason'});
 		if(exists($success->{'trace'})) {
+			my $trace = (ref($success->{'trace'}) eq 'ARRAY') ? $success->{'trace'} : [$success->{'trace'}];
 			Carp::carp("TRACE:");
-			foreach my $retval (@{$success->{'trace'}}) {
+			foreach my $retval (@{$trace}) {
 				Carp::carp($retval);
 			}
 		}
