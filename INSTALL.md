@@ -2,17 +2,7 @@
 
 This document explains how to install and setup RD-Connect User Management REST API.
 
-First, you have to install all the dependencies listed in [README.md]. For the user-management REST API the latest versions of these additional dependencies are required:
-
-* Authen::CAS::Client
-* Authen::CAS::External
-* Dancer2
-* LWP
-* LWP::Protocol::https
-* Plack::Middleware::CrossOrigin
-* Plack::Middleware::Deflater
-* FCGI	(needed by Plack::Handler::FCGI)
-* A web server, like Apache, with a proper secure setup.
+First, you have to install all the dependencies listed in [README.md]. For the user-management REST API all the dependencies in [cpanfile](cpanfile) are required, as well as a web server, like Apache, with a proper secure setup.
 
 ## Deployment
 1. Check you have installed gcc, cpan, the development version of Perl and [APG](http://www.adel.nursat.kz/apg/ "Another Password Generator") (which is available in EPEL):
