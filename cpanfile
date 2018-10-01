@@ -30,3 +30,4 @@ requires 'UUID::Tiny';
 requires 'Email::Valid';
 requires 'DateTime';
 requires 'Data::Password::zxcvbn';
+requires 'Dancer2::Plugin::CSRF';
