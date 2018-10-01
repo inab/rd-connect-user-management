@@ -1626,6 +1626,12 @@ sub _userJanitoring(\%) {
 	}
 	my $p_registeredEmails = $jsonEntry->{'registeredEmails'};
 	
+	# Did the user accept GDPR?
+	my $defaultAccepted = $ZERO_EPOCH;
+	if(exists($jsonEntry->{GDPR_jsonAttr()}) && defined($jsonEntry->{GDPR_jsonAttr()})) {
+		$defaultAccepted = $jsonEntry->{GDPR_jsonAttr()};
+	}
+	
 	#unless(exists($jsonEntry->{'management'})) {
 	#	$jsonEntry->{'management'} = {};
 	#	$wasJanitored = 1;
@@ -1651,10 +1657,10 @@ sub _userJanitoring(\%) {
 		push(@{$p_registeredEmails},{
 			'email'	=> $email,
 			'registeredAt' => $ZERO_EPOCH,
-			'lastValidatedAt' => $ZERO_EPOCH,
+			'lastValidatedAt' => $defaultAccepted,
 			'validUntil' => $grace_epoch,
 			'validQuarantineCheckUntil' => $grace_epoch,
-			'status' => 'unchecked'
+			'status' => ($defaultAccepted ne $ZERO_EPOCH) ? 'frozen' : 'unchecked'
 		});
 		$wasJanitored = 1;
 	}
