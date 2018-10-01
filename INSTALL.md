@@ -122,10 +122,8 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	* You have to put next Apache configuration block inside de VirtualHost definition, in order to enable the API handler at `/RDConnect-UserManagement-API`:
 	
 		```
-		ScriptAlias "/RDConnect-UserManagement-API" "/home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.cgi"
-		<Directory /home/rdconnect-rest/RDConnect-UserManagement-REST-API>
-			# This line is needed if you locally installed the Perl modules needed
-			SetEnv PERL5LIB /home/rdconnect-rest/perl5/lib/perl5
+		ScriptAlias "/RDConnect-UserManagement-API/" "/home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.cgi/"
+		<Location /RDConnect-UserManagement-API/>
 			# This one is needed to remove a Perl warning
 			SetEnv HOME /home/rdconnect-rest
 			
@@ -143,7 +141,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 			<IfModule mod_authz_core.c>
 				Require all granted
 			</IfModule>
-		</Directory>
+		</Location>
 		```
 	
 	* At last, as `root` restart the service
@@ -182,16 +180,17 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 	</IfModule>
 	
 	
+	FcgidMaxProcessesPerClass	5
 	FcgidIOTimeout 300
 	FcgidMaxRequestLen 104857600
-	# This line is needed if you locally installed the Perl modules needed
-	FcgidInitialEnv PERL5LIB /home/rdconnect-rest/perl5/lib/perl5
 	
-	ScriptAlias "/RDConnect-UserManagement-API" "/home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.fcgi"
-	<Directory /home/rdconnect-rest/RDConnect-UserManagement-REST-API>
+	ScriptAlias "/RDConnect-UserManagement-API/" "/home/rdconnect-rest/RDConnect-UserManagement-REST-API/user-management.fcgi/"
+	<Location /RDConnect-UserManagement-API/>
+			# This one is needed to remove a Perl warning
+			SetEnv HOME /home/rdconnect-rest
 		AllowOverride None
 		SetHandler fcgid-script
-		Options ExecCGI SymLinksIfOwnerMatch
+		Options +ExecCGI +SymLinksIfOwnerMatch
 		
 		# These sentences are for Apache 2.2 and Apache 2.4 with mod_access_compat enabled
 		<IfModule !mod_authz_core.c>
@@ -203,7 +202,7 @@ First, you have to install all the dependencies listed in [README.md]. For the u
 		<IfModule mod_authz_core.c>
 			Require all granted
 		</IfModule>
-	</Directory>
+	</Location>
 	```
 	
 	* At last, as `root` restart the service
