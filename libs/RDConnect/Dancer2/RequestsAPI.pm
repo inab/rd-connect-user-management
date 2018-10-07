@@ -14,7 +14,7 @@ use URI;
 
 use RDConnect::Dancer2::Common;
 
-package RDConnect::UserManagement::RequestsAPI;
+package RDConnect::Dancer2::RequestsAPI;
 
 use Dancer2;
 use Dancer2::Plugin::CSRF;
