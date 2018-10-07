@@ -18,7 +18,7 @@ use Scalar::Util;
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
-use RDConnect::MetaUserManagement;
+use RDConnect::TemplateManagement;
 
 if(scalar(@ARGV)>=4) {
 	my $configFile = shift(@ARGV);
@@ -30,12 +30,13 @@ if(scalar(@ARGV)>=4) {
 
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
 	my $j = JSON::MaybeXS->new('convert_blessed' => 1,'utf8' => 0,'pretty' => 1);
 	
 	print "* Setting templates for domain $ldapDomain\n";
-	my($success) = RDConnect::MetaUserManagement::SetEmailTemplate($uMgmt,$ldapDomain,$titleTemplate,$messageTemplateFile,@ARGV);
+	my($success) = $tMgmt->setEmailTemplate($ldapDomain,$titleTemplate,$messageTemplateFile,@ARGV);
 	
-	if(Scalar::Util::blessed($success) && $success->isa('RDConnect::MetaUserManagement::Error')) {
+	if(Scalar::Util::blessed($success) && $success->isa('RDConnect::TemplateManagement::Error')) {
 		Carp::carp("ERROR: ".$success->{'reason'});
 		if(exists($success->{'trace'})) {
 			my $trace = (ref($success->{'trace'}) eq 'ARRAY') ? $success->{'trace'} : [$success->{'trace'}];

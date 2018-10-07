@@ -36,6 +36,18 @@ use parent 'RDConnect::UserManagement::Error';
 
 1;
 
+package RDConnect::UserManagement::RequestNotFound;
+
+use parent 'RDConnect::UserManagement::Error';
+
+1;
+
+package RDConnect::UserManagement::RequestExpired;
+
+use parent 'RDConnect::UserManagement::Error';
+
+1;
+
 
 
 package RDConnect::UserManagement;
@@ -366,6 +378,21 @@ sub createUser($$$$$$$;$) {
 
 }
 
+{
+
+	use JSON::MaybeXS qw();
+	my $jh = undef;
+	
+	sub getJHandler() {
+		unless(defined($jh)) {
+			$jh = JSON::MaybeXS->new('convert_blessed' => 1);
+		}
+		
+		return $jh;
+	}
+
+}
+
 # http://jsonschemalint.com/draft4/
 # http://www.jsonschemavalidator.net/
 
@@ -387,6 +414,9 @@ use constant FULL_GROUP_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Base
 
 use constant RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	'documentValidation.json';
 use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,RDDOCUMENT_VALIDATION_SCHEMA_FILE);
+
+use constant REQUEST_VALIDATION_SCHEMA_FILE	=>	'requestValidation.json';
+use constant FULL_REQUEST_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File::Basename::dirname(__FILE__),SCHEMAS_REL_DIR,REQUEST_VALIDATION_SCHEMA_FILE);
 {
 
 	use JSON::Validator;
@@ -464,6 +494,19 @@ use constant FULL_RDDOCUMENT_VALIDATION_SCHEMA_FILE	=>	File::Spec->catfile(File:
 		return $rdDocumentValidator;
 	}
 	
+	my $requestValidator = undef;
+	
+	sub getCASRequestValidator() {
+		unless(defined($requestValidator)) {
+			my $requestSchemaPath = FULL_REQUEST_VALIDATION_SCHEMA_FILE;
+			if(-r $requestSchemaPath) {
+				$requestValidator = getJSONValidator();
+				$requestValidator->schema($requestSchemaPath);
+			}
+		}
+		
+		return $requestValidator;
+	}
 }
 
 # This method fetches the LDAP directory, in order to find the
@@ -5922,6 +5965,207 @@ sub createAlias($$$$;$) {
 		Carp::carp("Unable to create alias $dn pointing to $aliasedObjectName (does it exist?)\n".Dumper($updMesg));
 	}
 	return $updMesg->code() == Net::LDAP::LDAP_SUCCESS;
+}
+
+
+
+
+###########
+# Requests #
+###########
+# All the requests hang from a base ou
+# and all of them are applicationProcess
+use constant RequestEntryRole	=>	'applicationProcess';
+my @LDAP_REQUEST_DEFAULT_ATTRIBUTES = (
+	'objectClass'	=>	 [ RequestEntryRole, 'basicRDproperties' ],
+);
+
+use constant RequestsOU => 'requests';
+use constant REQUEST_PAYLOAD_ATTRIBUTE	=> 	'jsonData';
+
+use constant REQUEST_NOT_FOUND_CLASS	=>	'RDConnect::UserManagement::RequestNotFound';
+use constant REQUEST_EXPIRED_CLASS	=>	'RDConnect::UserManagement::RequestExpired';
+
+sub getRequestsDN() {
+	my $self = shift;
+	
+	unless(exists($self->{'requestsDN'})) {
+		# First, assure it already exists
+		my($success, $requestsOU) = $self->getGenericOrganizationalUnit(RequestsOU,boolean::true);
+		
+		$self->{'requestsDN'} = $requestsOU->dn();
+	}
+	
+	return $self->{'requestsDN'};
+}
+
+# Request creation.
+# Parameters:
+#	requestType: one of the accepted types
+#	publicPayload: the payload to be sent to the view
+#	ttl: if set, the number of seconds until the request expires
+#	who: if set, the user who requested this operation. undef on internal origin
+#	targetNS: what kind of entry is going to be created/manipulated
+#	targetId: if defined, which entry is going to be manipulated
+#	referringDN: if set, the full dn of the entry to be manipulated
+# It returns true on success
+sub createRequest($\[@%]$$$;$$) {
+	my $self = shift;
+	
+	my($requestType,$publicPayload,$ttl,$who,$targetNS,$targetId,$referringDN) = @_;
+	
+	my $entry = Net::LDAP::Entry->new();
+	my $requestId = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
+	my $desistCode = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
+	
+	my $now = time();
+	my $creationTimestamp = _epoch_ISO8601_RFC3339($now);
+	
+	# The payload to be stored (it must validate against the JSON Schema)
+	my $requestPayload = {
+		'requestId' => $requestId,
+		'requestType' => $requestType,
+		'creationTimestamp' => $creationTimestamp,
+		'publicPayload' => $publicPayload,
+		'origin' => {
+			'source' => defined($who) ? 'user' : 'internal'
+		},
+		'target' => {
+			'ns' => $targetNS
+		},
+		'desistCode' => $desistCode
+	};
+	
+	# Defining the expiration timestamp
+	if(defined($ttl)) {
+		my $expirationTimestamp = _epoch_ISO8601_RFC3339($now + $ttl);
+		$requestPayload->{'expirationTimestamp'} = $expirationTimestamp;
+	}
+	
+	# Who requested this?
+	if(defined($who)) {
+		$requestPayload->{'origin'}{'who'} = $who;
+	}
+	
+	# If we have the target id, set it
+	if(defined($targetId)) {
+		$requestPayload->{'target'}{'id'} = $targetId;
+	}
+	
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($requestId),$self->getRequestsDN());
+	$entry->dn($dn);
+	my $jh = getJHandler();
+	$entry->add(
+		'cn'	=>	$requestId,
+		REQUEST_PAYLOAD_ATTRIBUTE()	=>	$jh->encode($requestPayload),
+		@LDAP_REQUEST_DEFAULT_ATTRIBUTES
+	);
+	
+	$entry->add('seeAlso' => $referringDN)  if(defined($referringDN));
+	
+	my $updMesg = $entry->update($self->{'ldap'});
+	
+	my $success = undef;
+	my $payload = [];
+	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
+		print STDERR $entry->ldif();
+		
+		push(@{$payload},"Unable to create request $dn (request collision?)\n".Dumper($updMesg));
+	} else {
+		$success = $requestId;
+		$payload = $desistCode;
+	}
+	
+	return wantarray ? ($success,$payload) : $success;
+}
+
+# Parameters:
+#	requestId: the request id
+# It returns the request payload on success
+sub getRequestPayload($) {
+	my $self = shift;
+	
+	my($requestId) = @_;
+	
+	# First, each owner must be found
+	my $escaped_requestId = Net::LDAP::Util::escape_filter_value($requestId);
+	my $searchMesg = $self->{'ldap'}->search(
+		'base' => $self->getRequestsDN(),
+		'filter' => "(&(objectClass=".RequestEntryRole.")(cn=$escaped_requestId))",
+		'sizelimit' => 1,
+		'scope' => 'children'
+	);
+	
+	my $success = undef;
+	my $payload = [];
+	
+	if($searchMesg->code() == Net::LDAP::LDAP_SUCCESS) {
+		if($searchMesg->count > 0) {
+			# The request entry
+			my $entry = $searchMesg->entry(0);
+			my $jh = getJHandler();
+			my $requestPayload = $jh->decode($entry->get_value(REQUEST_PAYLOAD_ATTRIBUTE()));
+			
+			# Is it still valid?
+			unless(exists($requestPayload->{'expirationTimestamp'})) {
+				$success = 1;
+			} else {
+				my $currentTimestamp = _epoch_ISO8601_RFC3339(time());
+			
+				if($requestPayload->{'expirationTimestamp'} ge $currentTimestamp) { 
+					$success = 1;
+				} else {
+					# The request expired, so remove it (and tell we could not work with it
+					$self->removeRequest($requestId);
+					push(@{$payload},bless(\"Request $requestId expired",REQUEST_EXPIRED_CLASS));
+				}
+			}
+			
+			# Last step
+			if($success) {
+				$payload = $requestPayload;
+			}
+		} else {
+			push(@{$payload},bless(\"Request $requestId not found",REQUEST_NOT_FOUND_CLASS));
+		}
+	} else {
+		push(@{$payload},bless(\"Error while finding request $requestId\n".Dumper($searchMesg),REQUEST_NOT_FOUND_CLASS));
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	}
+}
+
+# This method removes a request from the LDAP directory
+# Parameters:
+#	requestId: The id of the request to be removed from the LDAP directory
+sub removeRequest($) {
+	my $self = shift;
+	
+	my($requestId) = @_;
+	my $requestDN = join(',','cn='.Net::LDAP::Util::escape_dn_value($requestId),$self->getRequestsDN());
+	
+	my $deleteMesg = $self->{'ldap'}->delete($requestDN);
+	
+	my $success = $deleteMesg->code() == Net::LDAP::LDAP_SUCCESS;
+	my $payload;
+	
+	if($success) {
+		$payload = [ ];
+	} else {
+		$payload = [ "Error while removing request $requestDN\n".Dumper($deleteMesg) ];
+	}
+	
+	return ($success,$payload);
 }
 
 1;

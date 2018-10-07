@@ -18,7 +18,7 @@ use Scalar::Util;
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
-use RDConnect::MetaUserManagement;
+use RDConnect::TemplateManagement;
 
 if(scalar(@ARGV)==3) {
 	my $configFile = shift(@ARGV);
@@ -29,12 +29,13 @@ if(scalar(@ARGV)==3) {
 
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
 	my $j = JSON::MaybeXS->new('convert_blessed' => 1,'utf8' => 0,'pretty' => 1);
 	
 	print "* Reading templates for domain $ldapDomain\n";
-	my($mailTemplate,$mailTemplateTitle,@attachments) = RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,$ldapDomain);
+	my($mailTemplate,$mailTemplateTitle,@attachments) = $tMgmt->fetchEmailTemplate($ldapDomain);
 	
-	if(Scalar::Util::blessed($mailTemplate) && $mailTemplate->isa('RDConnect::MetaUserManagement::Error')) {
+	if(Scalar::Util::blessed($mailTemplate) && $mailTemplate->isa('RDConnect::TemplateManagement::Error')) {
 		my $j = JSON::MaybeXS->new('allow_blessed' => 1,'convert_blessed' => 1,'utf8' => 0,'pretty' => 1);
 		Carp::croak($j->encode($mailTemplate));
 	} else {

@@ -1,0 +1,81 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/CASRequest",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect requests (self service)",
+	"type": "object",
+	"properties": {
+		"requestId": {
+			"title": "Request Id (basically, an UUID)",
+			"type": "string",
+			"format": "uuid",
+			"minLength": 1
+		},
+		"requestType": {
+			"title": "The type of request modelled",
+			"type": "string",
+			"enum": ["passwordReset","emailConfirmation","acceptGDPR"]
+		},
+		"creationTimestamp": {
+			"title": "Creation timestamp of the request",
+			"type": "string",
+			"format": "date-time"
+		},
+		"expirationTimestamp": {
+			"title": "Expiration timestamp of the request",
+			"type": "string",
+			"format": "date-time"
+		},
+		"origin": {
+			"title": "Origin of the request",
+			"type": "object",
+			"properties": {
+				"source": {
+					"title": "The source can be either platform's internal or from an user's action",
+					"type": "string",
+					"enum": ["internal","user"]
+				},
+				"who": {
+					"title": "If it was an user, who was?",
+					"type": "string"
+				}
+			},
+			"required": ["source"],
+			"additionalProperties": false
+		},
+		"target": {
+			"title": "Target concept",
+			"type": "object",
+			"properties": {
+				"ns": {
+					"title": "The namespace: user, group, organizational unit",
+					"type": "string",
+					"enum": ["user","group","organizationalUnit"]
+				},
+				"id": {
+					"title": "The id of the concept receiving the operation: username, group cn, organizational unit acronym"
+				}
+			},
+			"required": ["ns"],
+			"additionalProperties": false
+		},
+		"publicPayload": {
+			"title": "The public payload needed by the web interface",
+			"type": ["array","object"],
+			"additionalProperties": true
+		},
+		"desistCode": {
+			"title": "The UUID used to desist the request",
+			"type": "string",
+			"format": "uuid"
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"requestId",
+		"requestType",
+		"expirationTimestamp",
+		"desistCode"
+	],
+	"dependencies": {
+	}
+}

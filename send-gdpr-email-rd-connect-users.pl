@@ -18,6 +18,7 @@ use Text::Unidecode qw();
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
+use RDConnect::TemplateManagement;
 use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
@@ -29,6 +30,7 @@ if(scalar(@ARGV)>=2) {
 	# LDAP configuration
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
 	
 	my $mailTemplateTitle;
 	my $mailTemplate;
@@ -36,7 +38,7 @@ if(scalar(@ARGV)>=2) {
 	
 	# Use the template available in the LDAP directory, or the default
 	if(scalar(@ARGV) == 0) {
-		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = RDConnect::MetaUserManagement::FetchEmailTemplate($uMgmt,RDConnect::MetaUserManagement::GDPRDomain());
+		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::TemplateManagement::GDPRDomain());
 	} else {
 		$mailTemplateTitle = 'IMPORTANT! RD-Connect GPAP: please renew your access in accordance with the EU GDPR';
 		$mailTemplate = shift(@ARGV);

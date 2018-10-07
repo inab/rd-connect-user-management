@@ -10,7 +10,7 @@ use File::Spec;
 
 use JSON::MaybeXS qw();
 
-package RDConnect::UserManagement::DancerCommon;
+package RDConnect::Dancer2::Common;
 
 use constant API_CONFIG_DIRNAME	=>	'configs';
 use constant API_CONFIG_FILENAME	=>	'user-management.ini';
@@ -76,6 +76,20 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_DIR
 		return $uMgmt;
 	}
 	
+	use RDConnect::TemplateManagement;
+	
+	my $tMgmt = undef;
+	
+	sub getTemplateManagementInstance() {
+		unless(defined($uMgmt) && defined($tMgmt)) {
+			my $uMgmt = getUserManagementInstance();
+			
+			$tMgmt = RDConnect::UserManagement->new($uMgmt);
+		}
+		
+		return $tMgmt;
+	}
+	
 	use RDConnect::MetaUserManagement;
 	
 	sub getMailManagementInstance($\%;\@) {
@@ -85,6 +99,20 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_DIR
 		
 		# Mail configuration parameters
 		return RDConnect::MetaUserManagement::GetMailManagementInstance(getRDConnectConfig(),$mailTemplate,%{$p_keyvals},@{$p_attachmentFiles});
+	}
+	
+	use RDConnect::RequestManagement;
+	
+	my $rMgmt = undef;
+	
+	sub getRequestManagementInstance() {
+		unless(defined($tMgmt) && defined($rMgmt)) {
+			my $tMgmt = getTemplateManagementInstance();
+			
+			$rMgmt = RDConnect::RequestManagement->new($tMgmt);
+		}
+		
+		return $rMgmt;
 	}
 }
 
