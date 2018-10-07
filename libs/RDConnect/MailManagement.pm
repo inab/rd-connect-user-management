@@ -57,6 +57,11 @@ sub new($$\%;\@) {
 	
 	my($from) = Email::Address->parse($cfg->val(MAILSECTION,'from'));
 	
+	my $replyTo = undef;
+	if($cfg->exists(MAILSECTION,'reply-to')) {
+		($replyTo) = Email::Address->parse($cfg->val(MAILSECTION,'reply-to'));
+	}
+	
 	Carp::croak("subject field must be defined in order to send e-mails")  unless($cfg->exists(MAILSECTION,'subject'));
 	my $subject = $cfg->val(MAILSECTION,'subject');
 	
@@ -139,6 +144,7 @@ sub new($$\%;\@) {
 	
 	$self->{'transport'} = $transport;
 	$self->{'from'} = $from;
+	$self->{'reply-to'} = $replyTo  if(defined($replyTo));
 	$self->{'subject'} = $subject;
 	$self->{'defaultKeyval'} = \%defaultKeyval;
 	$self->{'templateMailBody'} = $templateMailBody;
@@ -200,6 +206,9 @@ sub sendMessage($\%) {
 		To	=>	$to,
 		Subject	=>	$subject
 	];
+	if(exists($self->{'reply-to'})) {
+		push(@{$p_header_str},'Reply-To',$self->{'reply-to'});
+	}
 	#if(exists($self->{'attachments'})) {
 		my @parts = ( $mailPart );
 		push(@parts,@{$self->{'attachments'}})  if(exists($self->{'attachments'}));
