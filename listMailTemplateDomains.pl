@@ -16,6 +16,7 @@ use JSON::MaybeXS ();
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
 use RDConnect::TemplateManagement;
+use RDConnect::RequestManagement;
 
 if(scalar(@ARGV)>=1) {
 	my $configFile = shift(@ARGV);
@@ -25,10 +26,11 @@ if(scalar(@ARGV)>=1) {
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my $p_mtDomains = $tMgmt->getMailTemplatesDomains();
 	my $j = JSON::MaybeXS->new('convert_blessed' => 1,'utf8' => 0,'pretty' => 1);
 	
 	print "* List of mail template domains\n";
-	foreach my $p_domain (@RDConnect::TemplateManagement::MailTemplatesDomains ) {
+	foreach my $p_domain (@{$p_mtDomains}) {
 		print "\t- ",$p_domain->{'apiKey'}," (domain ",$p_domain->{'ldapDomain'},", tokens ",join(", ",@{$p_domain->{'tokens'}}),"): ",$p_domain->{'desc'},"\n";
 		
 		my $ldapDomain = $p_domain->{'ldapDomain'};

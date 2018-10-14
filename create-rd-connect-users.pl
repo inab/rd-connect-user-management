@@ -17,6 +17,7 @@ use Text::Unidecode qw();
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
+use RDConnect::TemplateManagement;
 use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
@@ -43,6 +44,8 @@ if(scalar(@ARGV)>=3) {
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my $mMgmt = RDConnect::MetaUserManagement->new($tMgmt);
 	
 	# Now, let's read all the parameters
 	my $NOEMAIL;
@@ -126,7 +129,7 @@ if(scalar(@ARGV)>=3) {
 		}
 		close($U);
 		
-		my $retval = RDConnect::MetaUserManagement::CreateUser($uMgmt,@newUsers,$NOEMAIL);
+		my $retval = $mMgmt->createUser(\@newUsers,$NOEMAIL);
 		
 		close($NOEMAIL)  if($NOEMAIL);
 		

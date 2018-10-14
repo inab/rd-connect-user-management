@@ -9,8 +9,29 @@ use File::Basename qw();
 
 package RDConnect::TemplateManagement;
 
-use constant NewUserDomain	=>	'newUserTemplates';
-my $DEFAULT_newUserTemplate = <<'EOF' ;
+
+# Global variable for the templates
+our @MailTemplatesDomains;
+our %MTByApiKey;
+my %MTByDomain;
+my %MTByRequestType;
+
+# Management methods
+INIT {
+	sub AddMailTemplatesDomains(@) {
+		push(@MailTemplatesDomains,@_);
+		
+		%MTByApiKey = map { $_->{'apiKey'} => $_ } @MailTemplatesDomains;
+		%MTByDomain = map { $_->{'ldapDomain'} => $_ } @MailTemplatesDomains;
+		%MTByRequestType = map { $_->{'requestType'} => $_ } grep { exists($_->{'requestType'}) } @MailTemplatesDomains;
+	}
+}
+
+# These are the default templates
+INIT {
+
+	use constant NewUserDomain	=>	'newUserTemplates';
+	my $DEFAULT_newUserTemplate = <<'EOF' ;
 Dear [% fullname %],
         your RD-Connect username is [% username %]. Following the changes in the european GDPR, you must accept
         the code of conduct of RD-Connect. In the meanwhile, your account will be disabled.
@@ -23,119 +44,49 @@ https://rdconnectcas.rd-connect.eu/RDConnect-UserManagement-API/users/[% usernam
                 The RD-Connect team
 EOF
 
-use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
-use constant ResettedPasswordDomain	=>	'resettedPasswordTemplates';
-my $DEFAULT_passMailTemplate = <<'EOF' ;
+	use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
+	use constant ResettedPasswordDomain	=>	'resettedPasswordTemplates';
+	my $DEFAULT_passMailTemplate = <<'EOF' ;
 Your new password is  [% password %]  (including any punctuation mark it could contain).
 
 Kind Regards,
 	RD-Connect team
 EOF
-
-use constant GDPRDomain	=>	'GDPRTemplates';
-my $DEFAULT_GDPRTemplate = <<'EOF' ;
-<html>
-<head>
-<title> RD-Connect GPAP: please renew your access in accordance to the EU GDPR </title>
-</head>
-
-<body>
-<p style="color:red"><b>Do not delete this email! You need the link below to keep accessing the RD-Connect genome-phenome analysis platform!</b></p>
-
-
-<p>Dear user of the RD-Connect genome-phenome analysis platform (GPAP),</p>
-
-<p>We have updated our policies and procedures to take account of the new General Data Protection Regulation (GDPR, EU 2016/679). As part of this process we have updated the <a href="https://rd-connect.eu/gpap-code-conduct" Alt="RD-Connect Code of Conduct">RD-Connect Code of Conduct</a> and the <a href="https://rd-connect.eu/gpap-adherence" Alt="Adherence Agreement">Adherence Agreement</a> to include more details on how we manage your own user data and the pseudoanonymised genome-phenome data you submit.</p>
-
-<p>So that we can continue providing you with access to the GPAP, we would appreciate it if you could read the updated documents accessible via the links above and confirm your acceptance by clicking your personalised link below.</p>
-
-
-<p><b>If you are responsible for a user group in the RD-Connect GPAP (usually a Principal Investigator, Group Leader or equivalent)</b>, we need you to confirm you have read, understood and accepted the updated versions of both the Code of Conduct and the Adherence Agreement. You do not need to send us a new signed copy of the Adherence Agreement, but we need you to confirm acceptance online via the link below.</p>
-
-
-<p><b>If you are a member of a group</b>, you are now also required to confirm you have read, understood and accepted the Code of Conduct. You do this by clicking the link below. Please also remind the person responsible for your user group (usually your Principal Investigator, Group Leader or equivalent) that we also need their confirmation (see above).
-
-<p style="color:red"><b>Please click the link below or copy and paste it into your browser to confirm that you have read, understood and accept the new Code of Conduct (and Adherence Agreement if PI, GL or equirvalent):</b></p>
-
-<p><a href="https://platform.rd-connect.eu/GDPRvalidation/[% username %]/token/[% gdprtoken %]">https://platform.rd-connect.eu/GDPRvalidation/[% username %]/token/[% gdprtoken %]</a></p>
-
-<p>You do not need to log in to the system to provide your confirmation, but unfortunately your access to the system will be blocked until we receive it.</p>
-<p>If you need a new confirmation link, a reset of your password, have any questions or experience any problems, please let us know by emailing <a href="mailto:help@rd-connect.eu" Alt="help">help@rd-connect.eu</a>. For urgent issues you can call us on +44 191 241 8621 during office hours.</p>
-
-<p>Thank you very much for your support and understanding,<br><br>The RD-Connect GPAP team</p>
-</body>
-</html>
-EOF
-
-use constant ValidateEmailDomain	=>	'ValidateEmailTemplates';
-my $DEFAULT_VALIDATE_EMAIL_TEMPLATE = <<'EOF' ;
-Dear RD-Connect user [% username %],
-	this e-mail is used to confirm your e-mail address [% email %] is working
-and you can read messages from it. You should click on next link:
-
-[% link %]
-
-so the RD-Connect User Management system annotates the e-mail address as functional.
-
-Kind Regards,
-	RD-Connect team
-EOF
-
-our @MailTemplatesDomains = (
-	{
-		'apiKey' => 'newUser',
-		'desc' => 'New user creation templates',
-		'tokens' => [ 'username', 'fullname', 'gdprtoken', 'unique' ],
-		'ldapDomain' => NewUserDomain(),
-		'cn' =>	'mailTemplate.html',
-		'ldapDesc' => 'New User Mail Template',
-		'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
-		'default' => $DEFAULT_newUserTemplate
-	},
-	{
-		'apiKey' => 'passTemplate',
-		'desc' => 'New password templates',
-		'tokens' => [ 'password', 'unique' ],
-		'ldapDomain' => ChangedPasswordDomain(),
-		'cn' =>	'changedPassMailTemplate.html',
-		'ldapDesc' => 'Changed password mail template',
-		'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
-		'default' => $DEFAULT_passMailTemplate
-	},
-	{
-		'apiKey' => 'resetPassTemplate',
-		'desc' => 'Resetted password templates',
-		'tokens' => [ 'password', 'unique' ],
-		'ldapDomain' => ResettedPasswordDomain(),
-		'cn' =>	'resettedPassMailTemplate.html',
-		'ldapDesc' => 'Resetted password mail template',
-		'defaultTitle' => 'RD-Connect platform portal password change [[% unique %]]',
-		'default' => $DEFAULT_passMailTemplate
-	},
-	{
-		'apiKey' => 'GDPRTemplate',
-		'desc' => 'GDPR acceptance templates',
-		'tokens' => [ 'username', 'fullname', 'gdprtoken', 'unique' ],
-		'ldapDomain' => GDPRDomain(),
-		'cn' =>	'GDPRMailTemplate.html',
-		'ldapDesc' => 'GDPR acceptance mail template',
-		'defaultTitle' => 'RD-Connect GDPR acceptance for user [% username %] [[% unique %]]',
-		'default' => $DEFAULT_GDPRTemplate
-	},
-	{
-		'apiKey' => 'validEmailTemplate',
-		'desc' => 'E-mail validating templates',
-		'tokens' => [ 'username', 'fullname', 'unique' ],
-		'ldapDomain' => ValidateEmailDomain(),
-		'cn' =>	'ValidateMailTemplate.html',
-		'ldapDesc' => 'E-mail validating mail template',
-		'defaultTitle' => 'RD-Connect platform portal e-mail validation [[% unique %]]',
-		'default' => $DEFAULT_VALIDATE_EMAIL_TEMPLATE
-	}
-);
-
-our %MTByApiKey = map { $_->{'apiKey'} => $_ } @MailTemplatesDomains;
-my %MTByDomain = map { $_->{'ldapDomain'} => $_ } @MailTemplatesDomains;
+	
+	# We add them here
+	AddMailTemplatesDomains(
+		{
+			'apiKey' => 'newUser',
+			'desc' => 'New user creation templates',
+			'tokens' => [ 'username', 'fullname', 'gdprtoken', 'unique' ],
+			'ldapDomain' => NewUserDomain(),
+			'cn' =>	'mailTemplate.html',
+			'ldapDesc' => 'New User Mail Template',
+			'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
+			'default' => $DEFAULT_newUserTemplate
+		},
+		{
+			'apiKey' => 'passTemplate',
+			'desc' => 'New password templates',
+			'tokens' => [ 'password', 'unique' ],
+			'ldapDomain' => ChangedPasswordDomain(),
+			'cn' =>	'changedPassMailTemplate.html',
+			'ldapDesc' => 'Changed password mail template',
+			'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
+			'default' => $DEFAULT_passMailTemplate
+		},
+		{
+			'apiKey' => 'resettedPassTemplate',
+			'desc' => 'Resetted password templates',
+			'tokens' => [ 'password', 'unique' ],
+			'ldapDomain' => ResettedPasswordDomain(),
+			'cn' =>	'resettedPassMailTemplate.html',
+			'ldapDesc' => 'Resetted password mail template',
+			'defaultTitle' => 'RD-Connect platform portal password changed [[% unique %]]',
+			'default' => $DEFAULT_passMailTemplate
+		},
+	);
+}
 
 
 our %MailTemplateKeys = (
@@ -161,7 +112,7 @@ sub new($) {
 }
 
 sub getUserManagementInstance() {
-	return $_[0]{'_uMgmt'};
+	return $_[0]->{'_uMgmt'};
 }
 
 sub setEmailTemplate($$$@) {
@@ -367,6 +318,21 @@ sub setEmailTemplate($$$@) {
 	}
 }
 
+sub fetchEmailTemplateByRequestType($) {
+	my $self = shift;
+	
+	my($requestType) = @_;
+	
+	# Are there templates declared for this request type?
+	if(exists($MTByRequestType{$requestType})) {
+		my $domainId = $MTByRequestType{$requestType}->{'ldapDomain'};
+		
+		return $self->fetchEmailTemplate($domainId);
+	} else {
+		return bless({'reason' => 'Error while fetching mail templates for request type '.$requestType,'code' => 500},'RDConnect::TemplateManagement::Error');
+	}
+}
+
 sub fetchEmailTemplate($) {
 	my $self = shift;
 	
@@ -507,6 +473,38 @@ sub changedPasswordEmailTemplate($) {
 	my $self = shift;
 	
 	return $self->fetchEmailTemplate(ChangedPasswordDomain());
+}
+
+# This method extracts the available e-mail addressess to notify a user
+# If all the e-mail addressess are under test, then use those
+sub getEmailAddressesFromJSONUser(\%) {
+	my $self = shift;
+	
+	my($jsonUser) = @_;
+	
+	my $p_addresses = [];
+	
+	if(exists($jsonUser->{'email'}) && ref($jsonUser->{'email'}) eq 'ARRAY' && scalar(@{$jsonUser->{'email'}}) > 0) {
+		$p_addresses = $jsonUser->{'email'};
+	} elsif(exists($jsonUser->{'registeredEmails'}) && ref($jsonUser->{'registeredEmails'}) eq 'ARRAY' && scalar(@{$jsonUser->{'registeredEmails'}}) > 0) {
+		$p_addresses = [ map { $_->{'email'} } @{$jsonUser->{'registeredEmails'}} ];
+	}
+	
+	return $p_addresses;
+}
+
+sub mailTemplateStructure($) {
+	my $self = shift;
+	
+	my($apiKey) = @_;
+	
+	return exists($MTByApiKey{$apiKey}) ? $MTByApiKey{$apiKey} : undef;
+}
+
+sub getMailTemplatesDomains() {
+	my $self = shift;
+	
+	return \@MailTemplatesDomains;
 }
 
 1;

@@ -10,16 +10,68 @@ use Data::Password::zxcvbn;
 use RDConnect::UserManagement;
 use RDConnect::MailManagement;
 use RDConnect::TemplateManagement;
+use RDConnect::RequestManagement;
 
 package RDConnect::MetaUserManagement;
 
 use Scalar::Util qw(blessed);
 
 
+
+# Parameters:
+#	iParam: Either a RDConnect::TemplateManagement or RDConnect::RequestManagement instance
+sub new($$) {
+	my $self = shift;
+	my $class = ref($self) || $self;
+	
+	$self = {}  unless(ref($self));
+	
+	my $iParam = shift;
+	
+	my $bself = bless($self,$class);
+	
+	if(blessed($iParam)) {
+		if($iParam->isa('RDConnect::TemplateManagement')) {
+			$self->{'_tMgmt'} = $iParam;
+			$self->{'_rMgmt'} = RDConnect::RequestManagement->new($iParam);
+			
+		} elsif($iParam->isa('RDConnect::RequestManagement')) {
+			$self->{'_rMgmt'} = $iParam;
+			$self->{'_tMgmt'} = $self->{'_rMgmt'}->getTemplateManagementInstance();
+		}
+		$self->{'_rMgmt'}->setMetaUserManagementInstance($bself);
+	}
+	
+	$self->{'_uMgmt'} = $self->{'_tMgmt'}->getUserManagementInstance();
+	$self->{'_cfg'} = $self->{'_uMgmt'}->getCfg();
+	
+	return $bself;
+}
+
+
+sub getUserManagementInstance() {
+	return $_[0]->{'_uMgmt'};
+}
+
+sub getTemplateManagementInstance() {
+	return $_[0]->{'_tMgmt'};
+}
+
+sub getRequestManagementInstance() {
+	return $_[0]->{'_rMgmt'};
+}
+
+sub getCfg() {
+	return $_[0]->{'_cfg'};
+}
+
+
 use constant APGSECTION	=>	'apg';
 
-sub GetRandomPassword($) {
-	my($cfg) = @_;
+sub getRandomPassword() {
+	my $self = shift;
+	
+	my $cfg = $self->getCfg();
 	
 	my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
 	my $apgMin = $cfg->val(APGSECTION,'min-length',12);
@@ -43,18 +95,25 @@ sub GetRandomPassword($) {
 	return $pass;
 }
 
-sub GetMailManagementInstance($$\%;\@) {
-	my($cfg,$mailTemplate,$p_keyvals,$p_attachmentFiles) = @_;
+sub getMailManagementInstance($$\%;\@) {
+	my $self = shift;
+	
+	my($mailTemplate,$p_keyvals,$p_attachmentFiles) = @_;
+	
+	my $cfg = $self->getCfg();
 	
 	# Mail configuration parameters
 	return RDConnect::MailManagement->new($cfg,$mailTemplate,$p_keyvals,$p_attachmentFiles);
 }
 
-sub CreateUser($\[%@];$) {
-	my($uMgmt,$p_newUsers,$NOEMAIL) = @_;
+sub createUser(\[%@];$) {
+	my $self = shift;
 	
+	my($p_newUsers,$NOEMAIL) = @_;
+	
+	my $tMgmt = $self->getTemplateManagementInstance();
+	my $uMgmt = $self->getUserManagementInstance();
 	my $cfg = $uMgmt->getCfg();
-	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
 	
 	# Before any task
 	# Getting the mailTemplate and the attachments for new user creation
@@ -85,7 +144,7 @@ sub CreateUser($\[%@];$) {
 		if(exists($p_newUser->{'userPassword'})) {
 			$userPassword = $p_newUser->{'userPassword'};
 		} else {
-			$userPassword = GetRandomPassword($cfg);
+			$userPassword = $self->getRandomPassword();
 			return $userPassword  if(blessed($userPassword));
 			$p_newUser->{'userPassword'} = $userPassword;
 		}
@@ -102,10 +161,10 @@ sub CreateUser($\[%@];$) {
 				my %keyval2 = ( 'password' => '(undefined)', 'unique' => $unique );
 				
 				# Mail configuration parameters
-				my $mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
+				my $mail1 = $self->getMailManagementInstance($mailTemplate,\%keyval1,\@attachmentFiles);
 				$mail1->setSubject($mailTemplateTitle.' (I)');
 				
-				my $mail2 = GetMailManagementInstance($cfg,$passMailTemplate,%keyval2,@passAttachmentFiles);
+				my $mail2 = $self->getMailManagementInstance($passMailTemplate,\%keyval2,\@passAttachmentFiles);
 				$mail2->setSubject($passMailTemplateTitle.' (II)');
 				
 				my $fullname = $payload->[0]{'cn'};
@@ -148,13 +207,16 @@ sub CreateUser($\[%@];$) {
 }
 
 # This method is called from the API and command-line when a password is being changed
-sub ResetUserPassword($$$) {
-	my($uMgmt,$userId,$userPassword) = @_;
+sub resetUserPassword($$) {
+	my $self = shift;
 	
-	my $cfg = $uMgmt->getCfg();
-	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my($userId,$userPassword) = @_;
 	
-	my($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::TemplateManagement::GDPRDomain());
+	my $cfg = $self->getCfg();
+	my $tMgmt = $self->getTemplateManagementInstance();
+	my $uMgmt = $self->getUserManagementInstance();
+	
+	my($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::RequestManagement::GDPRDomain());
 	
 	# Error condition
 	return $mailTemplate  if(blessed($mailTemplate));
@@ -164,7 +226,7 @@ sub ResetUserPassword($$$) {
 		my $evPass = Data::Password::zxcvbn::password_strength($userPassword);
 		return bless({'reason' => 'Password is too weak','trace' => $evPass,'code' => 400},'RDConnect::MetaUserManagement::Error')  if($evPass->{'score'} < 3);
 	} else {
-		$userPassword = GetRandomPassword($cfg);
+		$userPassword = $self->getRandomPassword();
 		return $userPassword  if(blessed($userPassword));
 	}
 	
@@ -191,12 +253,12 @@ sub ResetUserPassword($$$) {
 		my $mail1 = undef;
 		
 		unless($uMgmt->didUserAcceptGDPR($user)) {
-			$mail1 = GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
+			$mail1 = $self->getMailManagementInstance($mailTemplate,\%keyval1,\@attachmentFiles);
 			$mail1->setSubject($mailTemplateTitle.' (reminder)');
 			$keyval1{'gdprtoken'} = $uMgmt->generateGDPRHashFromUser($user);
 		}
 		
-		my $mail2 = GetMailManagementInstance($cfg,$passMailTemplate,%keyval2,@passAttachmentFiles);
+		my $mail2 = $self->getMailManagementInstance($passMailTemplate,\%keyval2,\@passAttachmentFiles);
 		$mail2->setSubject($passMailTemplateTitle);
 		
 		my $username = $payload->{'username'};
@@ -229,6 +291,97 @@ sub ResetUserPassword($$$) {
 	
 	#send_file(\$data, content_type => 'image/jpeg');
 	return $retval;
+}
+
+# Request creation, with e-mail
+# Parameters:
+#	requestType: one of the accepted types
+#	publicPayload: the payload to be sent to the view
+#	ttl: if set, the number of seconds until the request expires
+#	who: if set, the user who requested this operation. undef on internal origin
+#	targetNS: what kind of entry is going to be created/manipulated
+#	targetId: if defined, which entry is going to be manipulated
+#	referringDN: if set, the full dn of the entry to be manipulated
+# It returns true on success
+sub createMetaRequest($\[@%]$$$;$$) {
+	my $self = shift;
+	
+	my($requestType,$publicPayload,$ttl,$who,$targetNS,$targetId,$referringDN) = @_;
+	
+	my $uMgmt = $self->getUserManagementInstance();
+	my $tMgmt = $self->getTemplateManagementInstance();
+	my $rMgmt = $self->getRequestManagementInstance();
+	
+	# Colleting the addresses for the template
+	my $p_addresses = [];
+	my $username = undef;
+	my $fullname = undef;
+	if(defined($who)) {
+		my($success,$jsonUser) = $uMgmt->getJSONUser($who);
+		$p_addresses = $tMgmt->getEmailAddressesFromJSONUser($jsonUser);
+		$username = $jsonUser->{'username'};
+		$fullname = $jsonUser->{'cn'};
+	} else {
+		# TODO: default addresses???
+	}
+	
+	# At least one e-mail is needed
+	if(scalar(@{$p_addresses}) > 0) {
+		# The request has been created
+		my($requestId,$desistCode,$expiration) = $uMgmt->createRequest(
+			$requestType,
+			$publicPayload,
+			$ttl,
+			$who,
+			$targetNS,
+			$targetId,
+			$referringDN
+		);
+		
+		if(defined($requestId)) {
+			# Create the links
+			my($requestlink,$desistlink) = $rMgmt->genLinksFromReq($requestId,$desistCode);
+			
+			my $unique = time;
+			my %keyval = (
+				'username'	=>	$username,
+				'fullname'	=>	$fullname,
+				'requestlink'	=>	$requestlink,
+				'desistlink'	=>	$desistlink,
+				'expiration'	=>	$expiration,
+				'unique'	=>	$unique,
+			);
+			
+			# Get the template to be used
+			my($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplateByRequestType($requestType);
+			
+			return $mailTemplate  if(blessed($mailTemplate));
+			
+			# Now, let's send all the e-mails
+			my $mail = $self->getMailManagementInstance($mailTemplate,\%keyval,\@attachmentFiles);
+			$mail->setSubject($mailTemplateTitle);
+			
+			foreach my $email (@{$p_addresses}) {
+				my $to = Email::Address->new($fullname => $email);
+				eval {
+					$mail->sendMessage($to,\%keyval);
+				};
+				
+				if($@) {
+					return bless({'reason' => 'Error while sending request e-mail','trace' => $@,'code' => 500},'RDConnect::MetaUserManagement::Error');
+				}
+			}
+			
+			# If all has gone properly, we get this
+			return ($requestlink,$desistlink,$expiration);
+		} else {
+			return bless({'reason' => 'Error while creating request','trace' => $desistCode,'code' => 500},'RDConnect::MetaUserManagement::Error');
+		}
+		
+	} else {
+		return bless({'reason' => 'No e-mail address is available','code' => 500},'RDConnect::MetaUserManagement::Error');
+	}
+	
 }
 
 1;

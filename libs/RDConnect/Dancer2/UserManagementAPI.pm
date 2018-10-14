@@ -159,9 +159,11 @@ sub send_email {
 	
 	my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
 	
+	my $mMgmt = RDConnect::Dancer2::Common::getMetaUserManagementInstance();
+	
 	my $mail1;
 	# Mail configuration parameters
-	$mail1 = RDConnect::Dancer2::Common::getMailManagementInstance($mailTemplate,%keyval1,@{$p_attachmentFiles});
+	$mail1 = $mMgmt->getMailManagementInstance($mailTemplate,\%keyval1,$p_attachmentFiles);
 	$mail1->setSubject($subject);
 	
 	# LDAP configuration
@@ -280,16 +282,28 @@ sub get_mail_json_schema {
 	}
 	
 	# Here the payload is the list of templates
-	return [ map { my $outer = $_ ; my %res = map { $_ => $outer->{$_} } ('apiKey','desc','tokens');\%res } @RDConnect::TemplateManagement::MailTemplatesDomains ];
+	my $tMgmt = RDConnect::Dancer2::Common::getTemplateManagementInstance();
+	my $p_domains = $tMgmt->getMailTemplatesDomains();
+	return [
+		map {
+			my $outer = $_ ;
+			my %res = map { $_ => $outer->{$_} } ('apiKey','desc','tokens');
+			\%res
+		} @{$p_domains}
+	];
 }
 
 sub _get_mailDomain_internal {
 	my $apiKey = params->{'api_key'};
-	unless(exists($RDConnect::TemplateManagement::MTByApiKey{$apiKey})) {
+	
+	my $tMgmt = RDConnect::Dancer2::Common::getTemplateManagementInstance();
+	my $mtStruct = $tMgmt->mailTemplateStructure($apiKey);
+	
+	unless(defined($mtStruct)) {
 		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => "Mail domain $apiKey not available"}),404);
 	}
 	
-	return ($apiKey,$RDConnect::TemplateManagement::MTByApiKey{$apiKey});
+	return ($apiKey,$mtStruct);
 }
 
 sub get_template_domain_desc {
@@ -590,10 +604,10 @@ sub get_user_document_metadata {
 # next operations should be allowed only to privileged users
 
 sub create_user {
-	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
+	my $mMgmt = RDConnect::Dancer2::Common::getMetaUserManagementInstance();
 	
 	my %newUser = params;
-	my $retval = RDConnect::MetaUserManagement::CreateUser($uMgmt,%newUser);
+	my $retval = $mMgmt->createUser(\%newUser);
 	
 	send_error($RDConnect::Dancer2::Common::jserr->encode($retval),exists($retval->{'code'}) ? $retval->{'code'}:500)  if(defined($retval));
 	
@@ -663,11 +677,11 @@ sub enable_user {
 }
 
 sub reset_user_password {
-	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
+	my $mMgmt = RDConnect::Dancer2::Common::getMetaUserManagementInstance();
 	
 	my %newUser = params;
 	
-	my $retval = RDConnect::MetaUserManagement::ResetUserPassword($uMgmt,params->{'user_id'},exists($newUser{'userPassword'})?$newUser{'userPassword'}:undef);
+	my $retval = $mMgmt->resetUserPassword(params->{'user_id'},exists($newUser{'userPassword'})?$newUser{'userPassword'}:undef);
 	
 	send_error($RDConnect::Dancer2::Common::jserr->encode($retval),exists($retval->{'code'}) ? $retval->{'code'}:500)  if(defined($retval));
 	

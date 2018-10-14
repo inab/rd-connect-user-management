@@ -31,6 +31,7 @@ if(scalar(@ARGV)>=2) {
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my $mMgmt = RDConnect::MetaUserManagement->new($tMgmt);
 	
 	my $mailTemplateTitle;
 	my $mailTemplate;
@@ -38,7 +39,7 @@ if(scalar(@ARGV)>=2) {
 	
 	# Use the template available in the LDAP directory, or the default
 	if(scalar(@ARGV) == 0) {
-		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::TemplateManagement::GDPRDomain());
+		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::RequestManagement::GDPRDomain());
 	} else {
 		$mailTemplateTitle = 'IMPORTANT! RD-Connect GPAP: please renew your access in accordance with the EU GDPR';
 		$mailTemplate = shift(@ARGV);
@@ -52,7 +53,7 @@ if(scalar(@ARGV)>=2) {
 	
 	my $mail1;
 	# Mail configuration parameters
-	$mail1 = RDConnect::MetaUserManagement::GetMailManagementInstance($cfg,$mailTemplate,%keyval1,@attachmentFiles);
+	$mail1 = $mMgmt->getMailManagementInstance($mailTemplate,\%keyval1,\@attachmentFiles);
 	$mail1->setSubject($mailTemplateTitle);
 	
 	# Read the users

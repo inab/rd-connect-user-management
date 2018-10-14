@@ -84,21 +84,10 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_DIR
 		unless(defined($uMgmt) && defined($tMgmt)) {
 			my $uMgmt = getUserManagementInstance();
 			
-			$tMgmt = RDConnect::UserManagement->new($uMgmt);
+			$tMgmt = RDConnect::TemplateManagement->new($uMgmt);
 		}
 		
 		return $tMgmt;
-	}
-	
-	use RDConnect::MetaUserManagement;
-	
-	sub getMailManagementInstance($\%;\@) {
-		my($mailTemplate,$p_keyvals,$p_attachmentFiles) = @_;
-		
-		$p_attachmentFiles = []  unless(defined($p_attachmentFiles));
-		
-		# Mail configuration parameters
-		return RDConnect::MetaUserManagement::GetMailManagementInstance(getRDConnectConfig(),$mailTemplate,%{$p_keyvals},@{$p_attachmentFiles});
 	}
 	
 	use RDConnect::RequestManagement;
@@ -113,6 +102,29 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_DIR
 		}
 		
 		return $rMgmt;
+	}
+	
+	use RDConnect::MetaUserManagement;
+	
+	my $mMgmt = undef;
+	
+	sub getMetaUserManagementInstance() {
+		unless(defined($rMgmt) && defined($mMgmt)) {
+			my $rMgmt = getRequestManagementInstance();
+			
+			$mMgmt = RDConnect::MetaUserManagement->new($rMgmt);
+		}
+		
+		return $mMgmt;
+	}
+	
+	sub getMailManagementInstance($\%;\@) {
+		my($mailTemplate,$p_keyvals,$p_attachmentFiles) = @_;
+		
+		$p_attachmentFiles = []  unless(defined($p_attachmentFiles));
+		
+		# Mail configuration parameters
+		return $mMgmt->getMailManagementInstance($mailTemplate,$p_keyvals,$p_attachmentFiles);
 	}
 }
 

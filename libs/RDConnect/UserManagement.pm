@@ -6037,8 +6037,9 @@ sub createRequest($\[@%]$$$;$$) {
 	};
 	
 	# Defining the expiration timestamp
+	my $expirationTimestamp = undef;
 	if(defined($ttl)) {
-		my $expirationTimestamp = _epoch_ISO8601_RFC3339($now + $ttl);
+		$expirationTimestamp = _epoch_ISO8601_RFC3339($now + $ttl);
 		$requestPayload->{'expirationTimestamp'} = $expirationTimestamp;
 	}
 	
@@ -6076,7 +6077,7 @@ sub createRequest($\[@%]$$$;$$) {
 		$payload = $desistCode;
 	}
 	
-	return wantarray ? ($success,$payload) : $success;
+	return wantarray ? ($success,$payload,$expirationTimestamp) : $success;
 }
 
 # Parameters:

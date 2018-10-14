@@ -16,6 +16,7 @@ use Text::Unidecode qw();
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
+use RDConnect::TemplateManagement;
 use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
@@ -42,6 +43,8 @@ if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) &&
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my $mMgmt = RDConnect::MetaUserManagement->new($tMgmt);
 	
 	# Read the users
 	foreach my $username (@usernames) {
@@ -50,7 +53,7 @@ if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) &&
 			$pass = $password;
 		}
 		
-		my $retval = RDConnect::MetaUserManagement::ResetUserPassword($uMgmt,$username,$pass);
+		my $retval = $mMgmt->resetUserPassword($username,$pass);
 		
 		if(defined($retval)) {
 			use Data::Dumper;
