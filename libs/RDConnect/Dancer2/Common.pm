@@ -94,11 +94,17 @@ use constant API_CONFIG_FILE	=>	File::Spec->catfile($FindBin::Bin,API_CONFIG_DIR
 	
 	my $rMgmt = undef;
 	
+	sub getMetaUserManagementInstance();
+	
 	sub getRequestManagementInstance() {
 		unless(defined($tMgmt) && defined($rMgmt)) {
 			my $tMgmt = getTemplateManagementInstance();
 			
 			$rMgmt = RDConnect::RequestManagement->new($tMgmt);
+			
+			# Now, this step assures the request management has 
+			# initialized its ties to the meta user management
+			getMetaUserManagementInstance();
 		}
 		
 		return $rMgmt;
