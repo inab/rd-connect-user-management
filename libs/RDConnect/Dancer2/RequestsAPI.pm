@@ -121,14 +121,15 @@ get '/:requestId/details' => sub {
 	if($found) {
 		$publicPayload = $payload->{'publicPayload'};
 		$publicPayload->{'desistCode'} = $payload->{'desistCode'};
-		header(CSRF_HEADER() => get_csrf_token());
+		my $csrf_token = get_csrf_token();
+		header(CSRF_HEADER() => $csrf_token);
 	}
 	
 	return $publicPayload;
 };
 
 # This method receives the resolution to the request
-post '/:requestId/resolution' => sub {
+post '/:requestId/details' => sub {
 	my $requestId = params->{'requestId'};
 	my $resolution = request->data;
 	
@@ -141,7 +142,7 @@ post '/:requestId/resolution' => sub {
 		my $csrf_token = request->header(CSRF_HEADER());
 		if ( !$csrf_token || !validate_csrf_token($csrf_token) ) {
 			# We are telling the view that it should retry again
-			return [],408;
+			send_error('CSRF token does not match',409);
 		}
 		
 		# apply processing (WIP)
@@ -152,7 +153,8 @@ post '/:requestId/resolution' => sub {
 	}
 	
 	# Return in any case
-	return {},202
+	status 202;
+	return [];
 };
 
 # This method must redirect
@@ -205,7 +207,7 @@ get '/:requestId/desist/:desistCode/details' => sub {
 };
 
 # This method dismisses the request
-post '/:requestId/desist/:desistCode/resolution' => sub {
+post '/:requestId/desist/:desistCode/details' => sub {
 	my $requestId = params->{'requestId'};
 	my $desistCode = params->{'desistCode'};
 	
@@ -218,7 +220,7 @@ post '/:requestId/desist/:desistCode/resolution' => sub {
 		my $csrf_token = request->header(CSRF_HEADER());
 		if ( !$csrf_token || !validate_csrf_token($csrf_token) ) {
 			# We are telling the view that it should retry again
-			return [],408;
+			send_error('CSRF token does not match',409);
 		}
 		
 		# If we have reached this point, we are allowed to remove the request
@@ -226,7 +228,8 @@ post '/:requestId/desist/:desistCode/resolution' => sub {
 	}
 	
 	# Return in any case
-	return {},202
+	status 202;
+	return {};
 };
 
 
