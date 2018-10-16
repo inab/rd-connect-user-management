@@ -339,7 +339,7 @@ sub createUser($$$$$$$;$) {
 	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
-	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),'ou='.Net::LDAP::Util::escape_dn_value($groupOU),$self->{'userDN'});
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_filter_value($cn),'ou='.Net::LDAP::Util::escape_filter_value($groupOU),$self->{'userDN'});
 	$entry->dn($dn);
 	$entry->add(
 		'givenName'	=>	$givenName,
@@ -1278,7 +1278,7 @@ sub _getUserDNFromJSON($\%) {
 	my($jsonUser) = @_;
 	my $cn = exists($jsonUser->{'cn'}) ? $jsonUser->{'cn'} : '';
 	
-	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),'ou='.Net::LDAP::Util::escape_dn_value($jsonUser->{'organizationalUnit'}),$uMgmt->{'userDN'});
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_filter_value($cn),'ou='.Net::LDAP::Util::escape_filter_value($jsonUser->{'organizationalUnit'}),$uMgmt->{'userDN'});
 	
 	return $dn;
 }
@@ -1289,7 +1289,7 @@ sub _getPeopleOUDNFromJSON($\%) {
 	my($jsonPeopleOU) = @_;
 	my $ou = exists($jsonPeopleOU->{'organizationalUnit'}) ? $jsonPeopleOU->{'organizationalUnit'} : '';
 	
-	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$uMgmt->{'userDN'});
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_filter_value($ou),$uMgmt->{'userDN'});
 	
 	return $dn;
 }
@@ -1301,7 +1301,7 @@ sub _getBaseGroupDNFromJSON($\%) {
 	
 	my $intermediateOU = (exists($jsonGroup->{'groupPurpose'}) && $jsonGroup->{'groupPurpose'} ne 'sampleAccessControl') ? $jsonGroup->{'groupPurpose'} : undef;
 	
-	my $dnGroupDN = defined($intermediateOU) ? join(',','ou='.Net::LDAP::Util::escape_dn_value($intermediateOU),$uMgmt->{'groupDN'}) : $uMgmt->{'groupDN'};
+	my $dnGroupDN = defined($intermediateOU) ? join(',','ou='.Net::LDAP::Util::escape_filter_value($intermediateOU),$uMgmt->{'groupDN'}) : $uMgmt->{'groupDN'};
 	
 	return wantarray ? ($dnGroupDN,$intermediateOU) : $dnGroupDN;
 }
@@ -1314,7 +1314,7 @@ sub _getGroupDNFromJSON($\%) {
 	
 	my $groupDN = _getBaseGroupDNFromJSON($uMgmt,%{$jsonGroup});
 	
-	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$groupDN);
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_filter_value($cn),$groupDN);
 	
 	return $dn;
 }
@@ -2906,7 +2906,7 @@ sub createGenericOrganizationalUnit($$;$) {
 	$description = $ou  unless(defined($description));
 	
 	my $entry = Net::LDAP::Entry->new();
-	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$parentDN);
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_filter_value($ou),$parentDN);
 	$entry->dn($dn);
 	$entry->add(
 		'ou'	=>	$ou,
@@ -2995,7 +2995,7 @@ sub createPeopleOU($$;$$) {
 	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
-	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$userDN);
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_filter_value($ou),$userDN);
 	$entry->dn($dn);
 	$entry->add(
 		'ou'	=>	$ou,
@@ -3252,7 +3252,7 @@ sub listPeopleOUUsers($;$) {
 	my($ou,$userDN) = @_;
 	
 	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
-	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$userDN);
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_filter_value($ou),$userDN);
 	
 	# First, the ou must be found
 	my $searchMesg = $self->{'ldap'}->search(
@@ -3521,7 +3521,7 @@ sub createGroup($$$;$$) {
 		# Now, the group of names new entry
 		my $entry = Net::LDAP::Entry->new();
 		$entry->changetype('modify')  if($doReplace);
-		my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$groupDN);
+		my $dn = join(',','cn='.Net::LDAP::Util::escape_filter_value($cn),$groupDN);
 		$entry->dn($dn);
 		$entry->add(
 			'cn'	=>	$cn,
@@ -3591,7 +3591,7 @@ sub createGroupOU($$;$$) {
 	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
-	my $dn = join(',','ou='.Net::LDAP::Util::escape_dn_value($ou),$groupDN);
+	my $dn = join(',','ou='.Net::LDAP::Util::escape_filter_value($ou),$groupDN);
 	$entry->dn($dn);
 	$entry->add(
 		'ou'	=>	$ou,
@@ -4916,7 +4916,7 @@ sub attachDocumentForEntry($$\%$;$) {
 					my($jsonDocumentMetadata) = @_;
 					my $cn = exists($jsonDocumentMetadata->{'cn'}) ? $jsonDocumentMetadata->{'cn'} : '';
 					
-					my $docdn = join(',','cn='.Net::LDAP::Util::escape_dn_value($cn),$dn);
+					my $docdn = join(',','cn='.Net::LDAP::Util::escape_filter_value($cn),$dn);
 					
 					return $docdn;
 				},
@@ -5187,7 +5187,7 @@ sub removeDocumentFromEntry($$) {
 	
 	my($dn,$documentName,$data) = @_;
 	
-	my $docdn = join(',','cn='.Net::LDAP::Util::escape_dn_value($documentName),$dn);
+	my $docdn = join(',','cn='.Net::LDAP::Util::escape_filter_value($documentName),$dn);
 	my $deleteMesg = $self->{'ldap'}->delete($docdn);
 	
 	my $success = $deleteMesg->code() == Net::LDAP::LDAP_SUCCESS;
@@ -5623,7 +5623,7 @@ sub createDomain($) {
 	return undef  if($domainCN eq 'admin');
 	
 	my $entry = Net::LDAP::Entry->new();
-	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($domainCN),$self->getDocumentDomainsDN());
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_filter_value($domainCN),$self->getDocumentDomainsDN());
 	$entry->dn($dn);
 	$entry->add(
 		'cn'	=>	$domainCN,
@@ -5949,7 +5949,7 @@ sub createAlias($$$$;$) {
 	
 	my $entry = Net::LDAP::Entry->new();
 	$entry->changetype('modify')  if($doReplace);
-	my $dn = join(',',Net::LDAP::Util::escape_dn_value($keyName).'='.Net::LDAP::Util::escape_dn_value($keyValue),$parentDN);
+	my $dn = join(',',Net::LDAP::Util::escape_filter_value($keyName).'='.Net::LDAP::Util::escape_filter_value($keyValue),$parentDN);
 	$entry->dn($dn);
 	$entry->add(
 		'objectClass'	=>	[ 'alias', 'extensibleObject' ],
@@ -6015,8 +6015,8 @@ sub createRequest($\[@%]$$$;$$) {
 	my($requestType,$publicPayload,$ttl,$who,$targetNS,$targetId,$referringDN) = @_;
 	
 	my $entry = Net::LDAP::Entry->new();
-	my $requestId = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
-	my $desistCode = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
+	my $requestId = UUID::Tiny::create_uuid_as_string(UUID::Tiny::UUID_V4);
+	my $desistCode = UUID::Tiny::create_uuid_as_string(UUID::Tiny::UUID_V4);
 	
 	my $now = time();
 	my $creationTimestamp = _epoch_ISO8601_RFC3339($now);
@@ -6053,7 +6053,7 @@ sub createRequest($\[@%]$$$;$$) {
 		$requestPayload->{'target'}{'id'} = $targetId;
 	}
 	
-	my $dn = join(',','cn='.Net::LDAP::Util::escape_dn_value($requestId),$self->getRequestsDN());
+	my $dn = join(',','cn='.Net::LDAP::Util::escape_filter_value($requestId),$self->getRequestsDN());
 	$entry->dn($dn);
 	my $jh = getJHandler();
 	$entry->add(
@@ -6070,6 +6070,8 @@ sub createRequest($\[@%]$$$;$$) {
 	my $payload = [];
 	if($updMesg->code() != Net::LDAP::LDAP_SUCCESS) {
 		print STDERR $entry->ldif();
+		
+		print STDERR "Unable to create request $dn (request collision?)\n".Dumper($updMesg),"\n";
 		
 		push(@{$payload},"Unable to create request $dn (request collision?)\n".Dumper($updMesg));
 	} else {
@@ -6153,7 +6155,7 @@ sub removeRequest($) {
 	my $self = shift;
 	
 	my($requestId) = @_;
-	my $requestDN = join(',','cn='.Net::LDAP::Util::escape_dn_value($requestId),$self->getRequestsDN());
+	my $requestDN = join(',','cn='.Net::LDAP::Util::escape_filter_value($requestId),$self->getRequestsDN());
 	
 	my $deleteMesg = $self->{'ldap'}->delete($requestDN);
 	
