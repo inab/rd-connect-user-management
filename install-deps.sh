@@ -42,3 +42,4 @@ fi
 
 # It will work wherever the working dir points to
 cpanm -L "${plEnvDir}" --installdeps "${umdir}"
+cpanm -L "${plEnvDir}" https://github.com/jmfernandez/Dancer2-Plugin-CSRF/tarball/1.02
