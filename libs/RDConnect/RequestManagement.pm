@@ -18,7 +18,7 @@ use constant {
 };
 
 # Registering the templates only once
-INIT {
+BEGIN {
 
 	my $DEFAULT_PassResetReqTemplate = <<'EOF' ;
 Dear [% fullname %],

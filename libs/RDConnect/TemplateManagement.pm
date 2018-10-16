@@ -17,7 +17,7 @@ my %MTByDomain;
 my %MTByRequestType;
 
 # Management methods
-INIT {
+BEGIN {
 	sub AddMailTemplatesDomains(@) {
 		push(@MailTemplatesDomains,@_);
 		
@@ -28,7 +28,7 @@ INIT {
 }
 
 # These are the default templates
-INIT {
+BEGIN {
 
 	use constant NewUserDomain	=>	'newUserTemplates';
 	my $DEFAULT_newUserTemplate = <<'EOF' ;
