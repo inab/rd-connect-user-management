@@ -243,32 +243,8 @@ sub doInitPasswordReset(\%\%) {
 	my $usernameOrEmail = $answerPayload->{'usernameOrEmail'};
 	my $success = defined($usernameOrEmail);
 	if($success) {
-		my $uMgmt = $self->getUserManagementInstance();
-		
-		# Does the user exist?
-		my $jsonUser;
-		my $ldapUser;
-		($success,$jsonUser,$ldapUser) = $uMgmt->getJSONUser($usernameOrEmail);
-		
-		# As the user was found, let's create the request and send the e-mail
-		if($success) {
-			# The public payload is prepared
-			my $publicPayload = {
-				'cn'	=>	$jsonUser->{'cn'},
-				'username'	=>	$jsonUser->{'username'},
-			};
-			
-			my $mMgmt = $self->getMetaUserManagementInstance();
-			my($requestId,$desistCode) = $mMgmt->createMetaRequest(
-				REQ_PASSWORD_RESET(),
-				$publicPayload,
-				DEFAULT__PASSWORD_RESET_TIMEOUT(),
-				$jsonUser->{'username'},
-				'user',
-				$jsonUser->{'username'},
-				$ldapUser->dn()
-			);
-		}
+		my $mMgmt = $self->getMetaUserManagementInstance();
+		($success,undef,undef) = $mMgmt->createPasswordResetRequest($usernameOrEmail);
 	}
 	
 	return $success;

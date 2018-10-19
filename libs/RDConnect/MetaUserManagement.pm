@@ -384,4 +384,36 @@ sub createMetaRequest($\[@%]$$$;$$) {
 	
 }
 
+sub createPasswordResetRequest($) {
+	my $self = shift;
+	
+	my($usernameOrEmail) = @_;
+	my $uMgmt = $self->getUserManagementInstance();
+	
+	# Does the user exist?
+	my($success,$jsonUser,$ldapUser) = $uMgmt->getJSONUser($usernameOrEmail);
+	
+	# As the user was found, let's create the request and send the e-mail
+	if($success) {
+		# The public payload is prepared
+		my $publicPayload = {
+			'cn'	=>	$jsonUser->{'cn'},
+			'username'	=>	$jsonUser->{'username'},
+		};
+		
+		return $self->createMetaRequest(
+			RDConnect::RequestManagement::REQ_PASSWORD_RESET(),
+			$publicPayload,
+			RDConnect::RequestManagement::DEFAULT__PASSWORD_RESET_TIMEOUT(),
+			$jsonUser->{'username'},
+			'user',
+			$jsonUser->{'username'},
+			$ldapUser->dn()
+		);
+	}
+	
+	return $success;
+}
+
+
 1;
