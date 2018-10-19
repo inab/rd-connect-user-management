@@ -2269,6 +2269,7 @@ sub computeGDPRTokenFromUser($) {
 
 # Parameters:
 #	user: the LDAP user entry
+#	acceptedGDPR: the date when it was accepted
 # It returns the hash string
 sub setAcceptedGDPRAttr($$) {
 	my $self = shift;
