@@ -5,9 +5,9 @@
 use strict;
 use warnings 'all';
 
-package RDConnect::RequestManagement;
-
 use RDConnect::TemplateManagement;
+
+package RDConnect::RequestManagement;
 
 
 use constant {
@@ -59,11 +59,11 @@ EOF
 
 <p><b>If you are a member of a group</b>, you are now also required to confirm you have read, understood and accepted the Code of Conduct. You do this by clicking the link below. Please also remind the person responsible for your user group (usually your Principal Investigator, Group Leader or equivalent) that we also need their confirmation (see above).
 
-<p style="color:red"><b>Please click the link below or copy and paste it into your browser to confirm that you have read, understood and accept the new Code of Conduct (and Adherence Agreement if PI, GL or equirvalent):</b></p>
+<p style="color:red"><b>Please click the link below or copy and paste it into your browser to confirm that you have read, understood and accept the new Code of Conduct (and Adherence Agreement if PI, GL or equivalent):</b></p>
 
 <p><a href="[% requestlink %]">[% requestlink %]</a></p>
 
-<p>You do not need to log in to the system to provide your confirmation, but unfortunately your access to the system will be blocked until we receive it.</p>
+<p>You do not need to log in to the system to provide your confirmation, but unfortunately your access to the system will be blocked until we receive it. The link will be valid until [% expiration %].</p>
 <p>If you need a new confirmation link, a reset of your password, have any questions or experience any problems, please let us know by emailing <a href="mailto:help@rd-connect.eu" Alt="help">help@rd-connect.eu</a>. For urgent issues you can call us on +44 191 241 8621 during office hours.</p>
 
 <p>Thank you very much for your support and understanding,<br><br>The RD-Connect GPAP team</p>
@@ -179,10 +179,12 @@ sub removeRequest($) {
 	return $_[0]->getUserManagementInstance()->removeRequest($_[1]);
 }
 
-
+use constant {
+	STATIC_PASSWORD_RESET_REQ_ID	=>	'password-reset',
+};
 
 my %StaticRequests = (
-	'password-reset'	=> {
+	STATIC_PASSWORD_RESET_REQ_ID()	=> {
 		'requestType'	=>	REQ_INIT_PASSWORD_RESET(),
 		'publicPayload'	=>	{},
 		'desistCode'	=>	'never'
@@ -230,8 +232,9 @@ my %RequestClass = (
 	},
 );
 
-
+# The different default timeouts
 use constant DEFAULT__PASSWORD_RESET_TIMEOUT	=>	1*24*60*60;
+use constant DEFAULT__ACCEPT_GDPR_TIMEOUT	=>	30*24*60*60;
 
 # With this, any user is requesting to reset her/his password
 sub doInitPasswordReset(\%\%) {
@@ -281,21 +284,17 @@ sub doAcceptGDPR(\%\%) {
 	
 	my($requestPayload,$answerPayload) = @_;
 	
-	my $acceptedGDPR = $answerPayload->{'acceptGDPR'};
+	my $acceptedGDPR = $answerPayload->{'GDPRtoken'};
 	my $success = defined($acceptedGDPR);
-	if($success && $acceptedGDPR) {
+	if($success && length($acceptedGDPR) > 0) {
 		my $uMgmt = $self->getUserManagementInstance();
 		my $username = $requestPayload->{'target'}{'id'};
 		
 		# Does the user exist?
 		my($success,$user) = $uMgmt->getUser($username);
 		if($success) {
-			my $token = undef;
-			# Compute token
-			($success,$token) = $uMgmt->generateGDPRHashFromUser($user);
-			
 			# Accept token
-			$uMgmt->acceptGDPRHash($username,$token)  if($success);
+			$success = $uMgmt->acceptGDPRHashFromUser($user,$acceptedGDPR);
 		}
 	}
 	
@@ -364,7 +363,7 @@ sub genLinksFromReq($$) {
 	my $requestlink = $self->{'publicBaseURI'} . '/' . $requestId . '/';
 	my $desistlink = $self->{'publicBaseURI'} . '/' . $requestId . '/desist/' . $desistCode . '/';
 	
-	return ($requestlink,$desistlink);
+	return wantarray ? ($requestlink,$desistlink) : $requestlink;
 }
 
 1;
