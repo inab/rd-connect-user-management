@@ -27,67 +27,6 @@ BEGIN {
 	}
 }
 
-# These are the default templates
-BEGIN {
-
-	use constant NewUserDomain	=>	'newUserTemplates';
-	my $DEFAULT_newUserTemplate = <<'EOF' ;
-Dear [% fullname %],
-        your RD-Connect username is [% username %]. Following the changes in the european GDPR, you must accept
-        the code of conduct of RD-Connect. In the meanwhile, your account will be disabled.
-
-        Next link will mark your acceptance of RD-Connect code of conduct.
-
-https://rdconnectcas.rd-connect.eu/RDConnect-UserManagement-API/users/[% username %]/acceptGDPR/[% gdprtoken %]
-
-        Best,
-                The RD-Connect team
-EOF
-
-	use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
-	use constant ResettedPasswordDomain	=>	'resettedPasswordTemplates';
-	my $DEFAULT_passMailTemplate = <<'EOF' ;
-Your new password is  [% password %]  (including any punctuation mark it could contain).
-
-Kind Regards,
-	RD-Connect team
-EOF
-	
-	# We add them here
-	AddMailTemplatesDomains(
-		{
-			'apiKey' => 'newUser',
-			'desc' => 'New user creation templates',
-			'tokens' => [ 'username', 'fullname', 'gdprtoken', 'unique' ],
-			'ldapDomain' => NewUserDomain(),
-			'cn' =>	'mailTemplate.html',
-			'ldapDesc' => 'New User Mail Template',
-			'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
-			'default' => $DEFAULT_newUserTemplate
-		},
-		{
-			'apiKey' => 'passTemplate',
-			'desc' => 'New password templates',
-			'tokens' => [ 'password', 'unique' ],
-			'ldapDomain' => ChangedPasswordDomain(),
-			'cn' =>	'changedPassMailTemplate.html',
-			'ldapDesc' => 'Changed password mail template',
-			'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
-			'default' => $DEFAULT_passMailTemplate
-		},
-		{
-			'apiKey' => 'resettedPassTemplate',
-			'desc' => 'Resetted password templates',
-			'tokens' => [ 'password', 'unique' ],
-			'ldapDomain' => ResettedPasswordDomain(),
-			'cn' =>	'resettedPassMailTemplate.html',
-			'ldapDesc' => 'Resetted password mail template',
-			'defaultTitle' => 'RD-Connect platform portal password changed [[% unique %]]',
-			'default' => $DEFAULT_passMailTemplate
-		},
-	);
-}
-
 
 our %MailTemplateKeys = (
 	'mailTemplate'	=>	undef,
@@ -462,18 +401,6 @@ sub fetchEmailTemplate($) {
 	}
 }
 
-sub newUserEmailTemplate($) {
-	my $self = shift;
-	
-	return $self->fetchEmailTemplate(NewUserDomain());
-}
-
-
-sub changedPasswordEmailTemplate($) {
-	my $self = shift;
-	
-	return $self->fetchEmailTemplate(ChangedPasswordDomain());
-}
 
 # This method extracts the available e-mail addressess to notify a user
 # If all the e-mail addressess are under test, then use those

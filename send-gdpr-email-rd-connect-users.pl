@@ -109,34 +109,16 @@ if(scalar(@ARGV)>=2) {
 		# Don't send the e-mail to disabled accounts
 		next  if($user->get_value('disabledAccount') eq 'TRUE');
 		
-		my($success,$payload) = $uMgmt->generateGDPRHashFromUser($user);
+		my $username = $user->get_value('uid');
+		print "* Preparing and sending e-mail(s) to $username\n";
+		my($requestLink,$desistLink,$expiration) = $mMgmt->createGDPRValidationRequest($username);
 		
-		if($success) {
-			my $username = $user->get_value('uid');
-			print "* Preparing and sending e-mail(s) to $username (token $payload)\n";
-			my $fullname = $user->get_value('cn');
-			my(@emails) = $user->get_value('mail');
-
-			# Re-defining the object
-			
-			$keyval1{'username'} = $username;
-			$keyval1{'fullname'} = $fullname;
-			$keyval1{'gdprtoken'} = $payload;
-			
-			foreach my $email (@emails) {
-				print "* Sending e-mail to $email\n";
-				my $to = Email::Address->new($fullname => $email);
-				eval {
-					$mail1->sendMessage($to,\%keyval1);
-				};
-				
-				if($@) {
-					Carp::carp("Error while sending e-mail to $username ($email): ",$@);
-				}
-			}
+		if($requestLink) {
+			print "* Acceptance link for $username is valid until $expiration\n";
+			print "\t$requestLink\n";
 		} else {
 			# Reverting state
-			foreach my $err (@{$payload}) {
+			foreach my $err (@{$desistLink}) {
 				Carp::carp($err);
 			}
 			Carp::carp("Unable to reset GDPR acceptation. What did it happen?");

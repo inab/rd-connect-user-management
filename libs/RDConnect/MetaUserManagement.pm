@@ -18,6 +18,82 @@ use Scalar::Util qw(blessed);
 
 
 
+# These are the default templates
+BEGIN {
+
+	use constant NewUserDomain	=>	'newUserTemplates';
+	my $DEFAULT_newUserTemplate = <<'EOF' ;
+Dear [% fullname %],
+        your RD-Connect username is [% username %]. Following the changes in the european GDPR, you must accept
+        the code of conduct of RD-Connect. In the meanwhile, your account will be disabled.
+
+        Next link (valid until [% expirationlink %]) will mark your acceptance of RD-Connect code of conduct.
+
+[% gdprlink %]
+
+        If you need to reset your password, please follow next link:
+
+[% passresetlink %]
+
+        Best,
+                The RD-Connect team
+EOF
+
+	use constant ChangedPasswordDomain	=>	'changedPasswordTemplates';
+	my $DEFAULT_firstPassMailTemplate = <<'EOF' ;
+Your RD-Connect password has just been resetted to [% password %].
+
+Kind Regards,
+	RD-Connect team
+EOF
+
+	use constant ResettedPasswordDomain	=>	'resettedPasswordTemplates';
+	my $DEFAULT_passResetMailTemplate = <<'EOF' ;
+Your RD-Connect password has just been resetted.
+
+If you want to reset it again, please follow next link: [% passresetlink %]
+
+Kind Regards,
+	RD-Connect team
+EOF
+	
+	# We add them here
+	RDConnect::TemplateManagement::AddMailTemplatesDomains(
+		{
+			'apiKey' => 'newUser',
+			'desc' => 'New user creation templates',
+			'tokens' => [ 'username', 'fullname', 'gdprlink', 'expirationlink', 'passresetlink', 'unique' ],
+			'ldapDomain' => NewUserDomain(),
+			'cn' =>	'mailTemplate.html',
+			'ldapDesc' => 'New User Mail Template',
+			'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
+			'default' => $DEFAULT_newUserTemplate
+		},
+		#{
+		#	'apiKey' => 'passTemplate',
+		#	'desc' => 'New password templates',
+		#	'tokens' => [ 'password', 'unique' ],
+		#	'ldapDomain' => ChangedPasswordDomain(),
+		#	'cn' =>	'changedPassMailTemplate.html',
+		#	'ldapDesc' => 'Changed password mail template',
+		#	'defaultTitle' => 'RD-Connect platform portal user creation [[% unique %]]',
+		#	'default' => $DEFAULT_firstPassMailTemplate
+		#},
+		{
+			'apiKey' => 'resettedPassTemplate',
+			'desc' => 'Resetted password templates',
+			'tokens' => [ 'passresetlink', 'unique' ],
+			'ldapDomain' => ResettedPasswordDomain(),
+			'cn' =>	'resettedPassMailTemplate.html',
+			'ldapDesc' => 'Resetted password mail template',
+			'defaultTitle' => 'RD-Connect platform portal password changed [[% unique %]]',
+			'default' => $DEFAULT_passResetMailTemplate
+		},
+	);
+}
+
+
+
 # Parameters:
 #	iParam: Either a RDConnect::TemplateManagement or RDConnect::RequestManagement instance
 sub new($$) {
@@ -121,19 +197,11 @@ sub createUser(\[%@];$) {
 	my $mailTemplateTitle;
 	my @attachmentFiles = ();
 	
-	my $passMailTemplate;
-	my $passMailTemplateTitle;
-	my @passAttachmentFiles = ();
-	
 	unless($NOEMAIL) {
-		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->newUserEmailTemplate();
+		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(NewUserDomain());
 		
 		# Return if error condition
 		return $mailTemplate  if(blessed($mailTemplate));
-		
-		($passMailTemplate,$passMailTemplateTitle,@passAttachmentFiles) = $tMgmt->changedPasswordEmailTemplate();
-		
-		return $passMailTemplate  if(blessed($passMailTemplate));
 	}
 	
 	$p_newUsers = [ $p_newUsers ]  if(ref($p_newUsers) eq 'HASH');
@@ -157,15 +225,20 @@ sub createUser(\[%@];$) {
 			unless($NOEMAIL) {
 				my $unique = time;
 				
-				my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)', 'gdprtoken' => '(undefined)', 'unique' => $unique );
-				my %keyval2 = ( 'password' => '(undefined)', 'unique' => $unique );
+				my $rMgmt = $self->getRequestManagementInstance();
+				my($passresetlink) = $rMgmt->genLinksFromReq(RDConnect::RequestManagement::STATIC_PASSWORD_RESET_REQ_ID(),'');
+				my %keyval1 = (
+					'username' => '(undefined)',
+					'fullname' => '(undefined)',
+					'gdprlink' => '(undefined)',
+					'expirationlink' => '(undefined)',
+					'passresetlink' => $passresetlink,
+					'unique' => $unique
+				);
 				
 				# Mail configuration parameters
 				my $mail1 = $self->getMailManagementInstance($mailTemplate,\%keyval1,\@attachmentFiles);
-				$mail1->setSubject($mailTemplateTitle.' (I)');
-				
-				my $mail2 = $self->getMailManagementInstance($passMailTemplate,\%keyval2,\@passAttachmentFiles);
-				$mail2->setSubject($passMailTemplateTitle.' (II)');
+				$mail1->setSubject($mailTemplateTitle);
 				
 				my $fullname = $payload->[0]{'cn'};
 				my $email = $payload->[0]{'email'}[0];
@@ -173,17 +246,15 @@ sub createUser(\[%@];$) {
 				
 				$keyval1{'username'} = $username;
 				$keyval1{'fullname'} = $fullname;
-				$keyval1{'gdprtoken'} = $uMgmt->generateGDPRHashFromUser($user);
 				eval {
+					my($requestLink,$desistLink,$expiration) = $self->createGDPRValidationRequest($username);
+					$keyval1{'gdprlink'} = $requestLink;
+					$keyval1{'expirationlink'} = $expiration;
+					
 					$mail1->sendMessage($to,\%keyval1);
 					
-					$keyval2{'password'} = $userPassword;
-					eval {
-						$mail2->sendMessage($to,\%keyval2);
-					};
-					if($@) {
-						push(@errorStack,{'reason' => 'Error while sending password e-mail','trace' => $@,'code' => 500});
-					}
+					# Sending the password reset request
+					$self->createPasswordResetRequest($username);
 				};
 				
 				if($@) {
@@ -216,11 +287,6 @@ sub resetUserPassword($$) {
 	my $tMgmt = $self->getTemplateManagementInstance();
 	my $uMgmt = $self->getUserManagementInstance();
 	
-	my($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::RequestManagement::GDPRDomain());
-	
-	# Error condition
-	return $mailTemplate  if(blessed($mailTemplate));
-	
 	if(defined($userPassword)) {
 		# Now, let's check the strength of the input password
 		my $evPass = Data::Password::zxcvbn::password_strength($userPassword);
@@ -246,18 +312,19 @@ sub resetUserPassword($$) {
 	
 	if($success) {
 		my $unique = time;
-		my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)', 'unique' => $unique );
-		my %keyval2 = ( 'password' => '(undefined)', 'unique' => $unique );
+
+		my $rMgmt = $self->getRequestManagementInstance();
+		my($passresetlink) = $rMgmt->genLinksFromReq(RDConnect::RequestManagement::STATIC_PASSWORD_RESET_REQ_ID(),'');
 		
-		# Mail configuration parameters
-		my $mail1 = undef;
+		my %keyval2 = ( 'passresetlink' => $passresetlink, 'unique' => $unique );
+
 		
+		# Sending a reminder about GDPR acceptance
 		unless($uMgmt->didUserAcceptGDPR($user)) {
-			$mail1 = $self->getMailManagementInstance($mailTemplate,\%keyval1,\@attachmentFiles);
-			$mail1->setSubject($mailTemplateTitle.' (reminder)');
-			$keyval1{'gdprtoken'} = $uMgmt->generateGDPRHashFromUser($user);
+			my($requestLink,$desistLink,$expiration) = $self->createGDPRValidationRequest($userId);
 		}
 		
+		# Mail configuration parameters
 		my $mail2 = $self->getMailManagementInstance($passMailTemplate,\%keyval2,\@passAttachmentFiles);
 		$mail2->setSubject($passMailTemplateTitle);
 		
@@ -266,24 +333,11 @@ sub resetUserPassword($$) {
 		my $email = $payload->{'email'}[0];
 		my $to = Email::Address->new($fullname => $email);
 		
-		$keyval1{'username'} = $username;
-		$keyval1{'fullname'} = $fullname;
 		eval {
-			if($mail1) {
-				$mail1->sendMessage($to,\%keyval1);
-			}
-			
-			$keyval2{'password'} = $userPassword;
-			eval {
-				$mail2->sendMessage($to,\%keyval2);
-			};
-			if($@) {
-				return bless({'reason' => 'Error while sending password e-mail','trace' => $@,'code' => 500},'RDConnect::MetaUserManagement::Error');
-			}
+			$mail2->sendMessage($to,\%keyval2);
 		};
-		
 		if($@) {
-			return bless({'reason' => 'Error while sending user e-mail','trace' => $@,'code' => 500},'RDConnect::MetaUserManagement::Error');
+			return bless({'reason' => 'Error while sending password change e-mail','trace' => $@,'code' => 500},'RDConnect::MetaUserManagement::Error');
 		}
 	} else {
 		$retval = bless({'reason' => 'Error while resetting user password for user '.$userId,'trace' => $payload,'code' => 500},'RDConnect::MetaUserManagement::Error');
@@ -384,6 +438,10 @@ sub createMetaRequest($\[@%]$$$;$$) {
 	
 }
 
+# Create a password reset request:
+# Parameters:
+#	usernameOrEmail: a username or e-mail of a potential user
+# It returns the same as createMetaRequest on success, undef otherwise
 sub createPasswordResetRequest($) {
 	my $self = shift;
 	
@@ -412,8 +470,48 @@ sub createPasswordResetRequest($) {
 		);
 	}
 	
-	return $success;
+	return undef;
 }
 
+# Create a GDPR validation request:
+# Parameters:
+#	usernameOrEmail: a username or e-mail of a user who must accept GDPR
+# It returns the same as createMetaRequest on success, undef otherwise
+sub createGDPRValidationRequest($) {
+	my $self = shift;
+	
+	my($usernameOrEmail) = @_;
+	my $uMgmt = $self->getUserManagementInstance();
+	
+	# Does the user exist?
+	my($success,$jsonUser,$ldapUser) = $uMgmt->getJSONUser($usernameOrEmail);
+	
+	# As the user was found, let's create the request and send the e-mail
+	if($success) {
+		# Resetting the GDPR state of the user
+		my $encodedToken = undef;
+		($success,$encodedToken) = $uMgmt->generateGDPRHashFromUser($ldapUser);
+		if($success) {
+			# The public payload is prepared
+			my $publicPayload = {
+				'cn'	=>	$jsonUser->{'cn'},
+				'username'	=>	$jsonUser->{'username'},
+				'GDPRtoken'	=>	$encodedToken
+			};
+			
+			return $self->createMetaRequest(
+				RDConnect::RequestManagement::REQ_ACCEPT_GDPR(),
+				$publicPayload,
+				RDConnect::RequestManagement::DEFAULT__ACCEPT_GDPR_TIMEOUT(),
+				undef,
+				'user',
+				$jsonUser->{'username'},
+				$ldapUser->dn()
+			);
+		}
+	}
+	
+	return undef;
+}
 
 1;
