@@ -16,7 +16,7 @@ use JSON::MaybeXS ();
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
 use RDConnect::TemplateManagement;
-use RDConnect::RequestManagement;
+use RDConnect::MetaUserManagement;
 
 if(scalar(@ARGV)>=1) {
 	my $configFile = shift(@ARGV);
