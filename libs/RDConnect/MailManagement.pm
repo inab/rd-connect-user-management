@@ -9,7 +9,7 @@ use Carp;
 use Email::Address;
 use Email::MIME;
 use Email::Sender::Simple qw(sendmail);
-use Email::Sender::Transport::SMTPS qw();
+use Email::Sender::Transport::SMTP qw();
 use File::Basename qw();
 use File::MimeInfo::Magic qw();
 use IO::Scalar;
@@ -50,10 +50,10 @@ sub new($$\%;\@) {
 	
 	# Mail configuration parameters
 	my @mailParams = ();
-	foreach my $mailParam ('host','ssl','port','sasl_username','sasl_password') {
+	foreach my $mailParam ('host','port','ssl','ssl_options','helo','sasl_username','sasl_password','debug') {
 		push(@mailParams,$mailParam,$cfg->val(MAILSECTION,$mailParam))  if($cfg->exists(MAILSECTION,$mailParam));
 	}
-	my $transport = Email::Sender::Transport::SMTPS->new(@mailParams);
+	my $transport = Email::Sender::Transport::SMTP->new(@mailParams);
 	
 	my($from) = Email::Address->parse($cfg->val(MAILSECTION,'from'));
 	

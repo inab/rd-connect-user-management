@@ -13,7 +13,7 @@ requires 'JSON::MaybeXS';
 requires 'JSON::Validator';
 requires 'Email::Address';
 requires 'Email::MIME';
-requires 'Email::Sender::Transport::SMTPS';
+requires 'Email::Sender::Transport::SMTP';
 requires 'Env';
 requires 'File::MimeInfo';
 requires 'Text::Unidecode';
