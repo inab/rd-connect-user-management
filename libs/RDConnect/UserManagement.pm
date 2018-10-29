@@ -4,7 +4,7 @@
 
 use strict;
 use v5.10.1;
-use experimental 'smartmatch';
+use Test::Deep qw();
 
 use boolean qw();
 use POSIX ();
@@ -1883,31 +1883,33 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 			} elsif((Scalar::Util::blessed($jsonEntry->{$jsonKey}) && $jsonEntry->{$jsonKey}->isa('JSON::PP::Boolean')) || (Scalar::Util::blessed($p_entryHash->{$jsonKey}) && $p_entryHash->{$jsonKey}->isa('JSON::PP::Boolean'))) {
 				$doModify = ($jsonEntry->{$jsonKey} && !$p_entryHash->{$jsonKey}) || (!$jsonEntry->{$jsonKey} && $p_entryHash->{$jsonKey});
 			} else {
-				$doModify = !($jsonEntry->{$jsonKey} ~~ $p_entryHash->{$jsonKey});
+				$doModify = ! Test::Deep::eq_deeply($jsonEntry->{$jsonKey},$p_entryHash->{$jsonKey});
 			}
 			
 			if($doModify) {
 				$modifications = 1;
 				
 				if(defined($p_entryHash->{$jsonKey})) {
-					# This is also an LDAP attribute modification
-					my $ldapVal = $p_entryHash->{$jsonKey};
-					$ldapVal = [ $ldapVal ]  if($p_jsonDesc->{'_isLdapArray'} && !ref($ldapVal) eq 'ARRAY');
-					if(exists($p_jsonDesc->{'_json2Ldap'}) && defined($p_jsonDesc->{'_json2Ldap'})) {
-						my $retval = undef;
-						($ldapVal,$retval) = $p_jsonDesc->{'_json2Ldap'}->($self,$ldapVal);
-						
-						# Were there processing errors?
-						if(defined($retval)) {
-							$success = undef;
-							push(@{$payload},"Error on key $jsonKey post-processing",@{$retval});
+					if($p_jsonDesc->{'_ldapName'}) {
+						# This is also an LDAP attribute modification
+						my $ldapVal = $p_entryHash->{$jsonKey};
+						$ldapVal = [ $ldapVal ]  if($p_jsonDesc->{'_isLdapArray'} && !ref($ldapVal) eq 'ARRAY');
+						if(exists($p_jsonDesc->{'_json2Ldap'}) && defined($p_jsonDesc->{'_json2Ldap'})) {
+							my $retval = undef;
+							($ldapVal,$retval) = $p_jsonDesc->{'_json2Ldap'}->($self,$ldapVal);
+							
+							# Were there processing errors?
+							if(defined($retval)) {
+								$success = undef;
+								push(@{$payload},"Error on key $jsonKey post-processing",@{$retval});
+							}
 						}
-					}
-					
-					if(exists($jsonEntry->{$jsonKey})) {
-						push(@modifiedLDAPAttributes, $p_jsonDesc->{'_ldapName'} => $ldapVal);
-					} else {
-						push(@addedLDAPAttributes, $p_jsonDesc->{'_ldapName'} => $ldapVal);
+						
+						if(exists($jsonEntry->{$jsonKey})) {
+							push(@modifiedLDAPAttributes, $p_jsonDesc->{'_ldapName'} => $ldapVal);
+						} else {
+							push(@addedLDAPAttributes, $p_jsonDesc->{'_ldapName'} => $ldapVal);
+						}
 					}
 					
 					$jsonEntry->{$jsonKey} = $p_entryHash->{$jsonKey};
@@ -1915,7 +1917,7 @@ sub modifyJSONEntry(\%$\%$\%$\@;\@) {
 					delete($jsonEntry->{$jsonKey});
 					
 					# This is an attribute removal
-					push(@removedLDAPAttributes,$p_jsonDesc->{'_ldapName'});
+					push(@removedLDAPAttributes,$p_jsonDesc->{'_ldapName'})  if($p_jsonDesc->{'_ldapName'});
 				}
 			}
 		}
