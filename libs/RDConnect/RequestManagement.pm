@@ -36,17 +36,9 @@ Otherwise, follow next link in order to remove this request
                 The RD-Connect team
 EOF
 
-	use constant GDPRDomain	=>	'GDPRTemplates';
-	my $DEFAULT_GDPRTemplate = <<'EOF' ;
-<html>
-<head>
-<title> RD-Connect GPAP: please renew your access in accordance to the EU GDPR </title>
-</head>
-
-<body>
-<p style="color:red"><b>Do not delete this email! You need the link below to keep accessing the RD-Connect genome-phenome analysis platform!</b></p>
-
-
+	use constant GDPRTextDomain	=>	'GDPRTextBody';
+	my $DEFAULT_GDPRText = <<'EOF' ;
+<div>
 <p>Dear user of the RD-Connect genome-phenome analysis platform (GPAP),</p>
 
 <p>We have updated our policies and procedures to take account of the new General Data Protection Regulation (GDPR, EU 2016/679). As part of this process we have updated the <a href="https://rd-connect.eu/gpap-code-conduct" Alt="RD-Connect Code of Conduct">RD-Connect Code of Conduct</a> and the <a href="https://rd-connect.eu/gpap-adherence" Alt="Adherence Agreement">Adherence Agreement</a> to include more details on how we manage your own user data and the pseudoanonymised genome-phenome data you submit.</p>
@@ -58,6 +50,20 @@ EOF
 
 
 <p><b>If you are a member of a group</b>, you are now also required to confirm you have read, understood and accepted the Code of Conduct. You do this by clicking the link below. Please also remind the person responsible for your user group (usually your Principal Investigator, Group Leader or equivalent) that we also need their confirmation (see above).
+</div>
+EOF
+
+	use constant GDPRDomain	=>	'GDPRTemplates';
+	my $DEFAULT_GDPRTemplate = <<'EOF' ;
+<html>
+<head>
+<title> RD-Connect GPAP: please renew your access in accordance to the EU GDPR </title>
+</head>
+
+<body>
+<p style="color:red"><b>Do not delete this email! You need the link below to keep accessing the RD-Connect genome-phenome analysis platform!</b></p>
+
+[% gdprtext %]
 
 <p style="color:red"><b>Please click the link below or copy and paste it into your browser to confirm that you have read, understood and accept the new Code of Conduct (and Adherence Agreement if PI, GL or equivalent):</b></p>
 
@@ -118,13 +124,27 @@ EOF
 		{
 			'apiKey' => 'GDPRTemplate',
 			'desc' => 'GDPR acceptance templates',
-			'tokens' => [ 'username', 'fullname', 'requestlink', 'desistlink', 'expiration', 'unique' ],
+			'tokens' => [ 'username', 'fullname', 'requestlink', 'desistlink', 'expiration', 'gdprtext', 'unique' ],
+			'deps' => {
+				'gdprtext' => GDPRTextDomain()
+			},
 			'ldapDomain' => GDPRDomain(),
 			'requestType' => REQ_ACCEPT_GDPR(),
 			'cn' =>	'GDPRMailTemplate.html',
 			'ldapDesc' => 'GDPR acceptance mail template',
 			'defaultTitle' => 'RD-Connect GDPR acceptance for user [% username %] [[% unique %]]',
 			'default' => $DEFAULT_GDPRTemplate
+		},
+		{
+			'apiKey' => 'GDPRText',
+			'desc' => 'GDPR text body',
+			'tokens' => [],
+			'ldapDomain' => GDPRTextDomain(),
+			'requestType' => REQ_ACCEPT_GDPR().'fake',
+			'cn' =>	'GDPRtextBody.html',
+			'ldapDesc' => 'GDPR text body',
+			'defaultTitle' => 'RD-Connect GDPR text body',
+			'default' => $DEFAULT_GDPRText
 		},
 	);
 }
@@ -274,9 +294,14 @@ sub doConfirmEMail(\%\%) {
 	
 	my($requestPayload,$answerPayload) = @_;
 	
-	# TODO
+	my $success = $answerPayload->{'confirmEmail'};
+	if($success) {
+		my $uMgmt = $self->getUserManagementInstance();
+		
+		$uMgmt->confirmUserEMail($requestPayload->{'target'}{'id'},$requestPayload->{'publicPayload'}{'emailToConfirm'});
+	}
 	
-	return
+	return $success;
 }
 
 sub doAcceptGDPR(\%\%) {
@@ -295,6 +320,13 @@ sub doAcceptGDPR(\%\%) {
 		if($success) {
 			# Accept token
 			$success = $uMgmt->acceptGDPRHashFromUser($user,$acceptedGDPR);
+			
+			if($success) {
+				# Send notifications of e-mail re-validation
+				my $mMgmt = $self->getMetaUserManagementInstance();
+				
+				$mMgmt->sendUsernameEMailRequests($user);
+			}
 		}
 	}
 	

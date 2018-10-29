@@ -420,12 +420,28 @@ sub getEmailAddressesFromJSONUser(\%) {
 	return $p_addresses;
 }
 
-sub mailTemplateStructure($) {
+sub mailTemplateStructureByApiKey($) {
 	my $self = shift;
 	
 	my($apiKey) = @_;
 	
 	return exists($MTByApiKey{$apiKey}) ? $MTByApiKey{$apiKey} : undef;
+}
+
+sub mailTemplateStructureByDomain($) {
+	my $self = shift;
+	
+	my($domainId) = @_;
+	
+	return exists($MTByDomain{$domainId}) ? $MTByDomain{$domainId} : undef;
+}
+
+sub mailTemplateStructureByRequestType($) {
+	my $self = shift;
+	
+	my($requestType) = @_;
+	
+	return exists($MTByRequestType{$requestType}) ? $MTByRequestType{$requestType} : undef;
 }
 
 sub getMailTemplatesDomains() {

@@ -15,6 +15,7 @@ use Digest;
 use MIME::Base64;
 use Email::Address;
 use Text::Unidecode qw();
+use Scalar::Util qw(blessed);
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
@@ -37,24 +38,6 @@ if(scalar(@ARGV)>=2) {
 	my $mailTemplate;
 	my @attachmentFiles;
 	
-	# Use the template available in the LDAP directory, or the default
-	if(scalar(@ARGV) == 0) {
-		($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::RequestManagement::GDPRDomain());
-	} else {
-		$mailTemplateTitle = 'IMPORTANT! RD-Connect GPAP: please renew your access in accordance with the EU GDPR';
-		$mailTemplate = shift(@ARGV);
-		@attachmentFiles = @ARGV;
-	}
-	
-	# Now, let's read all the parameters
-	
-	# These are the recognized replacements
-	my %keyval1 = ( 'username' => '(undefined)', 'gdprtoken' => '(undefined)','fullname' => '(undefined)' );
-	
-	my $mail1;
-	# Mail configuration parameters
-	$mail1 = $mMgmt->getMailManagementInstance($mailTemplate,\%keyval1,\@attachmentFiles);
-	$mail1->setSubject($mailTemplateTitle);
 	
 	# Read the users
 	my @users = ();
@@ -113,11 +96,13 @@ if(scalar(@ARGV)>=2) {
 		print "* Preparing and sending e-mail(s) to $username\n";
 		my($requestLink,$desistLink,$expiration) = $mMgmt->createGDPRValidationRequest($username);
 		
-		if($requestLink) {
+		if($requestLink && !blessed($requestLink)) {
 			print "* Acceptance link for $username is valid until $expiration\n";
 			print "\t$requestLink\n";
 		} else {
 			# Reverting state
+			use Data::Dumper;
+			print STDERR Dumper($requestLink),"\n";
 			foreach my $err (@{$desistLink}) {
 				Carp::carp($err);
 			}
@@ -126,6 +111,6 @@ if(scalar(@ARGV)>=2) {
 	}
 } else {
 	die <<EOF ;
-Usage:	$0 [-r] {IniFile} {File with usernames (in UTF-8, one per line)} [{Message Template} {Attachments}*]
+Usage:	$0 [-r] {IniFile} {File with usernames (in UTF-8, one per line)}
 EOF
 }

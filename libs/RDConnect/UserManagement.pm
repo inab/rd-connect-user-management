@@ -1649,6 +1649,7 @@ sub genJSONFromLDAP(\@\%;$$$) {
 }
 
 my $ZERO_EPOCH = _epoch_ISO8601_RFC3339(0);
+use constant DEFAULT__QUARANTINE_DAYS_TIMEOUT	=>	28;
 
 sub _userJanitoring(\%) {
 	my($jsonEntry) = @_;
@@ -1696,7 +1697,7 @@ sub _userJanitoring(\%) {
 		
 		# If we are here, the e-mail was not found
 		# By default, we should give a 4 weeks grace period for old e-mails
-		my $grace_epoch = _epoch_ISO8601_RFC3339(time()+28*86400);
+		my $grace_epoch = _epoch_ISO8601_RFC3339(time()+DEFAULT__QUARANTINE_DAYS_TIMEOUT()*86400);
 		push(@{$p_registeredEmails},{
 			'email'	=> $email,
 			'registeredAt' => $ZERO_EPOCH,
@@ -1777,7 +1778,7 @@ sub postFixupUser($$$) {
 	my($uMgmt,$entry,$jsonEntry) = @_;
 	
 	# Add the organizationalUnit
-	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn());
+	$jsonEntry->{'organizationalUnit'} = _getParentOUFromDN($entry->dn())  unless(exists($jsonEntry->{'organizationalUnit'}));
 	
 	# Update the LDAP entry with this janitored version
 	_userJanitoring(%{$jsonEntry});
@@ -2030,8 +2031,12 @@ sub modifyJSONUser($\%;\@$) {
 	my($success,$payload,$user) = $self->getJSONUser($username,$userDN);
 	
 	if($success) {
+		# Now, be sure the e-mail has been included in the main attribute
+		$self->postFixupUser($user,$p_userHash);
+				
 		# $jsonEntry,$entry,$p_entryHash,$p_json2ldap,$validator,$hotchpotchAttribute,$p_ldap_default_attributes
 		my $jsonUser = $payload;
+		
 		($success,$payload,$user) = $self->modifyJSONEntry(
 						$jsonUser,
 						$user,
@@ -2454,6 +2459,95 @@ sub acceptGDPRHash($$;$) {
 	} 
 }
 
+sub confirmUserEMail($$;$) {
+	my $self = shift;
+	
+	my($username,$email,$userDN) = @_;
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	# First, get the entry
+	my($success,$payload,$ldapUser) = $self->getJSONUser($username,$userDN);
+	if($success) {
+		my $jsonUser = $payload;
+		
+		$success = undef;
+		$payload = [ 'e-mail not found' ];
+		foreach my $regEmail (@{$jsonUser->{'registeredEmails'}}) {
+			if($email eq $regEmail->{'email'}) {
+				my $now = time();
+				$regEmail->{'status'} = 'checked';
+				$regEmail->{'lastValidatedAt'} = _epoch_ISO8601_RFC3339($now);
+				# Two years until next check
+				$regEmail->{'validUntil'} = _epoch_ISO8601_RFC3339($now + 2*365*24*60*60);
+				
+				# Now, be sure the e-mail has been included in the main attribute
+				$self->postFixupUser($ldapUser,$jsonUser);
+				
+				# Saving the changes
+				($success,$payload) = $self->modifyJSONUser(undef,$jsonUser,undef,$userDN);
+				last;
+			}
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
+# This method puts an specific e-mail address in unchecked state
+# Parameters:
+#	ldapUser:
+#	jsonUser:
+#	email: The e-mail address to put in unchecked state
+#	quarantineDays: The grace period, in days, to be given
+#	userDN (OPTIONAL)
+sub putUserEMailOnValidation($$$;$$) {
+	my $self = shift;
+	
+	my($ldapUser,$jsonUser,$email,$quarantineDays,$userDN) = @_;
+	$quarantineDays = DEFAULT__QUARANTINE_DAYS_TIMEOUT()  unless(defined($quarantineDays));
+	
+	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+
+	my $success = undef;
+	my $payload = [ 'e-mail not found' ];
+	foreach my $regEmail (@{$jsonUser->{'registeredEmails'}}) {
+		if(!defined($email) || $email eq $regEmail->{'email'}) {
+			my $now = time();
+			my $current_epoch = _epoch_ISO8601_RFC3339($now);
+			$regEmail->{'status'} = 'unchecked';
+			# By default, we should give a 4 weeks grace period for old e-mails
+			$regEmail->{'validQuarantineCheckUntil'} = _epoch_ISO8601_RFC3339(time()+$quarantineDays*86400);
+			
+			# Saving the changes
+			($success,$payload) = $self->modifyJSONUser(undef,$jsonUser,undef,$userDN);
+			last  if(defined($email) || !$success);
+		}
+	}
+	
+	if(wantarray) {
+		return ($success,$payload);
+	} else {
+		unless($success) {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+		}
+		
+		return $success;
+	} 
+}
+
 # Parameters:
 #	username: the RD-Connect username or user e-mail
 #	jpegPhoto: The raw, new photo to be set
@@ -2804,90 +2898,90 @@ sub listJSONEnabledUsers(;$) {
 	return ($success,$payload);
 }
 
-# Parameters:
-#	username: the RD-Connect username or valid user e-mail
-#	email: the e-mail address which is going to be added or
-#		it is going to be in quarantine
-sub putUserEmailOnValidationStatus($$;$) {
-	my $self = shift;
-	
-	my($username,$email,$userDN) = @_;
-	
-	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
-
-	# First, get the entry
-	my($success,$payload) = $self->getJSONUser($username,$userDN);
-	if($success) {
-		my $jsonUser = $payload;
-		
-		# First, find the registered e-mail 
-		my $p_registeredEmails = $jsonUser->{'registeredEmails'};
-		my $foundRegEmail = undef;
-		foreach my $regEmail (@{$p_registeredEmails}) {
-			if($email eq $regEmail->{'email'}) {
-				$foundRegEmail = $regEmail;
-				last;
-			}
-		}
-		# If it is not found, we assume it is a new one!
-		my $reftime = time();
-		my $now_epoch = _epoch_ISO8601_RFC3339($reftime);
-		# One week's grace
-		my $grace_epoch = _epoch_ISO8601_RFC3339($reftime+7*86400);
-		
-		if(defined($foundRegEmail)) {
-			$foundRegEmail->{'validQuarantineCheckUntil'} = $grace_epoch;
-		} elsif(Email::Valid->address($email)) {
-			$foundRegEmail = {
-				'email'	=> $email,
-				'registeredAt' => $now_epoch,
-				'lastValidatedAt' => $ZERO_EPOCH,
-				'validUntil' => $ZERO_EPOCH,
-				'validQuarantineCheckUntil' => $grace_epoch,
-				'status' => 'unckeched'
-			};
-		} else {
-			# The e-mail address was wrong
-			$foundRegEmail = undef;
-		}
-		
-		if(defined($foundRegEmail)) {
-			# Then, put e-mail address in quarantine
-			my $jUManagement = $jsonUser->{'management'};
-			my $p_validationTokens = $jUManagement->{'validationTokens'};
-			
-			my($seedUUID,$inputUUID,$expectedUUID) = GenerateUUIDTrio();
-			my $labelUUID = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
-			my $p_valToken = {
-				'ns'	=>	'email',
-				'id'	=>	$email,
-				'labelHash'	=>	$labelUUID,
-				'inputHash'	=>	$inputUUID,
-				'expectedHash'	=>	$expectedUUID,
-				'validUntil'	=>	$grace_epoch
-			};
-			
-			push(@{$p_validationTokens},$p_valToken);
-		
-			$payload = [$labelUUID,$seedUUID];
-		} else {
-			$success = undef;
-			$payload = [ $Email::Valid::Details ];
-		}
-	}
-	
-	if(wantarray) {
-		return ($success,$payload);
-	} else {
-		unless($success) {
-			foreach my $err (@{$payload}) {
-				Carp::carp($err);
-			}
-		}
-		
-		return $success;
-	} 
-}
+## Parameters:
+##	username: the RD-Connect username or valid user e-mail
+##	email: the e-mail address which is going to be added or
+##		it is going to be in quarantine
+#sub putUserEmailOnValidationStatus($$;$) {
+#	my $self = shift;
+#	
+#	my($username,$email,$userDN) = @_;
+#	
+#	$userDN = $self->{'userDN'}  unless(defined($userDN) && length($userDN)>0);
+#
+#	# First, get the entry
+#	my($success,$payload) = $self->getJSONUser($username,$userDN);
+#	if($success) {
+#		my $jsonUser = $payload;
+#		
+#		# First, find the registered e-mail 
+#		my $p_registeredEmails = $jsonUser->{'registeredEmails'};
+#		my $foundRegEmail = undef;
+#		foreach my $regEmail (@{$p_registeredEmails}) {
+#			if($email eq $regEmail->{'email'}) {
+#				$foundRegEmail = $regEmail;
+#				last;
+#			}
+#		}
+#		# If it is not found, we assume it is a new one!
+#		my $reftime = time();
+#		my $now_epoch = _epoch_ISO8601_RFC3339($reftime);
+#		# One week's grace
+#		my $grace_epoch = _epoch_ISO8601_RFC3339($reftime+7*86400);
+#		
+#		if(defined($foundRegEmail)) {
+#			$foundRegEmail->{'validQuarantineCheckUntil'} = $grace_epoch;
+#		} elsif(Email::Valid->address($email)) {
+#			$foundRegEmail = {
+#				'email'	=> $email,
+#				'registeredAt' => $now_epoch,
+#				'lastValidatedAt' => $ZERO_EPOCH,
+#				'validUntil' => $ZERO_EPOCH,
+#				'validQuarantineCheckUntil' => $grace_epoch,
+#				'status' => 'unckeched'
+#			};
+#		} else {
+#			# The e-mail address was wrong
+#			$foundRegEmail = undef;
+#		}
+#		
+#		if(defined($foundRegEmail)) {
+#			# Then, put e-mail address in quarantine
+#			my $jUManagement = $jsonUser->{'management'};
+#			my $p_validationTokens = $jUManagement->{'validationTokens'};
+#			
+#			my($seedUUID,$inputUUID,$expectedUUID) = GenerateUUIDTrio();
+#			my $labelUUID = UUID::Tiny::create_uuid(UUID::Tiny::UUID_V4);
+#			my $p_valToken = {
+#				'ns'	=>	'email',
+#				'id'	=>	$email,
+#				'labelHash'	=>	$labelUUID,
+#				'inputHash'	=>	$inputUUID,
+#				'expectedHash'	=>	$expectedUUID,
+#				'validUntil'	=>	$grace_epoch
+#			};
+#			
+#			push(@{$p_validationTokens},$p_valToken);
+#		
+#			$payload = [$labelUUID,$seedUUID];
+#		} else {
+#			$success = undef;
+#			$payload = [ $Email::Valid::Details ];
+#		}
+#	}
+#	
+#	if(wantarray) {
+#		return ($success,$payload);
+#	} else {
+#		unless($success) {
+#			foreach my $err (@{$payload}) {
+#				Carp::carp($err);
+#			}
+#		}
+#		
+#		return $success;
+#	} 
+#}
 
 my @LDAP_GENERIC_OU_DEFAULT_ATTRIBUTES = (
 	'objectClass'	=>	 ['extensibleObject','organizationalUnit'],
@@ -6057,6 +6151,8 @@ sub createRequest($\[@%]$$$;$$) {
 	my $dn = join(',','cn='.Net::LDAP::Util::escape_filter_value($requestId),$self->getRequestsDN());
 	$entry->dn($dn);
 	my $jh = getJHandler();
+	#use Data::Dumper;
+	#print STDERR Dumper($requestPayload),"\n";
 	$entry->add(
 		'cn'	=>	$requestId,
 		REQUEST_PAYLOAD_ATTRIBUTE()	=>	$jh->encode($requestPayload),

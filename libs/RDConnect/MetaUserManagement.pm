@@ -221,7 +221,8 @@ sub createUser(\[%@];$) {
 		
 		if($success) {
 			my $user = $p_users->[0];
-			my $username = $payload->[0]{'username'};
+			my $createdJsonUser = $payload->[0];
+			my $username = $createdJsonUser->{'username'};
 			unless($NOEMAIL) {
 				my $unique = time;
 				
@@ -240,14 +241,18 @@ sub createUser(\[%@];$) {
 				my $mail1 = $self->getMailManagementInstance($mailTemplate,\%keyval1,\@attachmentFiles);
 				$mail1->setSubject($mailTemplateTitle);
 				
-				my $fullname = $payload->[0]{'cn'};
-				my $email = $payload->[0]{'email'}[0];
+				my $fullname = $createdJsonUser->{'cn'};
+				my $email = $createdJsonUser->{'email'}[0];
 				my $to = Email::Address->new($fullname => $email);
 				
 				$keyval1{'username'} = $username;
 				$keyval1{'fullname'} = $fullname;
 				eval {
 					my($requestLink,$desistLink,$expiration) = $self->createGDPRValidationRequest($username);
+					if(blessed($requestLink)) {
+						print
+					}
+					
 					$keyval1{'gdprlink'} = $requestLink;
 					$keyval1{'expirationlink'} = $expiration;
 					
@@ -255,6 +260,9 @@ sub createUser(\[%@];$) {
 					
 					# Sending the password reset request
 					$self->createPasswordResetRequest($username);
+					
+					# And the e-mail validation requests
+					$self->sendCheckEMailRequests($createdJsonUser);
 				};
 				
 				if($@) {
@@ -296,7 +304,7 @@ sub resetUserPassword($$) {
 		return $userPassword  if(blessed($userPassword));
 	}
 	
-	my($passMailTemplate,$passMailTemplateTitle,@passAttachmentFiles) = $tMgmt->fetchEmailTemplate(RDConnect::TemplateManagement::ResettedPasswordDomain());
+	my($passMailTemplate,$passMailTemplateTitle,@passAttachmentFiles) = $tMgmt->fetchEmailTemplate(ResettedPasswordDomain());
 	
 	return $passMailTemplate  if(blessed($passMailTemplate));
 	
@@ -318,6 +326,8 @@ sub resetUserPassword($$) {
 		
 		my %keyval2 = ( 'passresetlink' => $passresetlink, 'unique' => $unique );
 
+		# Sending a reminder about e-mail addresses
+		$self->sendUsernameEMailRequests($userId);
 		
 		# Sending a reminder about GDPR acceptance
 		unless($uMgmt->didUserAcceptGDPR($user)) {
@@ -347,6 +357,79 @@ sub resetUserPassword($$) {
 	return $retval;
 }
 
+sub sendCheckEMailRequests(\%) {
+	my $self = shift;
+
+	my($storedJsonUser) = @_;
+	
+	# Now, let's check whether there are e-mail addresses to be revalidated
+	if(exists($storedJsonUser->{'registeredEmails'}) && ref($storedJsonUser->{'registeredEmails'}) eq 'ARRAY') {
+		my $curr_epoch = RDConnect::UserManagement::_epoch_ISO8601_RFC3339(time());
+		# The username could have changed
+		my $theUsername = $storedJsonUser->{'username'};
+		
+		my $wasModified = undef;
+		foreach my $eEntry (@{$storedJsonUser->{'registeredEmails'}}) {
+			# Has the e-mail to be (re-)checked?
+			if($eEntry->{'status'} eq 'unchecked' || ($eEntry->{'status'} eq 'checked' && $eEntry->{'validUntil'} lt $curr_epoch)) {
+				$wasModified = 1;
+				$self->createConfirmEMailRequest($theUsername,$eEntry->{'email'});
+			}
+		}
+		
+		# As the user entry could have been changed, re-get it
+		if($wasModified) {
+			my $uMgmt = $self->getUserManagementInstance();
+			(undef,$storedJsonUser) = $uMgmt->getJSONUser($theUsername);
+		}
+	}
+	
+	return $storedJsonUser;
+}
+
+sub sendUsernameEMailRequests($) {
+	my $self = shift;
+
+	my($username) = @_;
+	
+	my $uMgmt = $self->getUserManagementInstance();
+	my($success,$jsonUser) = $uMgmt->getJSONUser($username);
+	if($success) {
+		# And check e-mail validity
+		return $self->sendCheckEMailRequests($jsonUser);
+	}
+	
+	return undef;
+}
+
+# This methods modifies an user, and it also creates e-mail validation whenever
+# it detects an e-mail has not been validated yet
+# Parameters:
+#	username: the username to receive the modifications
+#	p_jsonUser: The JSON user data representation, to be updated
+# It returns a tuple of (success,modified entry)
+sub modifyUser($\%) {
+	my $self = shift;
+	
+	my($username, $p_jsonUser) = @_;
+	
+	my $uMgmt = $self->getUserManagementInstance();
+	
+	my($success,$storedJsonUser) = $uMgmt->modifyJSONUser($username,$p_jsonUser);
+	
+	# Now, let's check whether there are e-mail addresses to be revalidated
+	if($success) {
+		$storedJsonUser = $self->sendCheckEMailRequests($storedJsonUser);
+	}
+	
+	return ($success,$storedJsonUser);
+}
+
+
+####################
+# Requests creation #
+######################
+
 # Request creation, with e-mail
 # Parameters:
 #	requestType: one of the accepted types
@@ -370,13 +453,19 @@ sub createMetaRequest($\[@%]$$$;$$) {
 	my $p_addresses = [];
 	my $username = undef;
 	my $fullname = undef;
-	if(defined($who)) {
-		my($success,$jsonUser) = $uMgmt->getJSONUser($who);
+	
+	my $targetWho = $who;
+	$targetWho = $targetId  if(!defined($targetWho) && $targetNS eq 'user');
+
+	unless(defined($targetWho)) {
+		# TODO: default addresses???
+	}
+
+	if(defined($targetWho)) {
+		my($success,$jsonUser) = $uMgmt->getJSONUser($targetWho);
 		$p_addresses = $tMgmt->getEmailAddressesFromJSONUser($jsonUser);
 		$username = $jsonUser->{'username'};
 		$fullname = $jsonUser->{'cn'};
-	} else {
-		# TODO: default addresses???
 	}
 	
 	# At least one e-mail is needed
@@ -408,8 +497,24 @@ sub createMetaRequest($\[@%]$$$;$$) {
 			
 			# Get the template to be used
 			my($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplateByRequestType($requestType);
-			
 			return $mailTemplate  if(blessed($mailTemplate));
+
+			# And the accessory ones to be injected, described in 'deps'
+			my $tStruct = $tMgmt->mailTemplateStructureByRequestType($requestType);
+			if(exists($tStruct->{'deps'})) {
+				while(my($tKey,$tDomainId) = each(%{$tStruct->{'deps'}})) {
+					# These values are already stored in the LDAP directory
+					# as templates (although they are not)
+					my($tValue,undef,@tAttachmentFiles) = $tMgmt->fetchEmailTemplate($tDomainId);
+					return $tValue  if(blessed($tValue));
+					
+					# Set the value
+					$keyval{$tKey} = ${$tValue->{'content'}};
+					# and add the associated attachments
+					push(@attachmentFiles,@tAttachmentFiles)  if(scalar(@tAttachmentFiles) > 0);
+				}
+			}
+			
 			
 			# Now, let's send all the e-mails
 			my $mail = $self->getMailManagementInstance($mailTemplate,\%keyval,\@attachmentFiles);
@@ -492,10 +597,15 @@ sub createGDPRValidationRequest($) {
 		my $encodedToken = undef;
 		($success,$encodedToken) = $uMgmt->generateGDPRHashFromUser($ldapUser);
 		if($success) {
+			# Fetching the current text of the GDPR body
+			my $tMgmt = $self->getTemplateManagementInstance();
+			my($GDPRtext) = $tMgmt->fetchEmailTemplate(RDConnect::RequestManagement::GDPRTextDomain());
+			return (undef,$GDPRtext)  if(blessed($GDPRtext));
 			# The public payload is prepared
 			my $publicPayload = {
 				'cn'	=>	$jsonUser->{'cn'},
 				'username'	=>	$jsonUser->{'username'},
+				'GDPRtext'	=>	${$GDPRtext->{'content'}},
 				'GDPRtoken'	=>	$encodedToken
 			};
 			
@@ -503,6 +613,50 @@ sub createGDPRValidationRequest($) {
 				RDConnect::RequestManagement::REQ_ACCEPT_GDPR(),
 				$publicPayload,
 				RDConnect::RequestManagement::DEFAULT__ACCEPT_GDPR_TIMEOUT(),
+				undef,
+				'user',
+				$jsonUser->{'username'},
+				$ldapUser->dn()
+			);
+		}
+	}
+	
+	return undef;
+}
+
+# Create an e-mail validation confirmation request:
+# Parameters:
+#	usernameOrEmail: a username or e-mail of a user who must accept GDPR
+#	emailToConfirm: The e-mail address to be confirmed
+#	quarantineDays: The grace period, in days, until the request is discarded
+# It returns the same as createMetaRequest on success, undef otherwise
+sub createConfirmEMailRequest($$;$) {
+	my $self = shift;
+	
+	my($usernameOrEmail,$emailToConfirm,$quarantineDays) = @_;
+	$quarantineDays = RDConnect::UserManagement::DEFAULT__QUARANTINE_DAYS_TIMEOUT()  unless(defined($quarantineDays));
+	my $quarantineSeconds = $quarantineDays * 86400;
+	
+	my $uMgmt = $self->getUserManagementInstance();
+	
+	# Does the user exist?
+	my($success,$jsonUser,$ldapUser) = $uMgmt->getJSONUser($usernameOrEmail);
+	
+	# As the user was found, let's create the request and send the e-mail
+	if($success) {
+		$success = $uMgmt->putUserEMailOnValidation($ldapUser,$jsonUser,$emailToConfirm,$quarantineDays);
+		if($success) {
+			# The public payload is prepared
+			my $publicPayload = {
+				'cn'	=>	$jsonUser->{'cn'},
+				'username'	=>	$jsonUser->{'username'},
+				'emailtoConfirm'	=>	$emailToConfirm,
+			};
+			
+			return $self->createMetaRequest(
+				RDConnect::RequestManagement::REQ_EMAIL_CONFIRM(),
+				$publicPayload,
+				$quarantineSeconds,
 				undef,
 				'user',
 				$jsonUser->{'username'},

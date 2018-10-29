@@ -14,6 +14,9 @@ use Config::IniFiles;
 
 use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
+use RDConnect::TemplateManagement;
+use RDConnect::RequestManagement;
+use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
 
@@ -26,6 +29,9 @@ if(scalar(@ARGV)==2) {
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my $rMgmt = RDConnect::RequestManagement->new($tMgmt);
+	my $mMgmt = RDConnect::MetaUserManagement->new($rMgmt);
 	
 	# Read the pairs
 	if(open(my $UP,'<:encoding(UTF-8)',$userPairsFile)) {
@@ -44,7 +50,7 @@ if(scalar(@ARGV)==2) {
 					print STDERR "ERROR: user $newUsername already exists\n";
 				} else {
 					$p_jsonUser->{'username'} = $newUsername;
-					my($uRenamed,$payload) = $uMgmt->modifyJSONUser($oldUsername,$p_jsonUser);
+					my($uRenamed,$payload) = $mMgmt->modifyUser($oldUsername,$p_jsonUser);
 					if($uRenamed) {
 						print "* User $oldUsername renamed to $newUsername\n";
 					} else {

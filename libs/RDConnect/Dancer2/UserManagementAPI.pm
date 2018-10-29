@@ -297,7 +297,7 @@ sub _get_mailDomain_internal {
 	my $apiKey = params->{'api_key'};
 	
 	my $tMgmt = RDConnect::Dancer2::Common::getTemplateManagementInstance();
-	my $mtStruct = $tMgmt->mailTemplateStructure($apiKey);
+	my $mtStruct = $tMgmt->mailTemplateStructureByApiKey($apiKey);
 	
 	unless(defined($mtStruct)) {
 		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => "Mail domain $apiKey not available"}),404);
@@ -615,11 +615,11 @@ sub create_user {
 }
 
 sub modify_user {
-	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
+	my $mMgmt = RDConnect::Dancer2::Common::getMetaUserManagementInstance();
 	
 	my $p_newUser = request->data;
 	
-	my($success,$payload) = $uMgmt->modifyJSONUser(params->{user_id},$p_newUser);
+	my($success,$payload) = $mMgmt->modifyUser(params->{user_id},$p_newUser);
 	
 	unless($success) {
 		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying user '.params->{user_id},'trace' => $payload}),500);
@@ -833,6 +833,7 @@ sub migrate_user {
 
 sub rename_user {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
+	my $mMgmt = RDConnect::Dancer2::Common::getMetaUserManagementInstance();
 	
 	my($success,$payload) = $uMgmt->getJSONUser(params->{'user_id'});
 	
@@ -849,7 +850,7 @@ sub rename_user {
 	}
 	
 	$p_jsonUser->{'username'} = $newUsername;
-	($success,$payload) = $uMgmt->modifyJSONUser(params->{'user_id'},$p_jsonUser);
+	($success,$payload) = $mMgmt->modifyUser(params->{'user_id'},$p_jsonUser);
 	unless($success) {
 		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Unable to rename user '.params->{'user_id'}.' to '.$newUsername,'trace' => $payload}),400);
 	}
