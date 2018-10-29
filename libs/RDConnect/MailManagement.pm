@@ -107,15 +107,19 @@ sub new($$\%;\@) {
 	my @attachments = ();
 	foreach my $attachmentFileComponent (@attachmentFiles) {
 		my $attachmentFile;
+		my $attachmentFilename;
 		my $mime;
 		if(ref($attachmentFileComponent) eq 'HASH') {
 			$attachmentFile = $attachmentFileComponent->{'content'};
+			$attachmentFilename = $attachmentFileComponent->{'cn'};
 			$mime = $attachmentFileComponent->{'mime'};
 		} else {
-			my $attachmentFile = (ref($attachmentFileComponent) eq 'SCALAR') ? IO::Scalar->new($attachmentFileComponent) : $attachmentFileComponent;
+			$attachmentFile = $attachmentFileComponent;
+			$attachmentFilename = $attachmentFileComponent;
+			my $attachmentDetFile = (ref($attachmentFile) eq 'SCALAR') ? IO::Scalar->new($attachmentFile) : $attachmentFile;
 			eval {
-				$mime = File::MimeInfo::Magic::mimetype($attachmentFile);
-				if($mime eq 'text/plain' && ref($attachmentFileComponent) eq 'SCALAR' && $$attachmentFileComponent =~ /<(p|div|br|span)>/) {
+				$mime = File::MimeInfo::Magic::mimetype($attachmentDetFile);
+				if($mime eq 'text/plain' && ref($attachmentFile) eq 'SCALAR' && $$attachmentFile =~ /<(p|div|br|span)>/) {
 					$mime = 'text/html';
 				}
 			};
@@ -123,20 +127,27 @@ sub new($$\%;\@) {
 		
 		Carp::croak("ERROR: Unable to pre-process attachment $attachmentFile")  if($@ || !defined($mime));
 		
-		if(open(my $AT,'<:raw',$attachmentFile)) {
+		my $attachmentContent = undef;
+		if(ref($attachmentFile) eq 'SCALAR') {
+			$attachmentContent = $$attachmentFile;
+		} elsif(open(my $AT,'<:raw',$attachmentFile)) {
 			local $/;
+			$attachmentContent = <$AT>;
+			
+			close($AT);
+		}
+		
+		if(defined($attachmentContent)) {
 			push(@attachments,Email::MIME->create(
 				attributes => {
-					filename => File::Basename::basename($attachmentFile),
+					filename => File::Basename::basename($attachmentFilename),
 					content_type => $mime,
 					disposition => "attachment",
 					encoding => "base64",
 					# name => ,
 				},
-				body => <$AT>
+				body => $attachmentContent
 			));
-			
-			close($AT);
 		} else {
 			Carp::croak("ERROR: Unable to read attachment $attachmentFile");
 		}
