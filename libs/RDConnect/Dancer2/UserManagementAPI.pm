@@ -514,10 +514,10 @@ sub get_users {
 sub get_user {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONUser(params->{user_id});
+	my($success,$payload) = $uMgmt->getJSONUser(params->{'user_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload is the user
@@ -528,12 +528,12 @@ sub get_user_photo {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
 	# We are getting the raw entry, as we don't want to encode / decode the entry, only the photo
-	my($success,$payload) = $uMgmt->getUser(params->{user_id});
+	my($success,$payload) = $uMgmt->getUser(params->{'user_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	} elsif(! $payload->exists('jpegPhoto')) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' does not have photo'}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' does not have photo'}),404);
 	}
 	
 	# Here the payload is the user
@@ -544,10 +544,10 @@ sub get_user_photo {
 sub get_user_groups {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONUserGroups(params->{user_id});
+	my($success,$payload) = $uMgmt->getJSONUserGroups(params->{'user_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload is the list of groups
@@ -561,10 +561,10 @@ sub get_user_group {
 sub list_user_documents {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->listJSONDocumentsFromUser(params->{user_id});
+	my($success,$payload) = $uMgmt->listJSONDocumentsFromUser(params->{'user_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Documents from user '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Documents from user '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload is the list of groups
@@ -574,12 +574,12 @@ sub list_user_documents {
 sub get_user_document {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getDocumentFromUser(params->{user_id},params->{document_name});
+	my($success,$payload) = $uMgmt->getDocumentFromUser(params->{'user_id'},params->{'document_name'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	} elsif(!defined($payload)) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' does not have document '.params->{document_name}}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' does not have document '.params->{'document_name'}}),404);
 	}
 	
 	# Here the payload is the document
@@ -590,12 +590,12 @@ sub get_user_document {
 sub get_user_document_metadata {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONDocumentMetadataFromUser(params->{user_id},params->{document_name});
+	my($success,$payload) = $uMgmt->getJSONDocumentMetadataFromUser(params->{'user_id'},params->{'document_name'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	} elsif(!defined($payload)) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' does not have document '.params->{document_name}}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' does not have document '.params->{'document_name'}}),404);
 	}
 	
 	return $payload;
@@ -619,10 +619,10 @@ sub modify_user {
 	
 	my $p_newUser = request->data;
 	
-	my($success,$payload) = $mMgmt->modifyUser(params->{user_id},$p_newUser);
+	my($success,$payload) = $mMgmt->modifyUser(params->{'user_id'},$p_newUser);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying user '.params->{user_id},'trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying user '.params->{'user_id'},'trace' => $payload}),500);
 	}
 	
 	return [];
@@ -637,7 +637,7 @@ sub put_user_photo {
 	my($success,$payload) = $uMgmt->setUserPhoto(params->{'user_id'},$data);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -646,10 +646,10 @@ sub put_user_photo {
 sub remove_user {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->removeUser(params->{user_id});
+	my($success,$payload) = $uMgmt->removeUser(params->{'user_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing user '.params->{user_id},'trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing user '.params->{'user_id'},'trace' => $payload}),500);
 	}
 	
 	return [];
@@ -659,10 +659,10 @@ sub set_user_enabled_state {
 	my $newState = shift;
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->enableUser(params->{user_id},$newState);
+	my($success,$payload) = $uMgmt->enableUser(params->{'user_id'},$newState);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -697,10 +697,10 @@ sub add_user_to_groups {
 	
 	my $p_newGroups = request->data;
 	
-	my($success,$payload) = $uMgmt->addMemberToGroup(params->{user_id},$p_newGroups);
+	my($success,$payload) = $uMgmt->addMemberToGroup(params->{'user_id'},$p_newGroups);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while adding user '.params->{user_id}.' to groups','trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while adding user '.params->{'user_id'}.' to groups','trace' => $payload}),500);
 	}
 	
 	return [];
@@ -715,10 +715,10 @@ sub remove_user_from_groups {
 	
 	my $p_groupsToRemove = request->data;
 	
-	my($success,$payload) = $uMgmt->removeMemberFromGroup(params->{user_id},$p_groupsToRemove);
+	my($success,$payload) = $uMgmt->removeMemberFromGroup(params->{'user_id'},$p_groupsToRemove);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing user '.params->{user_id}.' from groups','trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing user '.params->{'user_id'}.' from groups','trace' => $payload}),500);
 	}
 	
 	return [];
@@ -729,10 +729,10 @@ sub modify_user_document_metadata {
 	
 	my $p_newMetadata = request->data;
 	
-	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromUser(params->{user_id},params->{document_name},$p_newMetadata);
+	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromUser(params->{'user_id'},params->{'document_name'},$p_newMetadata);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from user '.params->{user_id},'trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying document '.params->{'document_name'}.' from user '.params->{'user_id'},'trace' => $payload}),500);
 	}
 	
 	return [];
@@ -759,7 +759,7 @@ sub modify_user_document {
 	}
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -777,7 +777,7 @@ sub attach_user_document {
 	my($success,$payload) = $uMgmt->attachDocumentForUser(params->{'user_id'},\%documentMetadata,upload('content')->content);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -789,7 +789,7 @@ sub remove_user_document {
 	my($success,$payload) = $uMgmt->removeDocumentFromUser(params->{'user_id'},params->{'document_name'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -806,10 +806,10 @@ sub mail_user {
 sub accept_gdpr_user {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getUser(params->{user_id});
+	my($success,$payload) = $uMgmt->getUser(params->{'user_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{user_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'User '.params->{'user_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	my $user = $payload;
@@ -942,10 +942,10 @@ sub get_OUs {
 sub get_OU {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONPeopleOU(params->{ou_id});
+	my($success,$payload) = $uMgmt->getJSONPeopleOU(params->{'ou_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{'ou_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload is the organizational unit
@@ -955,10 +955,10 @@ sub get_OU {
 sub get_OU_users {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->listJSONPeopleOUUsers(params->{ou_id});
+	my($success,$payload) = $uMgmt->listJSONPeopleOUUsers(params->{'ou_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{'ou_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload are the users
@@ -966,19 +966,19 @@ sub get_OU_users {
 }
 
 sub get_OU_user {
-	redirect request->path.'/../../../../users/'.params->{user_id}, 301;
+	redirect request->path.'/../../../../users/'.params->{'user_id'}, 301;
 }
 
 sub get_OU_photo {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
 	# We are getting the raw entry, as we don't want to encode / decode the entry, only the photo
-	my($success,$payload) = $uMgmt->getPeopleOU(params->{ou_id});
+	my($success,$payload) = $uMgmt->getPeopleOU(params->{'ou_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{'ou_id'}.' not found','trace' => $payload}),404);
 	} elsif(! $payload->exists('jpegPhoto')) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' does not have photo'}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{'ou_id'}.' does not have photo'}),404);
 	}
 	
 	# Here the payload is the user
@@ -1008,12 +1008,12 @@ sub modify_OU {
 	
 	my %newOU = params;
 	# We remove so we don't disturb with garbage
-	delete $newOU{ou_id};
+	delete $newOU{'ou_id'};
 	
-	my($success,$payload) = $uMgmt->modifyJSONPeopleOU(params->{ou_id},\%newOU);
+	my($success,$payload) = $uMgmt->modifyJSONPeopleOU(params->{'ou_id'},\%newOU);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying organizational unit '.params->{ou_id},'trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying organizational unit '.params->{'ou_id'},'trace' => $payload}),500);
 	}
 	
 	return [];
@@ -1025,10 +1025,10 @@ sub put_OU_photo {
 	# We are getting the raw entry, as we want just the photo
 	my $data = request->body;
 	
-	my($success,$payload) = $uMgmt->setPeopleOUPhoto(params->{ou_id},$data);
+	my($success,$payload) = $uMgmt->setPeopleOUPhoto(params->{'ou_id'},$data);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{ou_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Organizational unit '.params->{'ou_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -1137,10 +1137,10 @@ sub get_groups {
 sub get_group {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONGroup(params->{group_id});
+	my($success,$payload) = $uMgmt->getJSONGroup(params->{'group_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload is the group
@@ -1150,10 +1150,10 @@ sub get_group {
 sub get_group_members {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONGroupMembers(params->{group_id});
+	my($success,$payload) = $uMgmt->getJSONGroupMembers(params->{'group_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload are the users
@@ -1163,10 +1163,10 @@ sub get_group_members {
 sub get_group_owners {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getJSONGroupOwners(params->{group_id});
+	my($success,$payload) = $uMgmt->getJSONGroupOwners(params->{'group_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	# Here the payload are the users
@@ -1176,12 +1176,12 @@ sub get_group_owners {
 sub list_group_documents {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->listJSONDocumentsFromGroup(params->{group_id});
+	my($success,$payload) = $uMgmt->listJSONDocumentsFromGroup(params->{'group_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	} elsif(!defined($payload)) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' does not have document '.params->{document_name}}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' does not have document '.params->{'document_name'}}),404);
 	}
 	
 	# Here the payload is the list of groups
@@ -1191,12 +1191,12 @@ sub list_group_documents {
 sub get_group_document {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->getDocumentFromUser(params->{user_id},params->{document_name});
+	my($success,$payload) = $uMgmt->getDocumentFromUser(params->{'user_id'},params->{'document_name'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	} elsif(!defined($payload)) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' does not have document '.params->{document_name}}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' does not have document '.params->{'document_name'}}),404);
 	}
 	
 	# Here the payload is the document
@@ -1225,10 +1225,10 @@ sub modify_group {
 	
 	my $p_newGroup = request->data;
 	
-	my($success,$payload) = $uMgmt->modifyJSONGroup(params->{group_id},$p_newGroup);
+	my($success,$payload) = $uMgmt->modifyJSONGroup(params->{'group_id'},$p_newGroup);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying group '.params->{group_id},'trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying group '.params->{'group_id'},'trace' => $payload}),500);
 	}
 	
 	return [];
@@ -1237,10 +1237,10 @@ sub modify_group {
 sub remove_group {
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my($success,$payload) = $uMgmt->removeGroup(params->{group_id});
+	my($success,$payload) = $uMgmt->removeGroup(params->{'group_id'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing group '.params->{group_id},'trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing group '.params->{'group_id'},'trace' => $payload}),500);
 	}
 	
 	return [];
@@ -1255,7 +1255,7 @@ sub add_group_users {
 	
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my $p_newGroups = [ params->{group_id} ];
+	my $p_newGroups = [ params->{'group_id'} ];
 	
 	foreach my $user_id (@{$p_newUsers}) {
 		next  unless(defined($user_id));
@@ -1263,7 +1263,7 @@ sub add_group_users {
 		my($success,$payload) = $uMgmt->addUserToGroup($user_id,$isOwner,$p_newGroups);
 		
 		unless($success) {
-			send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while adding user '.$user_id.' to group '.params->{group_id},'trace' => $payload}),500);
+			send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while adding user '.$user_id.' to group '.params->{'group_id'},'trace' => $payload}),500);
 		}
 	}
 	
@@ -1288,7 +1288,7 @@ sub remove_users_from_group {
 	
 	my $uMgmt = RDConnect::Dancer2::Common::getUserManagementInstance();
 	
-	my $p_newGroups = [ params->{group_id} ];
+	my $p_newGroups = [ params->{'group_id'} ];
 	
 	foreach my $user_id (@{$p_newUsers}) {
 		next  unless(defined($user_id));
@@ -1296,7 +1296,7 @@ sub remove_users_from_group {
 		my($success,$payload) = $uMgmt->removeUserFromGroup($user_id,$isOwner,$p_newGroups);
 		
 		unless($success) {
-			send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing user '.$user_id.' from group '.params->{group_id},'trace' => $payload}),500);
+			send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while removing user '.$user_id.' from group '.params->{'group_id'},'trace' => $payload}),500);
 		}
 	}
 	
@@ -1316,10 +1316,10 @@ sub modify_group_document_metadata {
 	
 	my $p_newMetadata = request->data;
 	
-	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromGroup(params->{group_id},params->{document_name},$p_newMetadata);
+	my($success,$payload) = $uMgmt->modifyJSONDocumentMetadataFromGroup(params->{'group_id'},params->{'document_name'},$p_newMetadata);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying document '.params->{document_name}.' from group '.params->{group_id},'trace' => $payload}),500);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Error while modifying document '.params->{'document_name'}.' from group '.params->{'group_id'},'trace' => $payload}),500);
 	}
 	
 	return [];
@@ -1346,7 +1346,7 @@ sub modify_group_document {
 	}
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -1364,7 +1364,7 @@ sub attach_group_document {
 	my($success,$payload) = $uMgmt->attachDocumentForGroup(params->{'group_id'},\%documentMetadata,upload('content')->content);
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
@@ -1376,7 +1376,7 @@ sub remove_group_document {
 	my($success,$payload) = $uMgmt->removeDocumentFromGroup(params->{'group_id'},params->{'document_name'});
 	
 	unless($success) {
-		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{group_id}.' not found','trace' => $payload}),404);
+		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => 'Group '.params->{'group_id'}.' not found','trace' => $payload}),404);
 	}
 	
 	return [];
