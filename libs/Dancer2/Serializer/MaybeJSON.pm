@@ -22,8 +22,9 @@ sub decode_json {
 
     	# This is needed due a Perl bug related to return inside a eval block
 	my $retval;
+	my $jh = JSON::MaybeXS->new({'utf8'=>1});
 	eval {
-	    $retval = JSON::MaybeXS::decode_json($entity);
+	    $retval = $jh->decode($entity);
 	};
 
 	if($@) {
@@ -64,7 +65,8 @@ sub deserialize {
         $options->{$_} = $config->{$_} unless exists $options->{$_};
     }
 
-    $options->{utf8} = 1 if !defined $options->{utf8};
+    $options->{utf8} = 0 if !defined $options->{utf8};
+    $options->{utf8} = 1;
     	# This is needed due a Perl bug related to return inside a eval block
     	my $retval;
 	eval {
