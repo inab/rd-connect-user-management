@@ -197,13 +197,17 @@ get '/:requestId/desist/:desistCode/details' => sub {
 	
 	my($found,$payload) = $rMgmt->getRequestPayload($requestId);
 	
+	my $publicPayload = {};
+	
 	# Give no clue about how it worked
-	# Only return and set up the CSRF header when the request is found
+	# Only set up return and the CSRF header when the request is found
 	if($found && $payload->{'desistCode'} eq $desistCode) {
+		$publicPayload = $payload->{'publicPayload'};
+		$publicPayload->{'desistCode'} = $payload->{'desistCode'};
 		header(CSRF_HEADER() => get_csrf_token());
 	}
 	
-	return [];
+	return $publicPayload;
 };
 
 # This method dismisses the request
