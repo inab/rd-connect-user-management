@@ -495,6 +495,10 @@ sub createMetaRequest($\[@%]$$$;$$) {
 				'unique'	=>	$unique,
 			);
 			
+			# Add the publicPayload keys and values
+			# so it is extensible
+			@keyval{keys(%{$publicPayload})} = values(%{$publicPayload});
+			
 			# Get the template to be used
 			my($mailTemplate,$mailTemplateTitle,@attachmentFiles) = $tMgmt->fetchEmailTemplateByRequestType($requestType);
 			return $mailTemplate  if(blessed($mailTemplate));
@@ -650,7 +654,7 @@ sub createConfirmEMailRequest($$;$) {
 			my $publicPayload = {
 				'cn'	=>	$jsonUser->{'cn'},
 				'username'	=>	$jsonUser->{'username'},
-				'emailtoConfirm'	=>	$emailToConfirm,
+				'emailToConfirm'	=>	$emailToConfirm,
 			};
 			
 			return $self->createMetaRequest(

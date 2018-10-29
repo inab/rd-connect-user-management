@@ -80,7 +80,7 @@ EOF
 	use constant ValidateEmailDomain	=>	'ValidateEmailTemplates';
 	my $DEFAULT_VALIDATE_EMAIL_TEMPLATE = <<'EOF' ;
 Dear RD-Connect user [% username %],
-	this e-mail is used to confirm your e-mail address [% email %] is working
+	this e-mail is used to confirm your e-mail address [% emailtoConfirm %] is working
 and you can read messages from it. You should click on next link:
 
 [% requestlink %]
@@ -113,7 +113,7 @@ EOF
 		{
 			'apiKey' => 'validEmailTemplate',
 			'desc' => 'E-mail validating templates',
-			'tokens' => [ 'username', 'fullname', 'requestlink', 'desistlink', 'expiration', 'unique' ],
+			'tokens' => [ 'username', 'fullname', 'emailToConfirm', 'requestlink', 'desistlink', 'expiration', 'unique' ],
 			'ldapDomain' => ValidateEmailDomain(),
 			'requestType' => REQ_EMAIL_CONFIRM(),
 			'cn' =>	'ValidateMailTemplate.html',
@@ -295,7 +295,7 @@ sub doConfirmEMail(\%\%) {
 	my($requestPayload,$answerPayload) = @_;
 	
 	my $success = $answerPayload->{'confirmEmail'};
-	if($success) {
+	if(defined($success) && $answerPayload->{'confirmEmail'} eq $requestPayload->{'publicPayload'}{'emailToConfirm'}) {
 		my $uMgmt = $self->getUserManagementInstance();
 		
 		$uMgmt->confirmUserEMail($requestPayload->{'target'}{'id'},$requestPayload->{'publicPayload'}{'emailToConfirm'});
