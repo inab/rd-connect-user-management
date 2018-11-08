@@ -50,9 +50,21 @@ sub new($$\%;\@) {
 	
 	# Mail configuration parameters
 	my @mailParams = ();
-	foreach my $mailParam ('host','port','ssl','ssl_options','helo','sasl_username','sasl_password','debug') {
+	foreach my $mailParam ('host','port','ssl','helo','sasl_username','sasl_password','debug') {
 		push(@mailParams,$mailParam,$cfg->val(MAILSECTION,$mailParam))  if($cfg->exists(MAILSECTION,$mailParam));
 	}
+	
+	if($cfg->exists(MAILSECTION,'ssl_options')) {
+		my $keyvalstr = $cfg->val(MAILSECTION,'ssl_options');
+		my @keyval = split(/;/,$keyvalstr);
+		my %keydata = ();
+		foreach my $keyv (@keyval) {
+			my($key,$val) = split(/=/,$keyv);
+			$keydata{$key} = $val;
+		}
+		push(@mailParams,'ssl_options',\%keydata);
+	}
+	
 	my $transport = Email::Sender::Transport::SMTP->new(@mailParams);
 	
 	my($from) = Email::Address->parse($cfg->val(MAILSECTION,'from'));
