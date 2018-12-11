@@ -1,0 +1,17 @@
+{
+    "organizationalUnit": "default",
+    "cn": "Perico Palotes",
+    "surname": [
+        "Palotes",
+        "Grandes"
+    ],
+    "username": "p.palotes",
+    "email": [
+        "pericopalotes23@nowhere.org"
+    ],
+    "userPassword": "mi.casa",
+    "givenName": [
+        "Perico"
+    ],
+    "enabled": true
+}

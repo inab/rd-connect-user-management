@@ -1,0 +1,54 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/Mail",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect user management mail messages",
+	"type": "object",
+	"properties": {
+		"subject": {
+			"title": "The mail subject",
+			"type": "string",
+			"minLength": 1
+		},
+		"mailTemplate": {
+			"title": "The mail body template to be sent",
+			"type": "string",
+			"format": "data-url"
+		},
+		"attachments": {
+			"title": "The mail attachments",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"format": "data-url"
+			}
+		},
+		"users": {
+			"title": "A list of usernames to send this e-mail",
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		},
+		"groups": {
+			"title": "A list of groups to send this e-mail",
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		},
+		"organizationalUnits": {
+			"title": "A list of organizational units to send this e-mail",
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"title",
+		"mailTemplate"
+	],
+	"dependencies": {
+	}
+}

@@ -1,13 +1,18 @@
 #!/usr/bin/perl
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use warnings "all";
 use strict;
 
+use FindBin;
+use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
+
 use Carp;
 use Config::IniFiles;
 
-use FindBin;
-use lib $FindBin::Bin . '/libs';
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
 
 use constant SECTION	=>	'main';

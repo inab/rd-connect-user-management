@@ -1,0 +1,9 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect CAS LDAP user list",
+	"type": "array",
+	"items": {
+		"$ref": "#CASuser"
+	}
+}

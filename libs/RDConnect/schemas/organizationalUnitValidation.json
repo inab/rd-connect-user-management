@@ -1,0 +1,58 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/CASOrganizationalUnit",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect CAS organizational unit",
+	"type": "object",
+	"properties": {
+		"organizationalUnit": {
+			"title": "Organizational Unit (acronym)",
+			"type": "string",
+			"minLength": 1
+		},
+		"description": {
+			"title": "Organizational Unit (long name)",
+			"type": "string",
+			"minLength": 1
+		},
+		"picture": {
+			"title": "A picture with the organizational unit logotype, or a group snapshot",
+			"type": "string",
+			"format": "data-url",
+			"media": {
+				"type": "image/jpeg",
+				"binaryEncoding": "base64"
+			}
+		},
+		"links": {
+			"title": "Optional links related to the Organizational Unit",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"uri": {
+						"title": "The URI of the link related to the organizational UNIT",
+						"type": "string",
+						"format": "uri"
+					},
+					"label": {
+						"title": "The type of URI",
+						"type": "string",
+						"enum": ["Publication","LinkedIn","OrganizationalUnitProfile"]
+					}
+				},
+				"additionalProperties": false,
+				"required": [
+					"uri",
+					"label"
+				]
+			}
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"organizationalUnit",
+		"description"
+	],
+	"dependencies": {
+	}
+}

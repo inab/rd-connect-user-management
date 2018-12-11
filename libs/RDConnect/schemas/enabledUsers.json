@@ -1,0 +1,70 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/enabledUsers",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect CAS enabled users",
+	"type": "object",
+	"properties": {
+		"results": {
+			"title": "The array of enabled users, as Scala seems to have problems dealing with a root JSON array",
+			"type": "array",
+			"items": {
+				"title": "An enabled RD-Connect CAS user",
+				"type": "object",
+				"properties": {
+					"title": {
+						"title": "Preferred way to address the user: Mr., Ms., Miss, Dr., MD., Dame, Lord, etc...",
+						"type": "string"
+					},
+					"fullname": {
+						"title": "Common name (usually givenName + surname)",
+						"type": "string",
+						"minLength": 1
+					},
+					"username": {
+						"title": "The username",
+						"type": "string",
+						"minLength": 1
+					},
+					"organizationalUnit": {
+						"title": "The organizational unit where this user entry is living",
+						"type": "string",
+						"minLength": 1
+					},
+					"acceptedGDPR": {
+						"title": "The date of GDPR acceptance",
+						"type": "string",
+						"format": "date-time"
+					},
+					"userCategory": {
+						"title": "User category",
+						"type": "string",
+						"enum": [ "PI", "Researcher", "PhD", "Student", "Technician", "Collaborator", "External"]
+					},
+					"creationTimestamp": {
+						"title": "Creation timestamp",
+						"type": "string",
+						"format": "date-time"
+					},
+					"modificationTimestamp": {
+						"title": "Last modification timestamp",
+						"type": "string",
+						"format": "date-time"
+					},
+					"email": {
+						"title": "The validated e-mail address(es) of the user",
+						"type": "array",
+						"format": "email",
+						"minItems": 1,
+						"uniqueItems": true,
+						"items": {
+							"type": "string",
+							"minLength": 1,
+							"format": "email"
+						}
+					}
+				}
+			}
+		}
+	},
+	"additionalProperties": false
+}

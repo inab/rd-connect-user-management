@@ -1,13 +1,18 @@
 #!/usr/bin/perl
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use warnings "all";
 use strict;
 
+use FindBin;
+use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
+
 use Carp;
 use Config::IniFiles;
 
-use FindBin;
-use lib $FindBin::Bin . '/libs';
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
 
 
@@ -20,13 +25,19 @@ if(scalar(@ARGV)==1) {
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
-	my @peopleOUs = $uMgmt->listPeopleOU();
+	my($success,$payload) = $uMgmt->listPeopleOU();
 	
-	if(scalar(@peopleOUs)>0) {
+	if($success) {
 		print "# Available people OUs\n";
-		foreach my $entry (@peopleOUs) {
+		print "# ",join("\t",'Organizational Unit','dn','description'),"\n";
+		foreach my $entry (@{$payload}) {
 			print join("\t",$entry->get_value('ou'),$entry->dn(),$entry->get_value('description')),"\n";
 		}
+	} else {
+		foreach my $err (@{$payload}) {
+			Carp::carp($err);
+		}
+		exit 1;
 	}
 } else {
 	die "Usage: $0 {IniFile}";

@@ -1,0 +1,264 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/CASUser",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect CAS user",
+	"type": "object",
+	"properties": {
+		"givenName": {
+			"title": "First / given name",
+			"type": "array",
+			"minItems": 1,
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"surname": {
+			"title": "Surname(s)",
+			"type": "array",
+			"minItems": 1,
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"userPassword": {
+			"title": "Password",
+			"type": "string",
+			"minLength": 1
+		},
+		"username": {
+			"title": "The username",
+			"type": "string",
+			"minLength": 1
+		},
+		"organizationalUnit": {
+			"title": "The organizational unit where this user entry is living",
+			"type": "string",
+			"minLength": 1
+		},
+		"enabled": {
+			"title": "User enabled",
+			"type": "boolean"
+		},
+		"acceptedGDPR": {
+			"title": "The date of GDPR acceptance",
+			"type": "string",
+			"format": "date-time"
+		},
+		"cn": {
+			"title": "Common name (usually givenName + surname)",
+			"type": "string",
+			"minLength": 1
+		},
+		"email": {
+			"title": "The validated e-mail address(es) of the user",
+			"type": "array",
+			"uniqueItems": true,
+			"items": {
+				"type": "string",
+				"minLength": 1,
+				"format": "email"
+			}
+		},
+		"userCategory": {
+			"title": "User category",
+			"type": "string",
+			"enum": [ "PI", "Researcher", "PhD", "Student", "Technician", "Collaborator", "External"]
+		},
+		"title": {
+			"title": "Preferred way to address the user: Mr., Ms., Miss, Dr., MD., Dame, Lord, etc...",
+			"type": "string"
+		},
+		"picture": {
+			"title": "A JPEG picture of the user",
+			"type": "string",
+			"format": "data-url",
+			"media": {
+				"type": "image/jpeg",
+				"binaryEncoding": "base64"
+			}
+		},
+		"telephoneNumber": {
+			"title": "A contact phone number, including the international prefix",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"facsimileTelephoneNumber": {
+			"title": "A fax number, including the international prefix",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"registeredAddress": {
+			"title": "The address to physically reach the user",
+			"type": "string"
+		},
+		"postalAddress": {
+			"title": "The address to send traditional mail to the user, when it is different from the physical address of the user",
+			"type": "string"
+		},
+		"links": {
+			"title": "Optional links related to the user",
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"uri": {
+						"title": "The URI of the link related to the user",
+						"type": "string",
+						"minLength": 1,
+						"format": "uri"
+					},
+					"label": {
+						"title": "The type of URI",
+						"type": "string",
+						"enum": ["ORCID","Publication","LinkedIn","ResearchGate","DepartmentProfile"]
+					}
+				},
+				"additionalProperties": false,
+				"required": [
+					"uri",
+					"label"
+				]
+			}
+		},
+		"groups": {
+			"title": "The list of groups where this user is registered in",
+			"type": "array",
+			"uniqueItems": true,
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"creationTimestamp": {
+			"title": "Creation timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
+		"modificationTimestamp": {
+			"title": "Last modification timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
+		"registeredEmails": {
+			"title": "The registered e-mail address(es) for the user, either validated or not",
+			"type": "array",
+			"uniqueItems": true,
+			"readOnly": true,
+			"minItems": 1,
+			"items": {
+				"type": "object",
+				"properties": {
+					"email": {
+						"type": "string",
+						"minLength": 1,
+						"format": "email"
+					},
+					"registeredAt": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"lastValidatedAt": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"validUntil": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"validQuarantineCheckUntil": {
+						"type" : "string",
+						"format": "date-time"
+					},
+					"status": {
+						"title": "e-mail address enabled",
+						"type": "string",
+						"enum": [ "disabled", "unchecked", "checked", "frozen" ]
+					}
+				},
+				"additionalProperties": false,
+				"required": [
+					"email",
+					"registeredAt",
+					"lastValidatedAt",
+					"validUntil",
+					"validQuarantineCheckUntil",
+					"status"
+				]
+			}
+		},
+		"management": {
+			"title": "The structures used for user features management",
+			"type": "object",
+			"properties": {
+				"validationTokens": {
+					"title": "Validation tokens for several purposes: user creation, e-mail address(es) in quarantine (i.e. in validation process), etc...",
+					"type": "array",
+					"uniqueItems": true,
+					"items": {
+						"type": "object",
+						"properties": {
+							"ns": {
+								"title": "Type of validation token",
+								"type": "string",
+								"enum": [ "email" ]
+							},
+							"id": {
+								"type": "string",
+								"minLength": 1
+							},
+							"labelHash": {
+								"type": "string",
+								"format": "uuid"
+							},
+							"inputHash": {
+								"type": "string",
+								"format": "uuid"
+							},
+							"expectedHash": {
+								"type": "string",
+								"format": "uuid"
+							},
+							"validUntil": {
+								"type" : "string",
+								"format": "date-time"
+							},
+							"payload": {
+								"title": "The optional payload associated to this validation token",
+								"type": "object",
+								"additionalProperties": true
+							}
+						},
+						"additionalProperties": false,
+						"required": [
+							"namespace",
+							"id",
+							"labelHash",
+							"inputHash",
+							"expectedHash",
+							"validUntil"
+						]
+					}
+				}
+			}
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"givenName",
+		"surname",
+		"username",
+		"email",
+		"registeredEmails"
+	],
+	"dependencies": {
+		"postalAddress": ["registeredAddress"]
+	}
+}

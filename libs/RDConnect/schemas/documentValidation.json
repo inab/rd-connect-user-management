@@ -1,0 +1,51 @@
+{
+	"id": "http://rd-connect.eu/cas/json-schemas/userValidation/CASDocument",
+	"$schema": "http://json-schema.org/draft-04/hyper-schema#",
+	"title": "RD-Connect document (agreements et al)",
+	"type": "object",
+	"properties": {
+		"cn": {
+			"title": "Document name (something short and meaningful)",
+			"type": "string",
+			"minLength": 1
+		},
+		"description": {
+			"title": "Optional document description",
+			"type": "string"
+		},
+		"documentClass": {
+			"title": "Document category",
+			"type": "string",
+			"enum": ["userAgreement","genericAgreement","otherAgreement","miscelaneous","mailTemplate","mailTemplateTitle","mailAttachment"]
+		},
+		"creationTimestamp": {
+			"title": "Creation timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
+		"modificationTimestamp": {
+			"title": "Last modification timestamp",
+			"type": "string",
+			"format": "date-time"
+		},
+		"owner": {
+			"title": "Owner's username",
+			"type": "string"
+		},
+		"creator": {
+			"title": "Creator's username",
+			"type": "string"
+		},
+		"modifier": {
+			"title": "Last modification's username",
+			"type": "string"
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"cn",
+		"documentClass"
+	],
+	"dependencies": {
+	}
+}

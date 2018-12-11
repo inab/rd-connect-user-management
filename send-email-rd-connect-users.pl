@@ -1,7 +1,13 @@
 #!/usr/bin/perl
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use warnings "all";
 use strict;
+
+use FindBin;
+use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
 
 use Carp;
 use Config::IniFiles;
@@ -10,16 +16,16 @@ use MIME::Base64;
 use Email::Address;
 use Text::Unidecode qw();
 
-use FindBin;
-use lib $FindBin::Bin . '/libs';
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
 use RDConnect::MailManagement;
 
 use constant SECTION	=>	'main';
 
-if(scalar(@ARGV)>=3) {
+if(scalar(@ARGV)>=4) {
 	my $configFile = shift(@ARGV);
 	my $usersFile = shift(@ARGV);
+	my $templateSubject = shift(@ARGV);
 	my $mailTemplate = shift(@ARGV);
 	my @attachmentFiles = @ARGV;
 	
@@ -33,7 +39,7 @@ if(scalar(@ARGV)>=3) {
 	my $mail1;
 	# Mail configuration parameters
 	$mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
-	$mail1->setSubject($mail1->getSubject().' (I)');
+	$mail1->setSubject($templateSubject);
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
@@ -41,7 +47,16 @@ if(scalar(@ARGV)>=3) {
 	# Read the users
 	my @users = ();
 	if($usersFile eq '-') {
-		@users = $uMgmt->listUsers();
+		my($success,$payload) = $uMgmt->listUsers();
+		if($success) {
+			@users = @{$payload};
+		} else {
+			foreach my $err (@{$payload}) {
+				Carp::carp($err);
+			}
+			
+			exit 1;
+		}
 	} elsif(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
 		while(my $username=<$U>) {
 			# Skipping comments
@@ -50,19 +65,25 @@ if(scalar(@ARGV)>=3) {
 			chomp($username);
 			
 			if(substr($username,0,1) eq '@') {
-				my $p_members = $uMgmt->getGroupMembers(substr($username,1));
-				if(defined($p_members)) {
-					push(@users,@{$p_members});
+				my($success,$payload) = $uMgmt->getGroupMembers(substr($username,1));
+				if($success) {
+					push(@users,@{$payload});
 				} else {
 					# Reverting state
+					foreach my $err (@{$payload}) {
+						Carp::carp($err);
+					}
 					Carp::carp("Unable to find group / role $username. Does it exist?");
 				}
 			} else {
-				my $user = $uMgmt->getUser($username);
-				if(defined($user)) {
-					push(@users,$user);
+				my($success,$payload) = $uMgmt->getUser($username);
+				if($success) {
+					push(@users,$payload);
 				} else {
 					# Reverting state
+					foreach my $err (@{$payload}) {
+						Carp::carp($err);
+					}
 					Carp::carp("Unable to find user $username. Does it exist?");
 				}
 			}
@@ -94,6 +115,6 @@ if(scalar(@ARGV)>=3) {
 	}
 } else {
 	die <<EOF ;
-Usage:	$0 [-r] {IniFile} {File with usernames (in UTF-8, one per line)} {Message Template} {Attachments}*
+Usage:	$0 [-r] {IniFile} {File with usernames/groups (in UTF-8, one per line)} {Title Template} {Message Template} {Attachments}*
 EOF
 }

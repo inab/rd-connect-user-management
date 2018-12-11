@@ -1,22 +1,26 @@
 #!/usr/bin/perl
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use warnings "all";
 use strict;
 
+use FindBin;
+use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
+
+use boolean qw();
 use Carp;
 use Config::IniFiles;
-use Digest;
-use MIME::Base64;
 use Email::Address;
 use Text::Unidecode qw();
 
-use FindBin;
-use lib $FindBin::Bin . '/libs';
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
-use RDConnect::MailManagement;
+use RDConnect::TemplateManagement;
+use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
-use constant APGSECTION	=>	'apg';
 
 my $doReplace;
 if(scalar(@ARGV)>0 && $ARGV[0] eq '-r') {
@@ -38,67 +42,45 @@ if(scalar(@ARGV)>=3) {
 	
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
+	# LDAP configuration
+	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my $mMgmt = RDConnect::MetaUserManagement->new($tMgmt);
+	
 	# Now, let's read all the parameters
-	
-	# The digest algorithm
-	my $digestAlg = $cfg->val(SECTION,'digest','SHA-1');
-	my $digest = Digest->new($digestAlg);
-	
-	# apg path
-	my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
-	my $apgMin = $cfg->val(APGSECTION,'min-length',12);
-	my $apgMax = $cfg->val(APGSECTION,'max-length',16);
-	
-	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
-	
-	# These are the recognized replacements
-	my %keyval1 = ( 'username' => '(undefined)', 'fullname' => '(undefined)' );
-	my %keyval2 = ( 'password' => '(undefined)' );
-	
-	my $mail1;
-	my $mail2;
 	my $NOEMAIL;
 	
 	if($noEmail) {
 		open($NOEMAIL,'>:encoding(UTF-8)',$mailTemplate) || Carp::croak("Unable to create file $mailTemplate");;
-	} else {
-		# Mail configuration parameters
-		$mail1 = RDConnect::MailManagement->new($cfg,$mailTemplate,\%keyval1,\@attachmentFiles);
-		$mail1->setSubject($mail1->getSubject().' (I)');
-		
-		my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-		$mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
-		$mail2->setSubject($mail2->getSubject().' (II)');
 	}
-	
-	# LDAP configuration
-	my $uMgmt = RDConnect::UserManagement->new($cfg);
 	
 	# Read the users
 	if(open(my $U,'<:encoding(UTF-8)',$usersFile)) {
+		my @newUsers = ();
 		while(my $line=<$U>) {
 			# Skipping comments
 			next  if(substr($line,0,1) eq '#');
 			
 			chomp($line);
-			my($email,$fullname,$username,$ouGroups,$givenName,$sn,$junk) = split(/\t/,$line,7);
+			$line =~ s/[\n\r]+$//s;
+			my($email,$fullname,$username,$ouGroups,$givenName,$sn,$userCategory,$junk) = split(/\t/,$line,8);
 			my($ou,$groups) = split(/,/,$ouGroups,2);
+			
+			$userCategory = 'Researcher'  unless(defined($userCategory) && length($userCategory) > 0);
+			
+			# The separator understood by Email::Address is the comma
+			$email =~ tr/;/,/;
 			my @addresses = Email::Address->parse($email);
 			
+			my @emails = ();
 			if(scalar(@addresses)==0) {
 				Carp::carp("Unable to parse e-mail $email from user $fullname. Skipping");
+				next;
 			} else {
 				# The destination user
 				my $to = $addresses[0];
 				# Re-defining the e-mail
-				$email = $to->address();
+				@emails = map { $_->address() } @addresses;
 				
 				$fullname = $to->phrase  unless(defined($fullname) && length($fullname)>0);
 				# Removing possible spaces before and after the fullname
@@ -130,55 +112,35 @@ EOF
 					$givenName = substr($fullname,0,$snPoint)  unless(defined($givenName) && length($givenName)>0);
 					$sn = substr($fullname,$snPoint+1)  unless(defined($sn) && length($sn)>0);
 				}
-				
-				# Re-defining the object
-				$to = Email::Address->new($fullname => $email);
-				
-				# Now, let's read the generated password
-				if(open(my $APG,'-|',@apgParams)) {
-					my $pass = <$APG>;
-					chomp($pass);
-					
-					# Setting the digester to a known state
-					$digest->reset();
-					$digest->add($pass);
-					my $digestedPass = '{SHA}'.encode_base64($digest->digest);
-					if($uMgmt->createUser($username,$digestedPass,$ou,$fullname,$givenName,$sn,$email,1,$doReplace)) {
-						if($NOEMAIL) {
-							print $NOEMAIL "$username\t$pass\n";
-						} else {
-							$keyval1{'username'} = $username;
-							$keyval1{'fullname'} = $fullname;
-							eval {
-								$mail1->sendMessage($to,\%keyval1);
-								
-								$keyval2{'password'} = $pass;
-								eval {
-									$mail2->sendMessage($to,\%keyval2);
-								};
-								if($@) {
-									Carp::croak("Error while sending password e-mail: ",$@);
-								}
-							};
-							
-							if($@) {
-								Carp::croak("Error while sending e-mail: ",$@);
-							}
-						}
-					} else {
-						# Reverting state
-						Carp::carp("Unable to add user $username (fullname $fullname, e-mail $email). Does it already exist, maybe?");
-					}
-				} else {
-					Carp::croak("Unable to generate a password using apg\n");
-				}
 			}
+			
+			my %newUser = (
+				'cn'	=>	$fullname,
+				'givenName'	=>	[ $givenName ],
+				'surname'	=>	[ $sn ],
+				'username'	=>	$username,
+				'organizationalUnit'	=>	$ou,
+				'email'	=>	\@emails,
+				'enabled'	=>	boolean::true,
+				'userCategory'	=>	$userCategory,
+			);
+			
+			push(@newUsers,\%newUser);
 		}
 		close($U);
+		
+		my $retval = $mMgmt->createUser(\@newUsers,$NOEMAIL);
+		
+		close($NOEMAIL)  if($NOEMAIL);
+		
+		if(defined($retval)) {
+			use Data::Dumper;
+			
+			Carp::croak($retval->{'reason'}.'. Trace: '.join("\n",map { Dumper($_) } @{(ref($retval->{'trace'}) eq 'ARRAY') ? $retval->{'trace'} : [$retval->{'trace'}]}));
+		}
 	} else {
 		Carp::croak("Unable to read file $usersFile");
 	}
-	close($NOEMAIL)  if($NOEMAIL);
 	
 } else {
 	die <<EOF ;

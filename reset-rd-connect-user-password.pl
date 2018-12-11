@@ -1,95 +1,71 @@
 #!/usr/bin/perl
+# RD-Connect User Management Scripts
+# José María Fernández (jose.m.fernandez@bsc.es)
 
 use warnings "all";
 use strict;
 
+use FindBin;
+use File::Spec;
+use local::lib File::Spec->catfile($FindBin::Bin,'.plEnv');
+
 use Carp;
 use Config::IniFiles;
-use Digest;
-use MIME::Base64;
 use Email::Address;
 use Text::Unidecode qw();
 
-use FindBin;
-use lib $FindBin::Bin . '/libs';
+use lib File::Spec->catfile($FindBin::Bin,'libs');
 use RDConnect::UserManagement;
-use RDConnect::MailManagement;
+use RDConnect::TemplateManagement;
+use RDConnect::MetaUserManagement;
 
 use constant SECTION	=>	'main';
-use constant APGSECTION	=>	'apg';
 
-if(scalar(@ARGV)>=2) {
+my $paramPassword;
+if(scalar(@ARGV)>0 && $ARGV[0] eq '-p') {
+	shift(@ARGV);
+	$paramPassword = 1;
+}
+
+if((!defined($paramPassword) && scalar(@ARGV)>=2) || (defined($paramPassword) && scalar(@ARGV) == 3)) {
 	my $configFile = shift(@ARGV);
 	
 	my $cfg = Config::IniFiles->new( -file => $configFile);
 	
-	# Now, let's read all the parameters
-	
-	# The digest algorithm
-	my $digestAlg = $cfg->val(SECTION,'digest','SHA-1');
-	my $digest = Digest->new($digestAlg);
-	
-	# apg path
-	my $apgPath = $cfg->val(APGSECTION,'apgPath','apg');
-	my $apgMin = $cfg->val(APGSECTION,'min-length',12);
-	my $apgMax = $cfg->val(APGSECTION,'max-length',16);
-	
-	my @apgParams = ($apgPath,'-m',$apgMin,'-x',$apgMax,'-n',1,'-q');
-	
-	# These are the recognized replacements
-	my %keyval2 = ( 'password' => '(undefined)' );
-	
-	# Mail configuration parameters
-	
-	my $passMailTemplate = <<'EOF' ;
-The automatically generated password is  [% password %]  (including any punctuation mark it could contain).
-
-You should change this password by a different one as soon as possible.
-
-Kind Regards,
-	RD-Connect team
-EOF
-	my $mail2 = RDConnect::MailManagement->new($cfg,\$passMailTemplate,\%keyval2);
-	$mail2->setSubject($mail2->getSubject().' (II)');
+	my $password;
+	my @usernames = ();
+	if(defined($paramPassword)) {
+		push(@usernames,$ARGV[0]);
+		$password = $ARGV[1];
+	} else {
+		@usernames = @ARGV;
+	}
 	
 	# LDAP configuration
 	my $uMgmt = RDConnect::UserManagement->new($cfg);
+	my $tMgmt = RDConnect::TemplateManagement->new($uMgmt);
+	my $mMgmt = RDConnect::MetaUserManagement->new($tMgmt);
 	
 	# Read the users
-	foreach my $username (@ARGV) {
-		# Now, let's read the generated password
-		if(open(my $APG,'-|',@apgParams)) {
-			my $pass = <$APG>;
-			chomp($pass);
+	foreach my $username (@usernames) {
+		my $pass;
+		if(defined($password)) {
+			$pass = $password;
+		}
+		
+		my $retval = $mMgmt->resetUserPassword($username,$pass);
+		
+		if(defined($retval)) {
+			use Data::Dumper;
 			
-			# Setting the digester to a known state
-			$digest->reset();
-			$digest->add($pass);
-			my $digestedPass = '{SHA}'.encode_base64($digest->digest);
-			my $user = $uMgmt->resetUserPassword($username,$digestedPass);
-			if(defined($user)) {
-				my $fullname = $user->get_value('cn');
-				my $email = $user->get_value('mail');
-				# Re-defining the object
-				my $to = Email::Address->new($fullname => $email);
-				
-				$keyval2{'password'} = $pass;
-				eval {
-					$mail2->sendMessage($to,\%keyval2);
-				};
-				if($@) {
-					Carp::carp("Error while sending password e-mail: ",$@);
-				}
-			} else {
-				# Reverting state
-				Carp::carp("Unable to reset password for user $username. Does it exist?");
-			}
+			Carp::carp($retval->{'reason'}.'. Trace: '.join("\n",map { Dumper($_) } @{(ref($retval->{'trace'}) eq 'ARRAY') ? $retval->{'trace'} : [$retval->{'trace'}]}));
 		} else {
-			Carp::croak("Unable to generate a password using apg\n");
+			print "User $username password was reset\n";
 		}
 	}
 } else {
 	die <<EOF ;
 Usage:	$0 {IniFile} {username or user e-mail}+
+	$0 -p {IniFile} {username or user e-mail} {new password}
 EOF
 }
