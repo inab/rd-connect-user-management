@@ -9,6 +9,7 @@ requires 'Net::LDAP';
 requires 'MIME::Base64';
 requires 'Digest::MD5';
 requires 'Digest::SHA1';
+requires 'JSON';
 requires 'JSON::MaybeXS';
 requires 'JSON::Validator';
 requires 'Email::Address';
