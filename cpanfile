@@ -21,7 +21,8 @@ requires 'Text::Unidecode';
 requires 'Template';
 requires 'Moose';
 requires 'Authen::CAS::Client';
-requires 'Authen::CAS::External';
+# Dependency installed later, from command line
+#requires 'Authen::CAS::External';
 requires 'Dancer2';
 requires 'Plack::Middleware::CrossOrigin';
 requires 'Plack::Middleware::Deflater';
@@ -31,5 +32,6 @@ requires 'UUID::Tiny';
 requires 'Email::Valid';
 requires 'DateTime';
 requires 'Data::Password::zxcvbn';
-requires 'Dancer2::Plugin::CSRF';
+# Dependency installed later, from command line
+#requires 'Dancer2::Plugin::CSRF';
 requires 'Test::Deep';

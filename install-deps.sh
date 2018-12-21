@@ -40,6 +40,6 @@ if [ $? -ne 0 ] ; then
 	cpan -i App::cpanminus
 fi
 
-# It will work wherever the working dir points to
+cpanm -L "${plEnvDir}" --self-upgrade
 cpanm -L "${plEnvDir}" --installdeps "${umdir}"
-cpanm -L "${plEnvDir}" https://github.com/jmfernandez/Dancer2-Plugin-CSRF/tarball/1.02
+cpanm -L "${plEnvDir}" 'https://github.com/jmfernandez/Dancer2-Plugin-CSRF.git@1.02' 'https://github.com/jmfernandez/perl5-authen-cas-external.git@v0.80-fix'
