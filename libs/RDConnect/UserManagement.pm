@@ -1655,23 +1655,74 @@ sub _userJanitoring(\%) {
 	my($jsonEntry) = @_;
 	
 	my $wasJanitored = undef;
+	my $mailScenario = 0;
+	
+	my $defaultAccepted = $ZERO_EPOCH;
+	# By default, we should give a 4 weeks grace period for old e-mails
+	my $now = time();
+	my $current_epoch = _epoch_ISO8601_RFC3339($now);
+	my $grace_epoch = _epoch_ISO8601_RFC3339($now+DEFAULT__QUARANTINE_DAYS_TIMEOUT()*86400);
 	
 	# Upgrade/synchronize the needed structures
 	# E-mails and registered e-mails
 	unless(exists($jsonEntry->{'email'})) {
 		$jsonEntry->{'email'} = [];
 		$wasJanitored = 1;
+	} else {
+		# An existing mail array
+		# which should be cleaned up
+		$mailScenario |= 1;
+		my @newEmails = ();
+		my $doUpdate = undef;
+		foreach my $email (@{$jsonEntry->{'email'}}) {
+			if(defined($email)) {
+				push(@newEmails,$email);
+			} else {
+				# The undefined element is discarded from the new list
+				$doUpdate = 1;
+				$wasJanitored = 1;
+			}
+		}
+		$jsonEntry->{'email'} = \@newEmails  if($doUpdate);
 	}
 	my $p_emails = $jsonEntry->{'email'};
 	
 	unless(exists($jsonEntry->{'registeredEmails'})) {
 		$jsonEntry->{'registeredEmails'} = [];
 		$wasJanitored = 1;
+	} else {
+		# An pre-existing registered mail block
+		# which should be curated
+		$mailScenario |= 2;
+		foreach my $regEmail (@{$jsonEntry->{'registeredEmails'}}) {
+			# Unidentified entries are skipped
+			next  unless(exists($regEmail->{'email'}));
+			
+			# Initializing keys
+			unless(exists($regEmail->{'registeredAt'}) && defined($regEmail->{'registeredAt'})) {
+				$regEmail->{'registeredAt'} = $current_epoch;
+				$wasJanitored = 1;
+			}
+			
+			unless(exists($regEmail->{'lastValidatedAt'}) && defined($regEmail->{'lastValidatedAt'})) {
+				$regEmail->{'lastValidatedAt'} = $defaultAccepted;
+				$wasJanitored = 1;
+			}
+			
+			unless(exists($regEmail->{'validUntil'}) && defined($regEmail->{'validUntil'})) {
+				$regEmail->{'validUntil'} = $grace_epoch;
+				$wasJanitored = 1;
+			}
+			
+			unless(exists($regEmail->{'validQuarantineCheckUntil'}) && defined($regEmail->{'validQuarantineCheckUntil'})) {
+				$regEmail->{'validQuarantineCheckUntil'} = $grace_epoch;
+				$wasJanitored = 1;
+			}
+		}
 	}
 	my $p_registeredEmails = $jsonEntry->{'registeredEmails'};
 	
 	# Did the user accept GDPR?
-	my $defaultAccepted = $ZERO_EPOCH;
 	if(exists($jsonEntry->{GDPR_jsonAttr()}) && defined($jsonEntry->{GDPR_jsonAttr()})) {
 		$defaultAccepted = $jsonEntry->{GDPR_jsonAttr()};
 	}
@@ -1689,29 +1740,42 @@ sub _userJanitoring(\%) {
 	#my $p_validationTokens = $jUManagement->{'validationTokens'};
 	
 	# Step 1.a: Upgrade ancient e-mails to registeredEmails structures
-	CHECK_EMAIL:
-	foreach my $email (@{$p_emails}) {
-		foreach my $regEmail (@{$p_registeredEmails}) {
-			next CHECK_EMAIL  if($email eq $regEmail->{'email'});
+	if($mailScenario == 1) {
+		foreach my $email (@{$p_emails}) {
+			# If we are here, the e-mail block was not found
+			push(@{$p_registeredEmails},{
+				'email'	=> $email,
+				'registeredAt' => $ZERO_EPOCH,
+				'lastValidatedAt' => $defaultAccepted,
+				'validUntil' => $grace_epoch,
+				'validQuarantineCheckUntil' => $grace_epoch,
+				'status' => ($defaultAccepted ne $ZERO_EPOCH) ? 'frozen' : 'unchecked'
+			});
+			$wasJanitored = 1;
+		}
+	} elsif($mailScenario == 3) {
+		# Step 1.b: Remove emails which should appear in registeredEmails
+		my @cleanedEmails = ();
+		my $p_cleanedEmails = $p_emails;
+		CHECK_EMAIL:
+		foreach my $email (@{$p_emails}) {
+			foreach my $regEmail (@{$p_registeredEmails}) {
+				if($email eq $regEmail->{'email'}) {
+					push(@cleanedEmails,$email);
+					next CHECK_EMAIL;
+				}
+			}
+			
+			# If we are here, the e-mail was not found, so switch to the cleaned list
+			$p_cleanedEmails = \@cleanedEmails;
+			$wasJanitored = 1;
 		}
 		
-		# If we are here, the e-mail was not found
-		# By default, we should give a 4 weeks grace period for old e-mails
-		my $grace_epoch = _epoch_ISO8601_RFC3339(time()+DEFAULT__QUARANTINE_DAYS_TIMEOUT()*86400);
-		push(@{$p_registeredEmails},{
-			'email'	=> $email,
-			'registeredAt' => $ZERO_EPOCH,
-			'lastValidatedAt' => $defaultAccepted,
-			'validUntil' => $grace_epoch,
-			'validQuarantineCheckUntil' => $grace_epoch,
-			'status' => ($defaultAccepted ne $ZERO_EPOCH) ? 'frozen' : 'unchecked'
-		});
-		$wasJanitored = 1;
+		$jsonEntry->{'email'} = $p_emails = $p_cleanedEmails;
 	}
 	
 	# Step 1.b: Back upgrade registeredEmails which should appear in emails
 	# Step 2.a: Disable enabled 
-	my $current_epoch = _epoch_ISO8601_RFC3339(time());
 	RETRO_CHECK_EMAIL:
 	foreach my $regEmail (@{$p_registeredEmails}) {
 		# Unidentified entries are skipped
@@ -1744,7 +1808,7 @@ sub _userJanitoring(\%) {
 			}
 			
 			# If we are here, the e-mail was not found
-			push(@{$p_emails},$regEmail->{'mail'});
+			push(@{$p_emails},$regEmail->{'email'});
 			$wasJanitored = 1;
 		}
 	}
