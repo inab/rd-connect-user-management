@@ -43,8 +43,16 @@
 		},
 		"acceptedGDPR": {
 			"title": "The date of GDPR acceptance",
-			"type": "string",
-			"format": "date-time"
+			"anyOf": [
+				{
+					"type": "string",
+					"format": "date-time"
+				},
+				{
+					"type": "string",
+					"enum": [ "GDPR" ]
+				}
+			]
 		},
 		"cn": {
 			"title": "Common name (usually givenName + surname)",
