@@ -1723,8 +1723,13 @@ sub _userJanitoring(\%) {
 	my $p_registeredEmails = $jsonEntry->{'registeredEmails'};
 	
 	# Did the user accept GDPR?
-	if(exists($jsonEntry->{GDPR_jsonAttr()}) && defined($jsonEntry->{GDPR_jsonAttr()})) {
-		$defaultAccepted = $jsonEntry->{GDPR_jsonAttr()};
+	if(exists($jsonEntry->{GDPR_jsonAttr()})) {
+		if(defined($jsonEntry->{GDPR_jsonAttr()})) {
+			$defaultAccepted = $jsonEntry->{GDPR_jsonAttr()};
+		} else {
+			# Some clients can send the field with a null value
+			delete $jsonEntry->{GDPR_jsonAttr()};
+		}
 	}
 	
 	#unless(exists($jsonEntry->{'management'})) {
