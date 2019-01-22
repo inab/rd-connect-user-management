@@ -43,13 +43,12 @@
 		},
 		"acceptedGDPR": {
 			"title": "The date of GDPR acceptance",
+			"type": "string",
 			"anyOf": [
 				{
-					"type": "string",
 					"format": "date-time"
 				},
 				{
-					"type": "string",
 					"enum": [ "GDPR" ]
 				}
 			]

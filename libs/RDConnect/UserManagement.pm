@@ -1724,7 +1724,7 @@ sub _userJanitoring(\%) {
 	
 	# Did the user accept GDPR?
 	if(exists($jsonEntry->{GDPR_jsonAttr()})) {
-		if(defined($jsonEntry->{GDPR_jsonAttr()})) {
+		if(defined($jsonEntry->{GDPR_jsonAttr()}) && $jsonEntry->{GDPR_jsonAttr()} ne '' && $jsonEntry->{GDPR_jsonAttr()} ne PendingGDPR()) {
 			$defaultAccepted = $jsonEntry->{GDPR_jsonAttr()};
 		} else {
 			# Some clients can send the field with a null value
