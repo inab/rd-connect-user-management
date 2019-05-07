@@ -260,7 +260,11 @@ get '/:requestId/desist/:desistCode/**' => sub {
 	my $desistViewDir = $rMgmt->getDesistView($payload->{'requestType'},$payload->{'publicPayload'});
 	
 	if(defined($desistViewDir)) {
-		send_file(File::Spec->catfile($desistViewDir,@{$path}));
+		my $sendPath = File::Spec->catfile($desistViewDir,@{$path});
+		if(! -r $sendPath && scalar(@{$path}) > 0 && $path->[0] eq 'common') {
+			$sendPath = File::Spec->catfile(@{$path});
+		}
+		send_file($sendPath);
 	} else {
 		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => "Request not available"}),404);
 	}
@@ -287,7 +291,11 @@ get '/:requestId/**' => sub {
 	my $viewDir = $rMgmt->getRequestView($payload->{'requestType'},$payload->{'publicPayload'});
 	
 	if(defined($viewDir)) {
-		send_file(File::Spec->catfile($viewDir,@{$path}));
+		my $sendPath = File::Spec->catfile($viewDir,@{$path});
+		if(! -r $sendPath && scalar(@{$path}) > 0 && $path->[0] eq 'common') {
+			$sendPath = File::Spec->catfile(@{$path});
+		}
+		send_file($sendPath);
 	} else {
 		send_error($RDConnect::Dancer2::Common::jserr->encode({'reason' => "Request not available"}),404);
 	}
