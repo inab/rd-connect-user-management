@@ -29,19 +29,21 @@ if [ $? -ne 0 ] ; then
 		# It has a failing test in Docker build
 		cpan -f ExtUtils::MakeMaker
 	fi
-	perl -Mlocal::lib -e 'exit 0'
-	if [ $? -ne 0 ] ; then
-		# Updated CPAN needs local::lib
-		cpan -i local::lib
-	fi
-	# Updating CPAN
-	cpan -i CPAN
-	# Install carton
-	cpan -i Carton
+	for m in local::lib LWP::Protocol::https ; do
+		perl -M'${m}' -e 'exit 0'
+		if [ $? -ne 0 ] ; then
+			# Updated CPAN or Carton need this
+			cpan -i "${m}"
+		fi
+	done
+	for A in CPAN Carton ; do
+		# Updating or installing
+		cpan -i "$A"
+	done
 fi
 
 #cpanm -L "${plEnvDir}" --self-upgrade
 #cpanm -L "${plEnvDir}" --installdeps "${umdir}"
-cd "${umdir}" && carton install -p "${plEnvDir}"
-#cd "${umdir}" && carton install -p "${plEnvDir}" --deployment
 #cpanm -L "${plEnvDir}" 'https://github.com/jmfernandez/Dancer2-Plugin-CSRF.git@1.02' 'https://github.com/jmfernandez/perl5-authen-cas-external.git@v0.80-fix'
+
+cd "${umdir}" && carton install -p "${plEnvDir}" --deployment
