@@ -21,8 +21,8 @@ export PATH="${plEnvDir}/bin:$PATH"
 #( echo ; echo ) | cpan
 #(echo o conf prerequisites_policy follow;echo o conf commit) | cpan
 
-# Is cpan already installed?
-type -P cpanm >& /dev/null
+# Is carton already installed?
+type -P carton >& /dev/null
 if [ $? -ne 0 ] ; then
 	perl -MExtUtils::MakeMaker -e 'exit 0'
 	if [ $? -ne 0 ] ; then
@@ -36,10 +36,12 @@ if [ $? -ne 0 ] ; then
 	fi
 	# Updating CPAN
 	cpan -i CPAN
-	# Install cpanm
-	cpan -i App::cpanminus
+	# Install carton
+	cpan -i Carton
 fi
 
-cpanm -L "${plEnvDir}" --self-upgrade
-cpanm -L "${plEnvDir}" --installdeps "${umdir}"
-cpanm -L "${plEnvDir}" 'https://github.com/jmfernandez/Dancer2-Plugin-CSRF.git@1.02' 'https://github.com/jmfernandez/perl5-authen-cas-external.git@v0.80-fix'
+#cpanm -L "${plEnvDir}" --self-upgrade
+#cpanm -L "${plEnvDir}" --installdeps "${umdir}"
+cd "${umdir}" && carton install -p "${plEnvDir}"
+#cd "${umdir}" && carton install -p "${plEnvDir}" --deployment
+#cpanm -L "${plEnvDir}" 'https://github.com/jmfernandez/Dancer2-Plugin-CSRF.git@1.02' 'https://github.com/jmfernandez/perl5-authen-cas-external.git@v0.80-fix'

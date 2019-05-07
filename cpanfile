@@ -22,7 +22,8 @@ requires 'Template';
 requires 'Moose';
 requires 'Authen::CAS::Client';
 # Dependency installed later, from command line
-#requires 'Authen::CAS::External';
+requires 'Authen::CAS::External', '== 0.08',
+	url	=>	'https://github.com/jmfernandez/perl5-authen-cas-external/archive/v0.80-fix.tar.gz';
 requires 'Dancer2';
 requires 'Plack::Middleware::CrossOrigin';
 requires 'Plack::Middleware::Deflater';
@@ -33,5 +34,6 @@ requires 'Email::Valid';
 requires 'DateTime';
 requires 'Data::Password::zxcvbn';
 # Dependency installed later, from command line
-#requires 'Dancer2::Plugin::CSRF';
+requires 'Dancer2::Plugin::CSRF', '== 1.02',
+	url	=>	'https://github.com/jmfernandez/Dancer2-Plugin-CSRF/archive/1.02.tar.gz';
 requires 'Test::Deep';
