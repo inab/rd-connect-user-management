@@ -11,13 +11,12 @@ case "${umdir}" in
 esac
 
 
-plEnvDir="${umdir}/.plEnv"
-
-export PERL_LOCAL_LIB_ROOT="${plEnvDir}:$PERL_LOCAL_LIB_ROOT"
-export PERL_MB_OPT="--install_base ${plEnvDir}"
-export PERL_MM_OPT="INSTALL_BASE='${plEnvDir}'"
-export PERL5LIB="${plEnvDir}/lib/perl5:$PERL5LIB"
-export PATH="${plEnvDir}/bin:$PATH"
+instEnvDir="${umdir}/.inst"
+export PERL_LOCAL_LIB_ROOT="${instEnvDir}:$PERL_LOCAL_LIB_ROOT"
+export PERL_MB_OPT="--install_base ${instEnvDir}"
+export PERL_MM_OPT="INSTALL_BASE='${instEnvDir}'"
+export PERL5LIB="${instEnvDir}/lib/perl5:$PERL5LIB"
+export PATH="${instEnvDir}/bin:$PATH"
 #( echo ; echo ) | cpan
 #(echo o conf prerequisites_policy follow;echo o conf commit) | cpan
 
@@ -41,6 +40,13 @@ if [ $? -ne 0 ] ; then
 		cpan -i "$A"
 	done
 fi
+
+plEnvDir="${umdir}/.plEnv"
+export PERL_LOCAL_LIB_ROOT="${plEnvDir}:$PERL_LOCAL_LIB_ROOT"
+export PERL_MB_OPT="--install_base ${plEnvDir}"
+export PERL_MM_OPT="INSTALL_BASE='${plEnvDir}'"
+export PERL5LIB="${plEnvDir}/lib/perl5:$PERL5LIB"
+export PATH="${plEnvDir}/bin:$PATH"
 
 #cpanm -L "${plEnvDir}" --self-upgrade
 #cpanm -L "${plEnvDir}" --installdeps "${umdir}"
